@@ -1,0 +1,201 @@
+{
+  "info": {
+    "name": "Museum Guide Give 1 - Admin Artifact Management",
+    "_postman_id": "2d157bb1-c1f3-4b4a-a2a8-7a4dbcc6e43f",
+    "description": "Health, admin auth, and artifact CRUD requests for Give 1.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "admin_email", "value": "admin@example.com" },
+    { "key": "admin_password", "value": "ChangeThisPassword123!" },
+    { "key": "access_token", "value": "" },
+    { "key": "artifact_id", "value": "" },
+    { "key": "image_name", "value": "" },
+    { "key": "primary_image_path", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health check",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/health"
+      }
+    },
+    {
+      "name": "Admin login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.access_token) pm.collectionVariables.set('access_token', json.access_token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/auth/login"
+      }
+    },
+    {
+      "name": "Current admin",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/auth/me"
+      }
+    },
+    {
+      "name": "Create artifact with images",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.id) pm.collectionVariables.set('artifact_id', json.id);",
+              "if (json.image_paths && json.image_paths.length) {",
+              "  pm.collectionVariables.set('primary_image_path', json.image_paths[0]);",
+              "  pm.collectionVariables.set('image_name', json.image_paths[0].split('/').pop());",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "artifact_code", "value": "ART-0001", "type": "text" },
+            { "key": "name", "value": "Wooden Plow", "type": "text" },
+            { "key": "description", "value": "A traditional farming tool used by local farmers.", "type": "text" },
+            { "key": "category", "value": "Farm Tools", "type": "text" },
+            { "key": "origin", "value": "Pampanga", "type": "text" },
+            { "key": "historical_period", "value": "Early 20th Century", "type": "text" },
+            { "key": "material", "value": "Wood and metal", "type": "text" },
+            { "key": "dimensions", "value": "120 cm x 35 cm", "type": "text" },
+            { "key": "condition", "value": "Good", "type": "text" },
+            { "key": "images", "type": "file", "src": [] }
+          ]
+        },
+        "url": "{{base_url}}/api/v1/artifacts"
+      }
+    },
+    {
+      "name": "List artifacts",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/artifacts?page=1&page_size=20&sort=newest"
+      }
+    },
+    {
+      "name": "Search artifacts",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/artifacts?search=plow&category=Farm%20Tools&sort=name_asc"
+      }
+    },
+    {
+      "name": "Get artifact",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/artifacts/{{artifact_id}}"
+      }
+    },
+    {
+      "name": "Update artifact",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "name", "value": "Updated Wooden Plow", "type": "text" },
+            { "key": "condition", "value": "Excellent", "type": "text" }
+          ]
+        },
+        "url": "{{base_url}}/api/v1/artifacts/{{artifact_id}}"
+      }
+    },
+    {
+      "name": "Upload additional image",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "images", "type": "file", "src": [] }
+          ]
+        },
+        "url": "{{base_url}}/api/v1/artifacts/{{artifact_id}}/images"
+      }
+    },
+    {
+      "name": "Remove image",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/artifacts/{{artifact_id}}/images/{{image_name}}"
+      }
+    },
+    {
+      "name": "Set primary image",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"image_path\": \"{{primary_image_path}}\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/artifacts/{{artifact_id}}/primary-image"
+      }
+    },
+    {
+      "name": "Delete artifact",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/artifacts/{{artifact_id}}"
+      }
+    }
+  ]
+}
