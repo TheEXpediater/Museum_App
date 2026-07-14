@@ -14,6 +14,9 @@ object NetworkModule {
     fun create(sessionManager: SessionManager): AdminApiService {
         val logging = HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
+            redactHeader("Authorization")
+            redactHeader("Cookie")
+            redactHeader("Set-Cookie")
         }
         val client = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)

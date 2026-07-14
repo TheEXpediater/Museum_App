@@ -8,13 +8,17 @@ import okhttp3.Response
 
 class AuthInterceptor(private val sessionManager: SessionManager) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
-        val session = runBlocking { sessionManager.session.first() }
-        val requestBuilder = chain.request().newBuilder()
-        if (session.accessToken.isNotBlank() && session.tokenType.equals("bearer", ignoreCase = true)) {
-            requestBuilder.header("Authorization", "Bearer ${session.accessToken}")
+        val request = chain.request()
+        val isPublicEndpoint = request.url.encodedPath in setOf("/api/v1/auth/login", "/api/v1/health")
+        val requestBuilder = request.newBuilder()
+        if (!isPublicEndpoint) {
+            val session = runBlocking { sessionManager.session.first() }
+            if (session.accessToken.isNotBlank() && session.tokenType.equals("bearer", ignoreCase = true)) {
+                requestBuilder.header("Authorization", "Bearer ${session.accessToken}")
+            }
         }
         val response = chain.proceed(requestBuilder.build())
-        if (response.code == 401) {
+        if (response.code == 401 && !isPublicEndpoint) {
             runBlocking { sessionManager.clearSession() }
         }
         return response

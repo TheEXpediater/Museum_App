@@ -20,3 +20,9 @@ data class LoginResponse(
     @Json(name = "expires_in") val expiresIn: Int,
     val user: UserDto
 )
+
+data class HealthResponse(
+    val status: String,
+    val database: String,
+    @Json(name = "uploads_directory") val uploadsDirectory: String
+)

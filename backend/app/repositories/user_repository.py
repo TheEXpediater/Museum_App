@@ -23,3 +23,18 @@ def create_admin_user(database: Database, email: str, full_name: str, password_h
         }
     )
     return str(result.inserted_id)
+
+
+def update_admin_user(database: Database, email: str, full_name: str, password_hash: str) -> None:
+    database.users.update_one(
+        {"email": email.lower().strip()},
+        {
+            "$set": {
+                "full_name": full_name.strip(),
+                "password_hash": password_hash,
+                "role": "admin",
+                "is_active": True,
+                "updated_at": utc_now(),
+            }
+        },
+    )

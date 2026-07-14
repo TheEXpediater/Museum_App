@@ -1,0 +1,16 @@
+# Never commit real passwords. local.properties must remain ignored by Git.
+#
+# Copy any needed values into repository-root local.properties.
+
+# Android emulator
+API_BASE_URL=http://10.0.2.2:8000/
+
+# Physical phone on the same Wi-Fi
+# API_BASE_URL=http://192.168.100.12:8000/
+
+# Physical phone through USB and adb reverse
+# API_BASE_URL=http://127.0.0.1:8000/
+
+# Debug-only local login convenience
+DEBUG_ADMIN_EMAIL=
+DEBUG_ADMIN_PASSWORD=

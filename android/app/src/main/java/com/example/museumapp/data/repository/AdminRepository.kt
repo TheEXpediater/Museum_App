@@ -3,9 +3,12 @@ package com.example.museumapp.data.repository
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.example.museumapp.BuildConfig
 import com.example.museumapp.data.api.AdminApiService
+import com.example.museumapp.data.api.NetworkErrorMessages
 import com.example.museumapp.data.model.ArtifactDto
 import com.example.museumapp.data.model.ArtifactListResponse
+import com.example.museumapp.data.model.HealthResponse
 import com.example.museumapp.data.model.LoginRequest
 import com.example.museumapp.data.model.PrimaryImageRequest
 import com.example.museumapp.data.model.UserDto
@@ -27,8 +30,16 @@ class AdminRepository(
     private val context: Context
 ) {
     val session: Flow<AdminSession> = sessionManager.session
+    val backendBaseUrl: String = BuildConfig.API_BASE_URL
 
-    suspend fun login(email: String, password: String): RepositoryResult<UserDto> = safeApiCall {
+    suspend fun checkHealth(): RepositoryResult<HealthResponse> = safeApiCall(clearSessionOnUnauthorized = false) {
+        api.health()
+    }
+
+    suspend fun login(email: String, password: String): RepositoryResult<UserDto> = safeApiCall(
+        clearSessionOnUnauthorized = false,
+        unauthorizedMessage = "Invalid email or password."
+    ) {
         val response = api.login(LoginRequest(email.trim(), password))
         sessionManager.saveSession(response)
         response.user
@@ -84,33 +95,40 @@ class AdminRepository(
         api.deleteArtifact(artifactId).message
     }
 
-    private suspend fun <T> safeApiCall(block: suspend () -> T): RepositoryResult<T> {
+    private suspend fun <T> safeApiCall(
+        clearSessionOnUnauthorized: Boolean = true,
+        unauthorizedMessage: String = "Your session has expired. Please log in again.",
+        block: suspend () -> T
+    ): RepositoryResult<T> {
         return try {
             RepositoryResult.Success(block())
         } catch (exception: HttpException) {
-            if (exception.code() == 401) {
+            if (exception.code() == 401 && clearSessionOnUnauthorized) {
                 sessionManager.clearSession()
             }
-            RepositoryResult.Error(exception.toUserMessage())
+            RepositoryResult.Error(exception.toUserMessage(unauthorizedMessage))
         } catch (exception: IOException) {
-            RepositoryResult.Error("Could not connect to the backend. Check that FastAPI is running and reachable.")
+            RepositoryResult.Error(NetworkErrorMessages.from(exception))
         } catch (exception: IllegalArgumentException) {
             RepositoryResult.Error(exception.message ?: "The request could not be prepared.")
         }
     }
 
-    private fun HttpException.toUserMessage(): String {
+    private fun HttpException.toUserMessage(unauthorizedMessage: String): String {
         val fallback = when (code()) {
             400 -> "The request could not be completed."
-            401 -> "Your admin session has expired. Please log in again."
-            403 -> "This account cannot access admin artifact management."
+            401 -> unauthorizedMessage
+            403 -> "This account does not have administrator access."
             404 -> "The requested artifact was not found."
             409 -> "An artifact with this code already exists."
             413 -> "One of the selected images is too large."
             415 -> "Only JPEG, PNG, and WEBP images can be uploaded."
             422 -> "Please check the form values and try again."
+            500 -> "The backend encountered an internal error. Try again after checking the server logs."
             else -> "The server could not complete the request."
         }
+        if (code() == 401 || code() == 403) return fallback
+
         val body = response()?.errorBody()?.string().orEmpty()
         return runCatching {
             JSONObject(body).optString("detail").takeIf { it.isNotBlank() }

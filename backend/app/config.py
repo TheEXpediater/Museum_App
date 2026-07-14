@@ -5,9 +5,13 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+ENV_FILE = BACKEND_DIR / ".env"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
         populate_by_name=True,
@@ -66,7 +70,10 @@ class Settings(BaseSettings):
 
     @property
     def upload_path(self) -> Path:
-        return Path(self.upload_directory)
+        path = Path(self.upload_directory).expanduser()
+        if not path.is_absolute():
+            path = BACKEND_DIR / path
+        return path.resolve()
 
     @property
     def upload_root_path(self) -> Path:

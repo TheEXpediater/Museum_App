@@ -12,9 +12,10 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.auth.jwt_handler import create_access_token
-from app.auth.password import hash_password
-from app.config import Settings
+from app.auth.password import hash_password, verify_password
+from app.config import BACKEND_DIR, ENV_FILE, Settings
 from app.utils import utc_now
+from scripts.create_admin import create_or_update_admin, validate_email, validate_password
 
 
 ADMIN_EMAIL = "admin@example.com"
@@ -98,6 +99,130 @@ def create_artifact(client: TestClient, headers: dict[str, str], *, code: str = 
     return response.json()
 
 
+def test_health_endpoint_reports_backend_status(test_context):
+    client, _, _, _ = test_context
+    response = client.get("/api/v1/health")
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "status": "healthy",
+        "database": "connected",
+        "uploads_directory": "available",
+    }
+
+
+def test_settings_resolves_relative_upload_directory_from_backend_dir():
+    settings = Settings(
+        app_name="Museum Guide System Test",
+        app_env="test",
+        mongodb_url="mongodb://localhost:27017",
+        mongodb_database="museum_guide_test",
+        jwt_secret_key=JWT_SECRET,
+        upload_directory="relative_uploads/images",
+        _env_file=None,
+    )
+    assert ENV_FILE == BACKEND_DIR / ".env"
+    assert settings.upload_path == (BACKEND_DIR / "relative_uploads" / "images").resolve()
+    assert settings.upload_root_path == (BACKEND_DIR / "relative_uploads").resolve()
+
+
+def test_settings_keeps_absolute_upload_directory(tmp_path):
+    upload_directory = tmp_path / "uploads" / "images"
+    settings = Settings(
+        app_name="Museum Guide System Test",
+        app_env="test",
+        mongodb_url="mongodb://localhost:27017",
+        mongodb_database="museum_guide_test",
+        jwt_secret_key=JWT_SECRET,
+        upload_directory=str(upload_directory),
+        _env_file=None,
+    )
+    assert settings.upload_path == upload_directory.resolve()
+    assert settings.upload_root_path == upload_directory.parent.resolve()
+
+
+def test_create_admin_validates_credentials():
+    assert validate_email("ADMIN@EXAMPLE.COM") == ADMIN_EMAIL
+    assert validate_password(ADMIN_PASSWORD) == ADMIN_PASSWORD
+    with pytest.raises(ValueError):
+        validate_email("not-an-email")
+    with pytest.raises(ValueError):
+        validate_password("short")
+
+
+def test_create_or_update_admin_creates_account():
+    database = mongomock.MongoClient()["museum_guide_test"]
+    result = create_or_update_admin(
+        database,
+        email=ADMIN_EMAIL,
+        full_name="Museum Administrator",
+        password=ADMIN_PASSWORD,
+        update_existing=False,
+    )
+    user = database.users.find_one({"email": ADMIN_EMAIL})
+    assert result == "created"
+    assert user["role"] == "admin"
+    assert user["is_active"] is True
+    assert verify_password(ADMIN_PASSWORD, user["password_hash"])
+
+
+def test_create_or_update_admin_existing_is_nondestructive_without_flag():
+    database = mongomock.MongoClient()["museum_guide_test"]
+    old_hash = hash_password("OriginalPassword123!")
+    database.users.insert_one(
+        {
+            "email": ADMIN_EMAIL,
+            "full_name": "Original Admin",
+            "password_hash": old_hash,
+            "role": "visitor",
+            "is_active": False,
+            "created_at": utc_now(),
+            "updated_at": utc_now(),
+        }
+    )
+    result = create_or_update_admin(
+        database,
+        email=ADMIN_EMAIL,
+        full_name="Museum Administrator",
+        password=ADMIN_PASSWORD,
+        update_existing=False,
+    )
+    user = database.users.find_one({"email": ADMIN_EMAIL})
+    assert result == "exists"
+    assert user["full_name"] == "Original Admin"
+    assert user["role"] == "visitor"
+    assert user["is_active"] is False
+    assert user["password_hash"] == old_hash
+
+
+def test_create_or_update_admin_updates_existing_with_explicit_flag():
+    database = mongomock.MongoClient()["museum_guide_test"]
+    database.users.insert_one(
+        {
+            "email": ADMIN_EMAIL,
+            "full_name": "Original Admin",
+            "password_hash": hash_password("OriginalPassword123!"),
+            "role": "visitor",
+            "is_active": False,
+            "created_at": utc_now(),
+            "updated_at": utc_now(),
+        }
+    )
+    result = create_or_update_admin(
+        database,
+        email=ADMIN_EMAIL,
+        full_name="Museum Administrator",
+        password=ADMIN_PASSWORD,
+        update_existing=True,
+    )
+    user = database.users.find_one({"email": ADMIN_EMAIL})
+    assert result == "updated"
+    assert user["full_name"] == "Museum Administrator"
+    assert user["role"] == "admin"
+    assert user["is_active"] is True
+    assert verify_password(ADMIN_PASSWORD, user["password_hash"])
+
+
 def test_successful_admin_login(test_context):
     client, _, _, _ = test_context
     response = client.post("/api/v1/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
@@ -112,6 +237,7 @@ def test_invalid_admin_credentials_are_rejected(test_context):
     client, _, _, _ = test_context
     response = client.post("/api/v1/auth/login", json={"email": ADMIN_EMAIL, "password": "wrong-password"})
     assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid email or password."
     assert "password_hash" not in response.text
 
 
@@ -174,6 +300,26 @@ def test_artifact_creation_with_valid_image(test_context):
     stored = settings.upload_path / Path(artifact["image_paths"][0]).name
     assert stored.exists()
     assert artifact["image_urls"][0].startswith("http://testserver/uploads/images/")
+
+
+def test_artifact_image_urls_use_request_host_for_lan_clients(test_context):
+    client, _, _, _ = test_context
+    response = client.post(
+        "/api/v1/artifacts",
+        data={
+            "artifact_code": "ART-0020",
+            "name": "LAN Image",
+            "description": "Image URL host test",
+            "category": "Tests",
+        },
+        files=[("images", ("lan.jpg", image_bytes(), "image/jpeg"))],
+        headers={**auth_headers(client), "host": "192.168.100.12:8000"},
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["image_urls"][0].startswith("http://192.168.100.12:8000/uploads/images/")
+    assert body["primary_image_url"].startswith("http://192.168.100.12:8000/uploads/images/")
 
 
 def test_unsupported_image_types_are_rejected(test_context):

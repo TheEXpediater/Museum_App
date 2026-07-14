@@ -8,7 +8,7 @@
   "variable": [
     { "key": "base_url", "value": "http://localhost:8000" },
     { "key": "admin_email", "value": "admin@example.com" },
-    { "key": "admin_password", "value": "ChangeThisPassword123!" },
+    { "key": "admin_password", "value": "" },
     { "key": "access_token", "value": "" },
     { "key": "artifact_id", "value": "" },
     { "key": "image_name", "value": "" },

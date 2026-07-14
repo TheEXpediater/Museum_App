@@ -3,6 +3,7 @@ package com.example.museumapp.data.api
 import com.example.museumapp.data.model.ArtifactDto
 import com.example.museumapp.data.model.ArtifactListResponse
 import com.example.museumapp.data.model.DeleteResponse
+import com.example.museumapp.data.model.HealthResponse
 import com.example.museumapp.data.model.LoginRequest
 import com.example.museumapp.data.model.LoginResponse
 import com.example.museumapp.data.model.PrimaryImageRequest
@@ -21,6 +22,9 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface AdminApiService {
+    @GET("api/v1/health")
+    suspend fun health(): HealthResponse
+
     @POST("api/v1/auth/login")
     suspend fun login(@Body request: LoginRequest): LoginResponse
 

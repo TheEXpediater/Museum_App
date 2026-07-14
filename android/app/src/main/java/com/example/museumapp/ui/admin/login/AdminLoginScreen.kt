@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.museumapp.BuildConfig
 import com.example.museumapp.data.repository.AdminRepository
 
 @Composable
@@ -82,6 +84,14 @@ fun AdminLoginScreen(
             }
             Spacer(Modifier.height(24.dp))
             Text("Administrator Login", style = MaterialTheme.typography.headlineMedium)
+            if (BuildConfig.DEBUG) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Backend: ${viewModel.backendBaseUrl}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Spacer(Modifier.height(28.dp))
             OutlinedTextField(
                 value = uiState.email,
@@ -122,17 +132,37 @@ fun AdminLoginScreen(
                 Spacer(Modifier.height(12.dp))
                 Text(uiState.errorMessage.orEmpty(), color = MaterialTheme.colorScheme.error)
             }
+            val connectionMessage = uiState.connectionMessage.takeUnless { it == uiState.errorMessage }
+            if (connectionMessage != null) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = connectionMessage,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             Spacer(Modifier.height(24.dp))
             Button(
                 onClick = viewModel::login,
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !uiState.isLoading,
+                enabled = !uiState.isLoading && !uiState.isTestingConnection,
                 contentPadding = PaddingValues(vertical = 14.dp)
             ) {
                 if (uiState.isLoading) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 } else {
                     Text("Log In")
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            TextButton(
+                onClick = viewModel::testConnection,
+                enabled = !uiState.isLoading && !uiState.isTestingConnection
+            ) {
+                if (uiState.isTestingConnection) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("Test connection")
                 }
             }
         }
