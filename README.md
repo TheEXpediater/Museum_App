@@ -4,6 +4,24 @@ Give 1 implements the Admin Artifact Management System: secure admin login, JWT 
 
 Out of scope for this phase: OpenCLIP, Qdrant, visitor scanning, 3D viewing, analytics, and reports.
 
+## Simplified Backend Startup
+
+From the repository root, run:
+
+```powershell
+python start_backend.py
+```
+
+Optional commands:
+
+```powershell
+python start_backend.py --test
+python start_backend.py --check
+python start_backend.py --stop
+```
+
+The launcher starts MongoDB with Docker Compose, prepares `backend\.venv` when needed, creates `backend\.env` only if it is missing, checks the setup, creates the first admin account when needed, and starts FastAPI.
+
 ## Backend Setup
 
 Run these commands from Windows PowerShell:
