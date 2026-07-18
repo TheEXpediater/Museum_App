@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -33,13 +34,56 @@ class Settings(BaseSettings):
     admin_email: str | None = Field(default=None, alias="ADMIN_EMAIL")
     admin_password: str | None = Field(default=None, alias="ADMIN_PASSWORD")
     admin_full_name: str = Field(default="Museum Administrator", alias="ADMIN_FULL_NAME")
+    ai_enabled: bool = Field(default=True, alias="AI_ENABLED")
+    qdrant_url: str = Field(default="http://localhost:6333", alias="QDRANT_URL")
+    qdrant_api_key: str | None = Field(default=None, alias="QDRANT_API_KEY")
+    qdrant_collection: str = Field(default="artifact_images", alias="QDRANT_COLLECTION")
+    qdrant_distance: str = Field(default="cosine", alias="QDRANT_DISTANCE")
+    openclip_model_name: str = Field(default="ViT-B-32", alias="OPENCLIP_MODEL_NAME")
+    openclip_pretrained: str = Field(default="laion2b_s34b_b79k", alias="OPENCLIP_PRETRAINED")
+    openclip_device: str = Field(default="auto", alias="OPENCLIP_DEVICE")
+    ai_model_download_allowed: bool = Field(default=True, alias="AI_MODEL_DOWNLOAD_ALLOWED")
 
-    @field_validator("mongodb_url", "mongodb_database", "jwt_secret_key", "upload_directory")
+    @field_validator(
+        "mongodb_url",
+        "mongodb_database",
+        "jwt_secret_key",
+        "upload_directory",
+        "qdrant_url",
+        "qdrant_collection",
+        "openclip_model_name",
+        "openclip_pretrained",
+    )
     @classmethod
     def required_non_empty(cls, value: str) -> str:
         if not value or not value.strip():
             raise ValueError("configuration value is required")
         return value.strip()
+
+    @field_validator("qdrant_api_key", mode="before")
+    @classmethod
+    def blank_secret_to_none(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        return str(value).strip()
+
+    @field_validator("qdrant_distance")
+    @classmethod
+    def validate_qdrant_distance(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"cosine", "dot", "euclid"}:
+            raise ValueError("QDRANT_DISTANCE must be one of: cosine, dot, euclid")
+        return normalized
+
+    @field_validator("openclip_device")
+    @classmethod
+    def validate_openclip_device(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"auto", "cpu", "cuda"}:
+            raise ValueError("OPENCLIP_DEVICE must be one of: auto, cpu, cuda")
+        return normalized
 
     @field_validator("jwt_secret_key")
     @classmethod

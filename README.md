@@ -91,6 +91,55 @@ cd backend
 python -m pytest -q
 ```
 
+## Phase 2 AI Foundation
+
+Architecture:
+
+```text
+FastAPI
+|-- MongoDB
+|-- Local artifact images
+|-- OpenCLIP
+`-- Qdrant
+```
+
+Install and verify the AI foundation from the repository root:
+
+```powershell
+python start_backend.py --setup-ai
+```
+
+AI verification commands:
+
+```powershell
+python start_backend.py --check-ai
+python start_backend.py --test-ai
+```
+
+Start the complete backend:
+
+```powershell
+python start_backend.py
+```
+
+Health endpoints:
+
+```text
+http://localhost:8000/api/v1/health
+http://localhost:8000/api/v1/ai/health
+```
+
+Qdrant local ports:
+
+```text
+REST: http://localhost:6333
+gRPC: localhost:6334
+```
+
+The first OpenCLIP model load may require internet access. Later use can rely on the local PyTorch/OpenCLIP cache, and model weight files are not committed to the repository. Qdrant data is stored in a Docker named volume, so `python start_backend.py --stop` does not delete vector data.
+
+Changing `OPENCLIP_MODEL_NAME` or `OPENCLIP_PRETRAINED` can change the embedding dimension and may require rebuilding the Qdrant collection. Phase 1 remains usable when AI is disabled or temporarily unavailable. Full artifact recognition and Android visitor scanning are planned for a later milestone.
+
 ## Android Setup
 
 Open the repository root in Android Studio and run the `android:app` configuration.

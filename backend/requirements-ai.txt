@@ -1,0 +1,4 @@
+torch==2.13.0
+torchvision==0.28.0
+open_clip_torch==3.3.0
+qdrant-client==1.18.0

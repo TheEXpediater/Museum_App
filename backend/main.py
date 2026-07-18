@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import Settings, get_settings
 from app.database.mongodb import MongoConnectionError, ensure_indexes, mongo_manager
-from app.routes import artifacts, auth
+from app.routes import ai, artifacts, auth
 from app.services.image_storage import ensure_upload_directory
 
 
@@ -85,6 +85,7 @@ def create_app(settings: Settings | None = None, database=None) -> FastAPI:
 
     app.include_router(auth.router, prefix=API_PREFIX)
     app.include_router(artifacts.router, prefix=API_PREFIX)
+    app.include_router(ai.router, prefix=API_PREFIX)
 
     ensure_upload_directory(settings)
     app.mount("/uploads", StaticFiles(directory=str(settings.upload_root_path), check_dir=False), name="uploads")

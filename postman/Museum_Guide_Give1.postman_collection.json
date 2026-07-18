@@ -23,6 +23,13 @@
       }
     },
     {
+      "name": "AI health",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/ai/health"
+      }
+    },
+    {
       "name": "Admin login",
       "event": [
         {

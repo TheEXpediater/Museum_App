@@ -8,6 +8,8 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 
@@ -16,14 +18,36 @@ BACKEND_DIR = ROOT_DIR / "backend"
 VENV_DIR = BACKEND_DIR / ".venv"
 VENV_PYTHON = VENV_DIR / "Scripts" / "python.exe"
 REQUIREMENTS_FILE = BACKEND_DIR / "requirements.txt"
+AI_REQUIREMENTS_FILE = BACKEND_DIR / "requirements-ai.txt"
 ENV_EXAMPLE_FILE = BACKEND_DIR / ".env.example"
 ENV_FILE = BACKEND_DIR / ".env"
 COMPOSE_FILE = ROOT_DIR / "compose.yaml"
 
 MONGODB_PORT = 27017
+QDRANT_REST_PORT = 6333
+QDRANT_GRPC_PORT = 6334
 FASTAPI_PORT = 8000
 MONGODB_SERVICE = "mongodb"
+QDRANT_SERVICE = "qdrant"
 LOCAL_MONGODB_URI = "mongodb://localhost:27017"
+DEFAULT_QDRANT_URL = "http://localhost:6333"
+AI_REQUIREMENTS = [
+    "torch==2.13.0",
+    "torchvision==0.28.0",
+    "open_clip_torch==3.3.0",
+    "qdrant-client==1.18.0",
+]
+AI_ENV_DEFAULTS = {
+    "AI_ENABLED": "true",
+    "QDRANT_URL": DEFAULT_QDRANT_URL,
+    "QDRANT_API_KEY": "",
+    "QDRANT_COLLECTION": "artifact_images",
+    "QDRANT_DISTANCE": "cosine",
+    "OPENCLIP_MODEL_NAME": "ViT-B-32",
+    "OPENCLIP_PRETRAINED": "laion2b_s34b_b79k",
+    "OPENCLIP_DEVICE": "auto",
+    "AI_MODEL_DOWNLOAD_ALLOWED": "true",
+}
 
 
 class LauncherError(Exception):
@@ -73,6 +97,11 @@ def ensure_backend_layout() -> None:
         raise LauncherError(f"Requirements file was not found: {REQUIREMENTS_FILE}")
     if not COMPOSE_FILE.is_file():
         raise LauncherError(f"Docker Compose file was not found: {COMPOSE_FILE}")
+
+
+def ensure_ai_layout() -> None:
+    if not AI_REQUIREMENTS_FILE.is_file():
+        raise LauncherError(f"AI requirements file was not found: {AI_REQUIREMENTS_FILE}")
 
 
 def ensure_python_available() -> None:
@@ -169,6 +198,70 @@ def raise_non_mongodb_port_error() -> None:
     raise LauncherError("\n".join(lines))
 
 
+def read_env_values() -> dict[str, str]:
+    if not ENV_FILE.exists():
+        return {}
+    values: dict[str, str] = {}
+    for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def append_missing_env_values(defaults: dict[str, str]) -> list[str]:
+    existing = read_env_values()
+    missing = [key for key in defaults if key not in existing]
+    if not missing:
+        return []
+
+    with ENV_FILE.open("a", encoding="utf-8") as env_file:
+        env_file.write("\n# Phase 2 AI foundation\n")
+        for key in missing:
+            env_file.write(f"{key}={env_value(defaults[key])}\n")
+    return missing
+
+
+def parse_bool(value: str | None, *, default: bool) -> bool:
+    if value is None or not value.strip():
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def ai_enabled_from_env() -> bool:
+    return parse_bool(read_env_values().get("AI_ENABLED"), default=True)
+
+
+def qdrant_url_from_env() -> str:
+    return read_env_values().get("QDRANT_URL") or DEFAULT_QDRANT_URL
+
+
+def qdrant_responds(url: str) -> bool:
+    health_url = f"{url.rstrip('/')}/healthz"
+    try:
+        with urllib.request.urlopen(health_url, timeout=3) as response:
+            return 200 <= response.status < 300
+    except (OSError, urllib.error.URLError, TimeoutError):
+        return False
+
+
+def raise_non_qdrant_port_error() -> None:
+    pids = port_pids(QDRANT_REST_PORT)
+    lines = [
+        "Port 6333 is occupied, but the process is not responding as Qdrant.",
+        "Diagnostic commands:",
+        "netstat -ano | findstr :6333",
+    ]
+    if pids:
+        for pid in pids:
+            lines.append(f"Get-Process -Id {pid}")
+    else:
+        lines.append("Get-Process -Id <PID>")
+    raise LauncherError("\n".join(lines))
+
+
 def ensure_port_available(port: int, purpose: str) -> None:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         try:
@@ -177,15 +270,15 @@ def ensure_port_available(port: int, purpose: str) -> None:
             raise LauncherError(f"Port {port} is already in use. Stop the existing {purpose}, then try again.") from exc
 
 
-def get_container_id(compose_command: list[str]) -> str:
-    process = run_process(compose_args(compose_command, "ps", "-q", MONGODB_SERVICE), cwd=ROOT_DIR, capture=True)
+def get_container_id(compose_command: list[str], service: str) -> str:
+    process = run_process(compose_args(compose_command, "ps", "-q", service), cwd=ROOT_DIR, capture=True)
     if process.returncode != 0:
         return ""
     return process.stdout.strip()
 
 
-def is_compose_mongodb_running(compose_command: list[str]) -> bool:
-    container_id = get_container_id(compose_command)
+def is_compose_service_running(compose_command: list[str], service: str) -> bool:
+    container_id = get_container_id(compose_command, service)
     if not container_id:
         return False
     process = run_process(
@@ -195,17 +288,26 @@ def is_compose_mongodb_running(compose_command: list[str]) -> bool:
     return process.returncode == 0 and process.stdout.strip().lower() == "true"
 
 
-def wait_for_mongodb_health(
+def is_compose_mongodb_running(compose_command: list[str]) -> bool:
+    return is_compose_service_running(compose_command, MONGODB_SERVICE)
+
+
+def is_compose_qdrant_running(compose_command: list[str]) -> bool:
+    return is_compose_service_running(compose_command, QDRANT_SERVICE)
+
+
+def wait_for_compose_health(
     compose_command: list[str],
+    service: str,
     timeout_seconds: int = 120,
     *,
-    ready_message: str = "MongoDB started through Docker",
+    ready_message: str,
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
     last_status = "unknown"
 
     while time.monotonic() < deadline:
-        container_id = get_container_id(compose_command)
+        container_id = get_container_id(compose_command, service)
         if container_id:
             status = run_process(
                 [
@@ -224,7 +326,7 @@ def wait_for_mongodb_health(
                     return
         time.sleep(2)
 
-    raise LauncherError(f"MongoDB startup failure. Health status did not become healthy; last status: {last_status}.")
+    raise LauncherError(f"{service} startup failure. Health status did not become healthy; last status: {last_status}.")
 
 
 def start_docker_mongodb(compose_command: list[str]) -> None:
@@ -236,7 +338,29 @@ def start_docker_mongodb(compose_command: list[str]) -> None:
             raise LauncherError("Port 27017 is already in use. Stop the existing MongoDB instance, then try again.")
         raise LauncherError("MongoDB startup failure. Docker Compose could not start the MongoDB service.")
 
-    wait_for_mongodb_health(compose_command)
+    wait_for_compose_health(compose_command, MONGODB_SERVICE, ready_message="MongoDB started through Docker")
+
+
+def wait_for_qdrant_ready(url: str, timeout_seconds: int = 120, *, ready_message: str = "Qdrant connected") -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if qdrant_responds(url):
+            ok(ready_message)
+            return
+        time.sleep(2)
+    raise LauncherError("Qdrant startup failure. The service did not respond to its health endpoint.")
+
+
+def start_docker_qdrant(compose_command: list[str]) -> None:
+    info("Starting Qdrant with Docker Compose")
+    process = run_process(compose_args(compose_command, "up", "-d", QDRANT_SERVICE), cwd=ROOT_DIR, capture=True)
+    if process.returncode != 0:
+        print_process_output(process)
+        if "port is already allocated" in (process.stderr or "").lower():
+            raise LauncherError("Port 6333 is already in use. Stop the conflicting process, then try again.")
+        raise LauncherError("Qdrant startup failure. Docker Compose could not start the Qdrant service.")
+
+    wait_for_qdrant_ready(qdrant_url_from_env(), ready_message="Qdrant started through Docker")
 
 
 def ensure_mongodb_ready() -> str:
@@ -244,7 +368,11 @@ def ensure_mongodb_ready() -> str:
         compose_command = find_compose_command_if_running()
         if compose_command is not None and is_compose_mongodb_running(compose_command):
             print("MongoDB mode: Docker Compose", flush=True)
-            wait_for_mongodb_health(compose_command, ready_message="MongoDB is running through Docker")
+            wait_for_compose_health(
+                compose_command,
+                MONGODB_SERVICE,
+                ready_message="MongoDB is running through Docker",
+            )
             return "docker"
 
         if local_mongodb_responds():
@@ -260,6 +388,28 @@ def ensure_mongodb_ready() -> str:
     return "docker"
 
 
+def ensure_qdrant_ready() -> str:
+    url = qdrant_url_from_env()
+    if is_port_in_use(QDRANT_REST_PORT):
+        compose_command = find_compose_command_if_running()
+        if compose_command is not None and is_compose_qdrant_running(compose_command):
+            print("Qdrant mode: Docker Compose", flush=True)
+            wait_for_qdrant_ready(url, ready_message="Qdrant connected")
+            return "docker"
+        if qdrant_responds(url):
+            ok("Existing Qdrant service detected")
+            print("Qdrant mode: Existing service", flush=True)
+            ok("Qdrant connected")
+            return "existing"
+        raise_non_qdrant_port_error()
+
+    compose_command = find_compose_command()
+    print("Qdrant mode: Docker Compose", flush=True)
+    start_docker_qdrant(compose_command)
+    ok("Qdrant connected")
+    return "docker"
+
+
 def stop_mongodb() -> int:
     if is_port_in_use(MONGODB_PORT) and local_mongodb_responds():
         info("Local MongoDB was not stopped")
@@ -268,12 +418,15 @@ def stop_mongodb() -> int:
     if compose_command is None:
         return 0
 
+    if is_port_in_use(QDRANT_REST_PORT) and qdrant_responds(qdrant_url_from_env()) and not is_compose_qdrant_running(compose_command):
+        info("Existing Qdrant service was not stopped")
+
     process = run_process(compose_args(compose_command, "down"), cwd=ROOT_DIR, capture=True)
     print_process_output(process)
     if process.returncode != 0:
         error("Docker Compose down failed.")
         return process.returncode
-    ok("Docker Compose services stopped. Named MongoDB volume data was preserved.")
+    ok("Docker Compose services stopped. Named MongoDB and Qdrant volumes were preserved.")
     return 0
 
 
@@ -473,12 +626,178 @@ def run_check() -> int:
     return check_code
 
 
+def backend_python_version() -> str:
+    process = run_process([str(VENV_PYTHON), "--version"], capture=True)
+    if process.returncode != 0:
+        return "unknown"
+    return (process.stdout or process.stderr).strip().replace("Python ", "")
+
+
+def verify_ai_python_compatibility() -> None:
+    ensure_ai_layout()
+    version = backend_python_version()
+    info(f"Backend Python version: {version}")
+    process = run_process([str(VENV_PYTHON), "-m", "pip", "install", "--dry-run", "-r", str(AI_REQUIREMENTS_FILE)], cwd=ROOT_DIR, capture=True)
+    if process.returncode != 0:
+        print_process_output(process)
+        raise LauncherError(
+            "The selected AI dependencies are not compatible with this Python environment. "
+            "Install Python 3.12 or 3.13, create a new backend virtual environment with that Python, "
+            "and keep the existing project files and data in place."
+        )
+    ok("AI dependency versions are compatible with this Python environment")
+
+
+def install_ai_dependencies() -> None:
+    ensure_ai_layout()
+    info("Installing AI dependencies")
+    process = run_process([str(VENV_PYTHON), "-m", "pip", "install", "-r", str(AI_REQUIREMENTS_FILE)], cwd=ROOT_DIR, capture=False)
+    if process.returncode != 0:
+        raise LauncherError("AI dependency installation failed.")
+    ok("AI dependencies installed")
+
+
+def ensure_ai_environment_configuration() -> None:
+    ensure_environment_configuration()
+    missing = append_missing_env_values(AI_ENV_DEFAULTS)
+    if missing:
+        ok(f"AI environment keys added: {', '.join(missing)}")
+    else:
+        ok("AI configuration available")
+
+
+def run_ai_setup() -> int:
+    ensure_ai_environment_configuration()
+    verify_ai_python_compatibility()
+    install_ai_dependencies()
+    ensure_qdrant_ready()
+    return run_backend_module("scripts.check_ai_setup")
+
+
+def run_backend_module(module: str) -> int:
+    process = run_process([str(VENV_PYTHON), "-m", module], cwd=BACKEND_DIR, capture=False)
+    return process.returncode
+
+
+def run_ai_check() -> int:
+    ensure_environment_configuration()
+    if ai_enabled_from_env():
+        ensure_qdrant_ready()
+    else:
+        info("AI is disabled; Qdrant will not be started")
+    return run_backend_module("scripts.check_ai_setup")
+
+
+def run_ai_tests() -> int:
+    ensure_environment_configuration()
+    if ai_enabled_from_env():
+        ensure_qdrant_ready()
+    test_embedding = run_backend_module("scripts.test_embedding")
+    if test_embedding != 0:
+        return test_embedding
+    process = run_process(
+        [
+            str(VENV_PYTHON),
+            "-m",
+            "pytest",
+            "-q",
+            "tests/test_ai_config.py",
+            "tests/test_embedding_service.py",
+            "tests/test_qdrant_manager.py",
+            "tests/test_ai_health.py",
+        ],
+        cwd=BACKEND_DIR,
+        capture=False,
+    )
+    if process.returncode == 0:
+        ok("AI tests passed")
+    else:
+        error("AI tests failed.")
+    return process.returncode
+
+
+def dependency_status(package: str, module_name: str | None = None) -> str:
+    module = module_name or package
+    code = f"import importlib.util; raise SystemExit(0 if importlib.util.find_spec({module!r}) else 1)"
+    process = run_process([str(VENV_PYTHON), "-c", code], cwd=BACKEND_DIR, capture=True)
+    if process.returncode != 0:
+        return "not installed"
+    version_code = (
+        "import importlib.metadata as m\n"
+        f"print(m.version({package!r}))\n"
+    )
+    version = run_process([str(VENV_PYTHON), "-c", version_code], cwd=BACKEND_DIR, capture=True)
+    if version.returncode == 0:
+        return version.stdout.strip()
+    return "installed"
+
+
+def qdrant_collection_status() -> str:
+    code = (
+        "from app.config import get_settings\n"
+        "from app.vector.qdrant_manager import QdrantSetupError, get_qdrant_manager\n"
+        "settings = get_settings()\n"
+        "try:\n"
+        "    status = get_qdrant_manager(settings).get_collection_status()\n"
+        "    print(status.status)\n"
+        "except QdrantSetupError as exc:\n"
+        "    print(str(exc))\n"
+        "    raise SystemExit(1)\n"
+    )
+    process = run_process([str(VENV_PYTHON), "-c", code], cwd=BACKEND_DIR, capture=True)
+    if process.returncode == 0:
+        return process.stdout.strip() or "unknown"
+    return "unavailable"
+
+
+def report_status() -> int:
+    ensure_environment_configuration()
+    env_values = read_env_values()
+    print(f"Python version: {backend_python_version()}")
+    print(f"Backend virtual environment: {'ready' if VENV_PYTHON.exists() else 'missing'}")
+    print(f"FastAPI port {FASTAPI_PORT}: {'in use' if is_port_in_use(FASTAPI_PORT) else 'available'}")
+
+    if is_port_in_use(MONGODB_PORT):
+        if local_mongodb_responds():
+            print("MongoDB mode and status: Local Windows service, connected")
+        else:
+            print("MongoDB mode and status: Port occupied, not responding as MongoDB")
+    else:
+        print("MongoDB mode and status: Docker Compose available when started, port free")
+
+    qdrant_url = env_values.get("QDRANT_URL") or DEFAULT_QDRANT_URL
+    if is_port_in_use(QDRANT_REST_PORT):
+        if qdrant_responds(qdrant_url):
+            print("Qdrant mode and status: service detected, connected")
+        else:
+            print("Qdrant mode and status: port occupied, not responding as Qdrant")
+    else:
+        print("Qdrant mode and status: Docker Compose available when started, port free")
+
+    ai_enabled = ai_enabled_from_env()
+    print(f"AI enabled: {str(ai_enabled).lower()}")
+    print(f"torch: {dependency_status('torch')}")
+    print(f"torchvision: {dependency_status('torchvision')}")
+    print(f"open_clip_torch: {dependency_status('open_clip_torch', 'open_clip')}")
+    print(f"qdrant-client: {dependency_status('qdrant-client', 'qdrant_client')}")
+    print(f"OpenCLIP model: {env_values.get('OPENCLIP_MODEL_NAME') or AI_ENV_DEFAULTS['OPENCLIP_MODEL_NAME']}")
+    print(f"OpenCLIP pretrained: {env_values.get('OPENCLIP_PRETRAINED') or AI_ENV_DEFAULTS['OPENCLIP_PRETRAINED']}")
+    print(f"OpenCLIP device: {env_values.get('OPENCLIP_DEVICE') or AI_ENV_DEFAULTS['OPENCLIP_DEVICE']}")
+    print(f"Qdrant collection: {env_values.get('QDRANT_COLLECTION') or AI_ENV_DEFAULTS['QDRANT_COLLECTION']}")
+    print(f"Qdrant collection status: {qdrant_collection_status() if ai_enabled else 'disabled'}")
+    return 0
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Start the Museum Guide Phase 1 backend.")
+    parser = argparse.ArgumentParser(description="Start the Museum Guide backend.")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--test", action="store_true", help="Start MongoDB if needed and run backend tests.")
     mode.add_argument("--check", action="store_true", help="Run the existing backend setup check.")
     mode.add_argument("--stop", action="store_true", help="Stop Docker Compose without deleting MongoDB data.")
+    mode.add_argument("--setup-ai", action="store_true", help="Install AI dependencies, start Qdrant, and check AI setup.")
+    mode.add_argument("--check-ai", action="store_true", help="Start or detect Qdrant and run the AI setup check.")
+    mode.add_argument("--test-ai", action="store_true", help="Run the embedding script and AI-focused tests.")
+    mode.add_argument("--status", action="store_true", help="Report backend, MongoDB, Qdrant, and AI status.")
     return parser.parse_args()
 
 
@@ -494,15 +813,32 @@ def main() -> int:
         if args.stop:
             return stop_mongodb()
 
+        if args.status:
+            return report_status()
+
         if args.check:
             ensure_environment_configuration()
             return run_check()
+
+        if args.setup_ai:
+            return run_ai_setup()
+
+        if args.check_ai:
+            return run_ai_check()
+
+        if args.test_ai:
+            return run_ai_tests()
 
         if args.test:
             return run_tests()
 
         ensure_environment_configuration()
         ensure_mongodb_ready()
+        if ai_enabled_from_env():
+            ensure_qdrant_ready()
+            ok("AI configuration available")
+        else:
+            info("AI is disabled; Qdrant will not be started")
         ensure_admin_account()
         return start_fastapi()
     except LauncherError as exc:
