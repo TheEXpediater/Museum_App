@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings as AndroidSettings
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -68,6 +69,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -94,10 +96,17 @@ import com.example.museumapp.data.model.ArtifactMatchDto
 import com.example.museumapp.data.model.RecognitionResponseDto
 import com.example.museumapp.data.repository.AdminRepositoryContract
 import com.example.museumapp.ui.admin.components.MatchLevelChip
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+
+private const val RECOGNITION_CAMERA_TAG = "RecognitionCamera"
 
 @Composable
 fun RecognitionScreen(
@@ -225,33 +234,134 @@ private fun RecognitionGrantedContent(
     onViewIndexedArtifacts: () -> Unit,
     onViewArtifact: (String) -> Unit
 ) {
-    Crossfade(targetState = uiState.mode, label = "recognition-state") { mode ->
-        when (mode) {
-            RecognitionUiMode.Success -> RecognitionResult(
-                response = uiState.response,
-                onScanAgain = viewModel::scanAgain,
-                onViewArtifact = onViewArtifact,
-                onViewIndexedArtifacts = onViewIndexedArtifacts
-            )
-            RecognitionUiMode.NoMatch -> NoMatchCard(
-                message = uiState.response?.message,
-                onScanAgain = viewModel::scanAgain,
-                onViewIndexedArtifacts = onViewIndexedArtifacts
-            )
-            RecognitionUiMode.Failure -> FailureCard(
-                message = uiState.errorMessage ?: "Recognition failed. Please try again.",
-                onScanAgain = viewModel::scanAgain,
-                onOpenSystemStatus = onOpenSystemStatus
-            )
-            RecognitionUiMode.CameraInitializing,
-            RecognitionUiMode.CameraReady,
-            RecognitionUiMode.Capturing,
-            RecognitionUiMode.Processing -> CameraScannerCard(
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val controller = remember(context) {
+        LifecycleCameraController(context).apply {
+            cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+            setEnabledUseCases(CameraController.IMAGE_CAPTURE)
+        }
+    }
+    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    val captureScope = rememberCoroutineScope()
+
+    RecognitionCameraHost(
+        controller = controller,
+        lifecycleOwner = lifecycleOwner,
+        viewModel = viewModel,
+        cameraExecutor = cameraExecutor
+    )
+
+    Crossfade(targetState = uiState.mode.toRecognitionSurface(), label = "recognition-surface") { surface ->
+        when (surface) {
+            RecognitionSurface.Scanner -> CameraScannerCard(
                 uiState = uiState,
+                controller = controller,
+                cameraExecutor = cameraExecutor,
+                captureScope = captureScope,
                 viewModel = viewModel,
                 onPickGallery = onPickGallery,
                 onOpenSystemStatus = onOpenSystemStatus
             )
+            RecognitionSurface.Result -> {
+                if (uiState.mode == RecognitionUiMode.NoMatch) {
+                    NoMatchCard(
+                        message = uiState.response?.message,
+                        onScanAgain = viewModel::scanAgain,
+                        onViewIndexedArtifacts = onViewIndexedArtifacts
+                    )
+                } else {
+                    RecognitionResult(
+                        response = uiState.response,
+                        onScanAgain = viewModel::scanAgain,
+                        onViewArtifact = onViewArtifact,
+                        onViewIndexedArtifacts = onViewIndexedArtifacts
+                    )
+                }
+            }
+            RecognitionSurface.Failure -> FailureCard(
+                message = uiState.errorMessage ?: "Recognition failed. Please try again.",
+                onScanAgain = viewModel::scanAgain,
+                onOpenSystemStatus = onOpenSystemStatus
+            )
+        }
+    }
+}
+
+internal enum class RecognitionSurface {
+    Scanner,
+    Result,
+    Failure
+}
+
+internal fun RecognitionUiMode.toRecognitionSurface(): RecognitionSurface {
+    return when (this) {
+        RecognitionUiMode.CameraInitializing,
+        RecognitionUiMode.CameraReady,
+        RecognitionUiMode.Capturing,
+        RecognitionUiMode.Processing -> RecognitionSurface.Scanner
+        RecognitionUiMode.Success,
+        RecognitionUiMode.NoMatch -> RecognitionSurface.Result
+        RecognitionUiMode.Failure -> RecognitionSurface.Failure
+    }
+}
+
+internal fun keepsRecognitionCameraHost(previous: RecognitionUiMode, next: RecognitionUiMode): Boolean {
+    return previous.toRecognitionSurface() == RecognitionSurface.Scanner &&
+        next.toRecognitionSurface() == RecognitionSurface.Scanner
+}
+
+@Composable
+private fun RecognitionCameraHost(
+    controller: LifecycleCameraController,
+    lifecycleOwner: androidx.lifecycle.LifecycleOwner,
+    viewModel: RecognitionViewModel,
+    cameraExecutor: ExecutorService
+) {
+    val context = LocalContext.current
+
+    DisposableEffect(controller, lifecycleOwner) {
+        var disposed = false
+        val mainExecutor = ContextCompat.getMainExecutor(context)
+        viewModel.onCameraInitializing()
+        try {
+            controller.cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+            controller.setEnabledUseCases(CameraController.IMAGE_CAPTURE)
+            controller.bindToLifecycle(lifecycleOwner)
+            controller.initializationFuture.addListener(
+                {
+                    if (!disposed) {
+                        try {
+                            controller.initializationFuture.get()
+                            viewModel.onCameraReady(controller.cameraInfo?.hasFlashUnit() == true)
+                        } catch (exception: Exception) {
+                            logCameraBindFailure(exception, controller, viewModel, cameraExecutor)
+                            viewModel.onCameraError("The camera is not ready. Please scan again.")
+                        }
+                    }
+                },
+                mainExecutor
+            )
+        } catch (exception: SecurityException) {
+            logCameraBindFailure(exception, controller, viewModel, cameraExecutor)
+            viewModel.onCameraError("Camera permission was denied.")
+        } catch (exception: RuntimeException) {
+            logCameraBindFailure(exception, controller, viewModel, cameraExecutor)
+            viewModel.onCameraError("Camera capture failed. Please try again.")
+        }
+
+        onDispose {
+            disposed = true
+            runCatching { controller.cameraControl?.enableTorch(false) }
+            runCatching { controller.unbind() }
+        }
+    }
+
+    DisposableEffect(controller, cameraExecutor) {
+        onDispose {
+            runCatching { controller.cameraControl?.enableTorch(false) }
+            cameraExecutor.shutdown()
+            viewModel.setTorchEnabled(false)
         }
     }
 }
@@ -358,47 +468,16 @@ internal fun PermissionPromptCard(
 @Composable
 private fun CameraScannerCard(
     uiState: RecognitionUiState,
+    controller: LifecycleCameraController,
+    cameraExecutor: ExecutorService,
+    captureScope: CoroutineScope,
     viewModel: RecognitionViewModel,
     onPickGallery: () -> Unit,
     onOpenSystemStatus: () -> Unit
 ) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val controller = remember {
-        LifecycleCameraController(context).apply {
-            cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-            setEnabledUseCases(CameraController.IMAGE_CAPTURE)
-        }
-    }
-    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-
-    DisposableEffect(lifecycleOwner) {
-        viewModel.onCameraInitializing()
-        runCatching {
-            controller.cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-            controller.setEnabledUseCases(CameraController.IMAGE_CAPTURE)
-            controller.bindToLifecycle(lifecycleOwner)
-            viewModel.onCameraReady(controller.cameraInfo?.hasFlashUnit() == true)
-        }.onFailure {
-            viewModel.onCameraError("Camera capture failed. Please try again.")
-        }
-        onDispose {
-            runCatching { controller.cameraControl?.enableTorch(false) }
-            runCatching { controller.unbind() }
-        }
-    }
-
     LaunchedEffect(uiState.torchEnabled, uiState.hasFlashUnit) {
         if (uiState.hasFlashUnit) {
             runCatching { controller.cameraControl?.enableTorch(uiState.torchEnabled) }
-        }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            runCatching { controller.cameraControl?.enableTorch(false) }
-            cameraExecutor.shutdown()
-            viewModel.setTorchEnabled(false)
         }
     }
 
@@ -429,6 +508,7 @@ private fun CameraScannerCard(
                     uiState = uiState,
                     controller = controller,
                     cameraExecutor = cameraExecutor,
+                    captureScope = captureScope,
                     viewModel = viewModel
                 )
             }
@@ -452,6 +532,7 @@ private fun ScannerOverlay(
     uiState: RecognitionUiState,
     controller: LifecycleCameraController,
     cameraExecutor: ExecutorService,
+    captureScope: CoroutineScope,
     viewModel: RecognitionViewModel
 ) {
     val context = LocalContext.current
@@ -512,6 +593,7 @@ private fun ScannerOverlay(
                     context = context,
                     controller = controller,
                     cameraExecutor = cameraExecutor,
+                    captureScope = captureScope,
                     viewModel = viewModel
                 )
             },
@@ -610,11 +692,35 @@ private fun captureRecognitionImage(
     context: Context,
     controller: LifecycleCameraController,
     cameraExecutor: ExecutorService,
+    captureScope: CoroutineScope,
     viewModel: RecognitionViewModel
 ) {
     if (!viewModel.beginCameraCapture()) return
+    if (!cameraExecutor.canAcceptCaptureWork()) {
+        Log.e(
+            RECOGNITION_CAMERA_TAG,
+            "Capture rejected before file creation. executorShutdown=${cameraExecutor.isShutdown}, executorTerminated=${cameraExecutor.isTerminated}, " +
+                "cameraState=${cameraStateLabel(controller)}, recognitionState=${viewModel.uiState.value.mode}"
+        )
+        viewModel.onCaptureFailed("Camera capture failed. Please try again.")
+        return
+    }
+    if (!controller.initializationFuture.isDone) {
+        Log.e(
+            RECOGNITION_CAMERA_TAG,
+            "Capture requested before CameraX initialization completed. cameraState=${cameraStateLabel(controller)}, recognitionState=${viewModel.uiState.value.mode}"
+        )
+        viewModel.onCaptureFailed("The camera is not ready. Please scan again.")
+        return
+    }
     val rawFile = runCatching { RecognitionImagePreparer.createRawCaptureFile(context) }
-        .getOrElse {
+        .getOrElse { exception ->
+            Log.e(
+                RECOGNITION_CAMERA_TAG,
+                "Could not create capture file. cacheDir=${context.cacheDir.absolutePath}, cacheWritable=${context.cacheDir.canWrite()}, " +
+                    "recognitionState=${viewModel.uiState.value.mode}",
+                exception
+            )
             viewModel.onCaptureFailed("The captured image could not be processed.")
             return
         }
@@ -622,30 +728,139 @@ private fun captureRecognitionImage(
     val outputOptions = ImageCapture.OutputFileOptions.Builder(rawFile).build()
     val mainExecutor = ContextCompat.getMainExecutor(context)
 
-    controller.takePicture(
-        outputOptions,
-        cameraExecutor,
-        object : ImageCapture.OnImageSavedCallback {
-            override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                val preparedFile: File = try {
-                    RecognitionImagePreparer.prepareCapturedImage(context, rawFile)
-                } catch (exception: IllegalArgumentException) {
-                    mainExecutor.execute { viewModel.onCaptureFailed(exception.message ?: "The captured image could not be processed.", rawFile) }
-                    return
-                } catch (exception: RuntimeException) {
-                    RecognitionImagePreparer.deleteQuietly(rawFile)
-                    mainExecutor.execute { viewModel.onCaptureFailed("The captured image could not be processed.") }
-                    return
+    try {
+        controller.takePicture(
+            outputOptions,
+            cameraExecutor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    captureScope.launch(Dispatchers.IO) {
+                        val preparedFile: File = try {
+                            RecognitionImagePreparer.prepareCapturedImage(context, rawFile)
+                        } catch (exception: IllegalArgumentException) {
+                            Log.e(
+                                RECOGNITION_CAMERA_TAG,
+                                "Captured image preparation failed. ${captureFileDiagnostics(rawFile)}, " +
+                                    "cameraState=${cameraStateLabel(controller)}, recognitionState=${viewModel.uiState.value.mode}",
+                                exception
+                            )
+                            withContext(Dispatchers.Main.immediate) {
+                                viewModel.onCaptureFailed(exception.message ?: "The captured image could not be processed.", rawFile)
+                            }
+                            return@launch
+                        } catch (exception: RuntimeException) {
+                            Log.e(
+                                RECOGNITION_CAMERA_TAG,
+                                "Captured image preparation crashed. ${captureFileDiagnostics(rawFile)}, " +
+                                    "cameraState=${cameraStateLabel(controller)}, recognitionState=${viewModel.uiState.value.mode}",
+                                exception
+                            )
+                            withContext(Dispatchers.Main.immediate) {
+                                viewModel.onCaptureFailed("The captured image could not be processed.", rawFile)
+                            }
+                            return@launch
+                        }
+                        withContext(Dispatchers.Main.immediate) {
+                            viewModel.processCapturedFile(preparedFile)
+                        }
+                    }
                 }
-                mainExecutor.execute { viewModel.processCapturedFile(preparedFile) }
-            }
 
-            override fun onError(exception: ImageCaptureException) {
-                RecognitionImagePreparer.deleteQuietly(rawFile)
-                mainExecutor.execute { viewModel.onCaptureFailed("Camera capture failed. Please try again.") }
+                override fun onError(exception: ImageCaptureException) {
+                    logImageCaptureFailure(exception, rawFile, controller, viewModel, cameraExecutor)
+                    mainExecutor.execute {
+                        viewModel.onCaptureFailed(captureFailureUserMessage(exception.imageCaptureError), rawFile)
+                    }
+                }
             }
-        }
+        )
+    } catch (exception: SecurityException) {
+        logSynchronousCaptureFailure(exception, rawFile, controller, viewModel, cameraExecutor)
+        viewModel.onCaptureFailed("Camera permission was denied.", rawFile)
+    } catch (exception: RejectedExecutionException) {
+        logSynchronousCaptureFailure(exception, rawFile, controller, viewModel, cameraExecutor)
+        viewModel.onCaptureFailed("Camera capture failed. Please try again.", rawFile)
+    } catch (exception: IllegalStateException) {
+        logSynchronousCaptureFailure(exception, rawFile, controller, viewModel, cameraExecutor)
+        viewModel.onCaptureFailed("The camera is not ready. Please scan again.", rawFile)
+    } catch (exception: IllegalArgumentException) {
+        logSynchronousCaptureFailure(exception, rawFile, controller, viewModel, cameraExecutor)
+        viewModel.onCaptureFailed("The camera image could not be saved. Please try again.", rawFile)
+    }
+}
+
+internal fun ExecutorService.canAcceptCaptureWork(): Boolean = !isShutdown && !isTerminated
+
+internal fun captureFailureUserMessage(errorCode: Int): String {
+    return when (errorCode) {
+        ImageCapture.ERROR_FILE_IO -> "The camera image could not be saved. Please try again."
+        ImageCapture.ERROR_CAPTURE_FAILED -> "The camera could not capture the image. Hold the phone steady and try again."
+        ImageCapture.ERROR_CAMERA_CLOSED -> "The camera stopped before capture completed. Please scan again."
+        ImageCapture.ERROR_INVALID_CAMERA -> "The camera is not ready. Please scan again."
+        ImageCapture.ERROR_UNKNOWN -> "Camera capture failed. Please try again."
+        else -> "Camera capture failed. Please try again."
+    }
+}
+
+private fun logImageCaptureFailure(
+    exception: ImageCaptureException,
+    rawFile: File,
+    controller: LifecycleCameraController,
+    viewModel: RecognitionViewModel,
+    cameraExecutor: ExecutorService
+) {
+    Log.e(
+        RECOGNITION_CAMERA_TAG,
+        "Capture failed. code=${exception.imageCaptureError}, message=${exception.message}, cause=${exception.cause}, " +
+            "${captureFileDiagnostics(rawFile)}, cameraState=${cameraStateLabel(controller)}, " +
+            "recognitionState=${viewModel.uiState.value.mode}, executorShutdown=${cameraExecutor.isShutdown}, " +
+            "executorTerminated=${cameraExecutor.isTerminated}",
+        exception
     )
+}
+
+private fun logSynchronousCaptureFailure(
+    exception: Exception,
+    rawFile: File,
+    controller: LifecycleCameraController,
+    viewModel: RecognitionViewModel,
+    cameraExecutor: ExecutorService
+) {
+    Log.e(
+        RECOGNITION_CAMERA_TAG,
+        "Synchronous capture failure. message=${exception.message}, cause=${exception.cause}, " +
+            "${captureFileDiagnostics(rawFile)}, cameraState=${cameraStateLabel(controller)}, " +
+            "recognitionState=${viewModel.uiState.value.mode}, executorShutdown=${cameraExecutor.isShutdown}, " +
+            "executorTerminated=${cameraExecutor.isTerminated}",
+        exception
+    )
+}
+
+private fun logCameraBindFailure(
+    exception: Exception,
+    controller: LifecycleCameraController,
+    viewModel: RecognitionViewModel,
+    cameraExecutor: ExecutorService
+) {
+    Log.e(
+        RECOGNITION_CAMERA_TAG,
+        "Camera initialization failed. message=${exception.message}, cause=${exception.cause}, " +
+            "cameraState=${cameraStateLabel(controller)}, recognitionState=${viewModel.uiState.value.mode}, " +
+            "executorShutdown=${cameraExecutor.isShutdown}, executorTerminated=${cameraExecutor.isTerminated}",
+        exception
+    )
+}
+
+private fun captureFileDiagnostics(rawFile: File): String {
+    val parent = rawFile.parentFile
+    return "file=${rawFile.absolutePath}, exists=${rawFile.exists()}, parent=${parent?.absolutePath}, " +
+        "parentExists=${parent?.exists()}, parentWritable=${parent?.canWrite()}"
+}
+
+private fun cameraStateLabel(controller: LifecycleCameraController): String {
+    return runCatching {
+        controller.cameraInfo?.cameraState?.value?.toString()
+    }.getOrNull() ?: "unknown"
 }
 
 @Composable

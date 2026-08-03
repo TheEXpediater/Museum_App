@@ -15,7 +15,7 @@ object RecognitionImagePreparer {
     private const val JPEG_QUALITY = 90
 
     fun createRawCaptureFile(context: Context): File {
-        val directory = File(context.cacheDir, "recognition-captures").apply { mkdirs() }
+        val directory = recognitionCaptureDirectory(context)
         return File.createTempFile("recognition-raw-", ".jpg", directory)
     }
 
@@ -68,8 +68,19 @@ object RecognitionImagePreparer {
     }
 
     private fun createPreparedFile(context: Context): File {
-        val directory = File(context.cacheDir, "recognition-captures").apply { mkdirs() }
+        val directory = recognitionCaptureDirectory(context)
         return File.createTempFile("recognition-", ".jpg", directory)
+    }
+
+    private fun recognitionCaptureDirectory(context: Context): File {
+        val directory = File(context.cacheDir, "recognition-captures")
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw IllegalArgumentException("The captured image could not be processed.")
+        }
+        if (!directory.isDirectory || !directory.canWrite()) {
+            throw IllegalArgumentException("The captured image could not be processed.")
+        }
+        return directory
     }
 
     private fun File.rotationDegrees(): Int {

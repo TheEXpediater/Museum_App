@@ -75,10 +75,18 @@ class RecognitionViewModel(private val repository: AdminRepositoryContract) : Vi
 
     fun onCameraReady(hasFlashUnit: Boolean) {
         _uiState.update {
-            if (it.mode == RecognitionUiMode.Success || it.mode == RecognitionUiMode.NoMatch || it.mode == RecognitionUiMode.Processing) {
-                it.copy(hasFlashUnit = hasFlashUnit)
-            } else {
-                it.copy(mode = RecognitionUiMode.CameraReady, hasFlashUnit = hasFlashUnit, errorMessage = null)
+            when (it.mode) {
+                RecognitionUiMode.CameraInitializing,
+                RecognitionUiMode.CameraReady,
+                RecognitionUiMode.Failure -> it.copy(
+                    mode = RecognitionUiMode.CameraReady,
+                    hasFlashUnit = hasFlashUnit,
+                    errorMessage = null
+                )
+                RecognitionUiMode.Capturing,
+                RecognitionUiMode.Processing,
+                RecognitionUiMode.Success,
+                RecognitionUiMode.NoMatch -> it.copy(hasFlashUnit = hasFlashUnit)
             }
         }
     }
