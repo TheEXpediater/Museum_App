@@ -6,6 +6,7 @@ import mongomock
 from fastapi.testclient import TestClient
 
 from app.config import Settings
+from app.services.openclip_warmup_service import OpenCLIPWarmupSnapshot
 from app.utils import utc_now
 from app.vector.qdrant_manager import QdrantUnavailableError
 from main import create_app
@@ -14,7 +15,7 @@ from main import create_app
 JWT_SECRET = "test-secret-key-that-is-long-enough"
 
 
-def make_client(settings: Settings):
+def make_client(settings: Settings, *, warmup_service=None):
     database = mongomock.MongoClient()["museum_guide_test"]
     database.users.insert_one(
         {
@@ -27,7 +28,10 @@ def make_client(settings: Settings):
             "updated_at": utc_now(),
         }
     )
-    return TestClient(create_app(settings=settings, database=database))
+    app = create_app(settings=settings, database=database)
+    if warmup_service is not None:
+        app.state.openclip_warmup_service = warmup_service
+    return TestClient(app)
 
 
 def make_settings(**overrides) -> Settings:
@@ -43,9 +47,10 @@ def make_settings(**overrides) -> Settings:
 
 
 class FakeModelManager:
-    is_loaded = True
-    actual_device = "cpu"
-    embedding_dimension = 512
+    def __init__(self, *, loaded=True):
+        self.is_loaded = loaded
+        self.actual_device = "cpu" if loaded else None
+        self.embedding_dimension = 512 if loaded else None
 
 
 class FakeQdrantManager:
@@ -68,9 +73,25 @@ class FakeQdrantManager:
         return self.collection_status
 
 
-def patch_ai(monkeypatch, qdrant_manager):
+class FakeWarmupService:
+    def __init__(self, state: str):
+        self.state = state
+
+    def status(self):
+        return OpenCLIPWarmupSnapshot(
+            state=self.state,
+            message="status",
+            model_name="ViT-B-32",
+            pretrained="laion2b_s34b_b79k",
+            device="cpu" if self.state == "loaded" else "auto",
+            embedding_dimension=512 if self.state == "loaded" else None,
+            error="safe failure" if self.state == "failed" else None,
+        )
+
+
+def patch_ai(monkeypatch, qdrant_manager, *, model_loaded=True):
     monkeypatch.setattr("app.routes.ai.openclip_models.dependencies_available", lambda: True)
-    monkeypatch.setattr("app.routes.ai.openclip_models.get_model_manager", lambda _settings: FakeModelManager())
+    monkeypatch.setattr("app.routes.ai.openclip_models.get_model_manager", lambda _settings: FakeModelManager(loaded=model_loaded))
     monkeypatch.setattr("app.routes.ai.qdrant_vectors.dependency_available", lambda: True)
     monkeypatch.setattr("app.routes.ai.qdrant_vectors.get_qdrant_manager", lambda _settings: qdrant_manager)
 
@@ -90,6 +111,24 @@ def test_healthy_ai_state(monkeypatch):
     assert body["openclip"] == "loaded"
     assert body["qdrant"] == "connected"
     assert body["collection_status"] == "ready"
+
+
+def test_ai_health_maps_idle_loading_and_failed(monkeypatch):
+    for state, expected_status in [("idle", "healthy"), ("loading", "healthy"), ("failed", "degraded")]:
+        patch_ai(monkeypatch, FakeQdrantManager(), model_loaded=False)
+        with make_client(make_settings(), warmup_service=FakeWarmupService(state)) as client:
+            body = client.get("/api/v1/ai/health").json()
+        assert body["status"] == expected_status
+        assert body["openclip"] == state
+
+
+def test_ai_health_idle_uses_collection_vector_size_without_model_dimension(monkeypatch):
+    patch_ai(monkeypatch, FakeQdrantManager(), model_loaded=False)
+    with make_client(make_settings(), warmup_service=FakeWarmupService("idle")) as client:
+        body = client.get("/api/v1/ai/health").json()
+    assert body["openclip"] == "idle"
+    assert body["embedding_dimension"] is None
+    assert body["collection_vector_size"] == 512
 
 
 def test_qdrant_unavailable(monkeypatch):

@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     openclip_pretrained: str = Field(default="laion2b_s34b_b79k", alias="OPENCLIP_PRETRAINED")
     openclip_device: str = Field(default="auto", alias="OPENCLIP_DEVICE")
     ai_model_download_allowed: bool = Field(default=True, alias="AI_MODEL_DOWNLOAD_ALLOWED")
+    ai_warmup_on_startup: bool = Field(default=False, alias="AI_WARMUP_ON_STARTUP")
+    ai_recognition_strong_threshold: float = Field(default=0.45, alias="AI_RECOGNITION_STRONG_THRESHOLD")
+    ai_recognition_possible_threshold: float = Field(default=0.32, alias="AI_RECOGNITION_POSSIBLE_THRESHOLD")
+    ai_recognition_max_results: int = Field(default=5, alias="AI_RECOGNITION_MAX_RESULTS")
+    ai_recognition_vector_candidates: int = Field(default=25, alias="AI_RECOGNITION_VECTOR_CANDIDATES")
 
     @field_validator(
         "mongodb_url",
@@ -84,6 +89,28 @@ class Settings(BaseSettings):
         if normalized not in {"auto", "cpu", "cuda"}:
             raise ValueError("OPENCLIP_DEVICE must be one of: auto, cpu, cuda")
         return normalized
+
+    @field_validator("ai_recognition_strong_threshold", "ai_recognition_possible_threshold")
+    @classmethod
+    def validate_recognition_threshold_range(cls, value: float) -> float:
+        if value < -1.0 or value > 1.0:
+            raise ValueError("recognition thresholds must be between -1.0 and 1.0")
+        return value
+
+    @field_validator("ai_recognition_max_results", "ai_recognition_vector_candidates")
+    @classmethod
+    def recognition_limits_must_be_positive(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("recognition result limits must be greater than zero")
+        return value
+
+    @field_validator("ai_recognition_possible_threshold")
+    @classmethod
+    def validate_recognition_threshold_order(cls, value: float, info) -> float:
+        strong = info.data.get("ai_recognition_strong_threshold")
+        if strong is not None and strong <= value:
+            raise ValueError("AI_RECOGNITION_STRONG_THRESHOLD must be greater than AI_RECOGNITION_POSSIBLE_THRESHOLD")
+        return value
 
     @field_validator("jwt_secret_key")
     @classmethod

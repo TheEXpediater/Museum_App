@@ -41,6 +41,7 @@ def ensure_indexes(database: Database) -> None:
     database.artifacts.create_index([("name", ASCENDING)], name="idx_artifact_name")
     database.artifacts.create_index([("category", ASCENDING)], name="idx_artifact_category")
     database.artifacts.create_index([("created_at", DESCENDING)], name="idx_artifact_created_at")
+    database.artifacts.create_index([("ai_index_status", ASCENDING)], name="idx_artifact_ai_index_status")
 
 
 mongo_manager = MongoManager()

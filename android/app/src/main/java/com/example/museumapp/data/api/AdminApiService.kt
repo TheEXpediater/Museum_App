@@ -1,12 +1,19 @@
 package com.example.museumapp.data.api
 
+import com.example.museumapp.data.model.AiHealthResponse
+import com.example.museumapp.data.model.AiIndexAllResponse
+import com.example.museumapp.data.model.AiIndexResultResponse
+import com.example.museumapp.data.model.AiIndexStatusResponse
+import com.example.museumapp.data.model.AiWarmupResponse
 import com.example.museumapp.data.model.ArtifactDto
 import com.example.museumapp.data.model.ArtifactListResponse
+import com.example.museumapp.data.model.DashboardSummaryResponse
 import com.example.museumapp.data.model.DeleteResponse
 import com.example.museumapp.data.model.HealthResponse
 import com.example.museumapp.data.model.LoginRequest
 import com.example.museumapp.data.model.LoginResponse
 import com.example.museumapp.data.model.PrimaryImageRequest
+import com.example.museumapp.data.model.RecognitionResponseDto
 import com.example.museumapp.data.model.UserDto
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
@@ -25,11 +32,23 @@ interface AdminApiService {
     @GET("api/v1/health")
     suspend fun health(): HealthResponse
 
+    @GET("api/v1/ai/health")
+    suspend fun aiHealth(): AiHealthResponse
+
+    @POST("api/v1/ai/warmup")
+    suspend fun warmupAi(): AiWarmupResponse
+
+    @GET("api/v1/ai/warmup/status")
+    suspend fun warmupAiStatus(): AiWarmupResponse
+
     @POST("api/v1/auth/login")
     suspend fun login(@Body request: LoginRequest): LoginResponse
 
     @GET("api/v1/auth/me")
     suspend fun currentAdmin(): UserDto
+
+    @GET("api/v1/admin/dashboard")
+    suspend fun dashboardSummary(): DashboardSummaryResponse
 
     @GET("api/v1/artifacts")
     suspend fun listArtifacts(
@@ -79,4 +98,26 @@ interface AdminApiService {
 
     @DELETE("api/v1/artifacts/{artifactId}")
     suspend fun deleteArtifact(@Path("artifactId") artifactId: String): DeleteResponse
+
+    @Multipart
+    @POST("api/v1/ai/recognize")
+    suspend fun recognizeArtifact(
+        @Part image: MultipartBody.Part,
+        @Query("limit") limit: Int? = null
+    ): RecognitionResponseDto
+
+    @POST("api/v1/ai/index/artifacts/{artifactId}")
+    suspend fun indexArtifact(@Path("artifactId") artifactId: String): AiIndexResultResponse
+
+    @POST("api/v1/ai/index/all")
+    suspend fun indexAllArtifacts(): AiIndexAllResponse
+
+    @POST("api/v1/ai/index/failed")
+    suspend fun retryFailedIndexes(): AiIndexAllResponse
+
+    @POST("api/v1/ai/index/rebuild")
+    suspend fun rebuildArtifactIndex(): AiIndexAllResponse
+
+    @GET("api/v1/ai/index/status")
+    suspend fun indexStatus(): AiIndexStatusResponse
 }

@@ -9,12 +9,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,8 +25,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
-import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
@@ -31,6 +34,7 @@ import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -60,6 +64,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.museumapp.data.repository.AdminRepository
+import com.example.museumapp.ui.admin.components.ArtifactAiStatusChip
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,7 +107,7 @@ fun ArtifactFormScreen(
                 title = { Text(if (artifactId == null) "Add Artifact" else "Edit Artifact") },
                 navigationIcon = {
                     IconButton(onClick = ::handleBack) {
-                        Icon(Icons.Outlined.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -129,15 +134,19 @@ fun ArtifactFormScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 16.dp)
+                .imePadding()
+                .navigationBarsPadding(),
+            contentPadding = PaddingValues(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item { Spacer(Modifier.height(4.dp)) }
+            item { SectionTitle("Basic Information") }
             item {
                 FormTextField(
                     value = uiState.artifactCode,
                     onValueChange = viewModel::updateArtifactCode,
-                    label = "Artifact code",
+                    label = "Artifact code *",
                     error = uiState.fieldErrors["artifactCode"]
                 )
             }
@@ -145,7 +154,7 @@ fun ArtifactFormScreen(
                 FormTextField(
                     value = uiState.name,
                     onValueChange = viewModel::updateName,
-                    label = "Artifact name",
+                    label = "Artifact name *",
                     error = uiState.fieldErrors["name"]
                 )
             }
@@ -153,21 +162,24 @@ fun ArtifactFormScreen(
                 FormTextField(
                     value = uiState.description,
                     onValueChange = viewModel::updateDescription,
-                    label = "Description",
+                    label = "Description *",
                     error = uiState.fieldErrors["description"],
-                    minLines = 4
+                    minLines = 4,
+                    showCounter = true
                 )
             }
             item {
                 FormTextField(
                     value = uiState.category,
                     onValueChange = viewModel::updateCategory,
-                    label = "Category",
+                    label = "Category *",
                     error = uiState.fieldErrors["category"]
                 )
             }
+            item { SectionTitle("Historical Details") }
             item { FormTextField(uiState.origin, viewModel::updateOrigin, "Origin") }
             item { FormTextField(uiState.historicalPeriod, viewModel::updateHistoricalPeriod, "Historical period") }
+            item { SectionTitle("Physical Details") }
             item { FormTextField(uiState.material, viewModel::updateMaterial, "Material") }
             item { FormTextField(uiState.dimensions, viewModel::updateDimensions, "Dimensions") }
             item { FormTextField(uiState.condition, viewModel::updateCondition, "Condition") }
@@ -185,6 +197,7 @@ fun ArtifactFormScreen(
             }
             item {
                 ImageSectionHeader(
+                    imageCount = (if (uiState.replaceImages) 0 else uiState.existingImages.count { !it.markedForRemoval }) + uiState.selectedImages.size,
                     error = uiState.fieldErrors["images"],
                     onPickImages = {
                         photoPicker.launch(
@@ -213,6 +226,16 @@ fun ArtifactFormScreen(
                     )
                 }
             }
+            item {
+                AiIndexStatusSection(
+                    status = uiState.savedAiIndexStatus,
+                    indexedCount = uiState.savedAiIndexedImageCount,
+                    error = uiState.savedAiIndexError
+                )
+            }
+            if (uiState.successMessage != null) {
+                item { SuccessCard(uiState.successMessage.orEmpty()) }
+            }
             if (uiState.errorMessage != null) {
                 item { Text(uiState.errorMessage.orEmpty(), color = MaterialTheme.colorScheme.error) }
             }
@@ -229,7 +252,6 @@ fun ArtifactFormScreen(
                     }
                 }
             }
-            item { Spacer(Modifier.height(24.dp)) }
         }
     }
 
@@ -256,12 +278,22 @@ fun ArtifactFormScreen(
 }
 
 @Composable
+private fun SectionTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleLarge,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+}
+
+@Composable
 private fun FormTextField(
     value: String,
     onValueChange: (String) -> Unit,
     label: String,
     error: String? = null,
-    minLines: Int = 1
+    minLines: Int = 1,
+    showCounter: Boolean = false
 ) {
     OutlinedTextField(
         value = value,
@@ -271,13 +303,53 @@ private fun FormTextField(
         minLines = minLines,
         isError = error != null,
         supportingText = {
-            if (error != null) Text(error)
+            when {
+                error != null -> Text(error)
+                showCounter -> Text("${value.length} characters")
+            }
         }
     )
 }
 
 @Composable
+private fun AiIndexStatusSection(status: String?, indexedCount: Int?, error: String?) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("AI Index Status", style = MaterialTheme.typography.titleMedium)
+            ArtifactAiStatusChip(status)
+            Text(
+                text = "${indexedCount ?: 0} indexed image(s)",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (!error.isNullOrBlank()) {
+                Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SuccessCard(message: String) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Text(
+            text = message,
+            modifier = Modifier.padding(14.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onPrimaryContainer
+        )
+    }
+}
+
+@Composable
 private fun ImageSectionHeader(
+    imageCount: Int,
     error: String?,
     onPickImages: () -> Unit
 ) {
@@ -287,7 +359,7 @@ private fun ImageSectionHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("Images", style = MaterialTheme.typography.titleMedium)
+            Text("Images ($imageCount/5)", style = MaterialTheme.typography.titleLarge)
             OutlinedButton(onClick = onPickImages) {
                 Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = null)
                 Text("Select")

@@ -5,19 +5,29 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.museumapp.data.repository.AdminRepository
 import com.example.museumapp.data.session.AdminSession
+import com.example.museumapp.ui.admin.components.AdminShell
 import com.example.museumapp.ui.admin.artifactform.ArtifactFormScreen
 import com.example.museumapp.ui.admin.artifactlist.ArtifactListScreen
+import com.example.museumapp.ui.admin.dashboard.DashboardScreen
 import com.example.museumapp.ui.admin.login.AdminLoginScreen
+import com.example.museumapp.ui.admin.recognition.RecognitionScreen
+import com.example.museumapp.ui.admin.settings.SettingsScreen
+import com.example.museumapp.ui.admin.status.SystemStatusScreen
 
 object AdminRoutes {
     const val Login = "admin_login"
+    const val Dashboard = "admin_dashboard"
     const val ArtifactList = "admin_artifact_list"
+    const val AiRecognition = "admin_ai_recognition"
+    const val Settings = "admin_settings"
+    const val SystemStatus = "admin_system_status"
     const val ArtifactCreate = "admin_artifact_create"
     const val ArtifactEdit = "admin_artifact_edit/{artifactId}"
 
@@ -28,11 +38,13 @@ object AdminRoutes {
 fun AdminNavGraph(repository: AdminRepository) {
     val navController = rememberNavController()
     val session by repository.session.collectAsStateWithLifecycle(initialValue = AdminSession())
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
 
     LaunchedEffect(session.isAuthenticated) {
         if (session.isAuthenticated) {
             if (navController.currentDestination?.route == AdminRoutes.Login) {
-                navController.navigate(AdminRoutes.ArtifactList) {
+                navController.navigate(AdminRoutes.Dashboard) {
                     popUpTo(AdminRoutes.Login) { inclusive = true }
                     launchSingleTop = true
                 }
@@ -47,25 +59,67 @@ fun AdminNavGraph(repository: AdminRepository) {
 
     NavHost(
         navController = navController,
-        startDestination = if (session.isAuthenticated) AdminRoutes.ArtifactList else AdminRoutes.Login
+        startDestination = if (session.isAuthenticated) AdminRoutes.Dashboard else AdminRoutes.Login
     ) {
         composable(AdminRoutes.Login) {
             AdminLoginScreen(
                 repository = repository,
                 onLoginSuccess = {
-                    navController.navigate(AdminRoutes.ArtifactList) {
+                    navController.navigate(AdminRoutes.Dashboard) {
                         popUpTo(AdminRoutes.Login) { inclusive = true }
                         launchSingleTop = true
                     }
                 }
             )
         }
+        composable(AdminRoutes.Dashboard) {
+            AdminShell(
+                currentRoute = currentRoute,
+                onNavigate = { route -> navController.navigateTopLevel(route) }
+            ) { padding ->
+                DashboardScreen(
+                    repository = repository,
+                    padding = padding,
+                    onAddArtifact = { navController.navigate(AdminRoutes.ArtifactCreate) },
+                    onTestRecognition = { navController.navigateTopLevel(AdminRoutes.AiRecognition) }
+                )
+            }
+        }
         composable(AdminRoutes.ArtifactList) {
-            ArtifactListScreen(
-                repository = repository,
-                onAddArtifact = { navController.navigate(AdminRoutes.ArtifactCreate) },
-                onEditArtifact = { navController.navigate(AdminRoutes.editArtifact(it)) }
-            )
+            AdminShell(
+                currentRoute = currentRoute,
+                onNavigate = { route -> navController.navigateTopLevel(route) }
+            ) { padding ->
+                ArtifactListScreen(
+                    repository = repository,
+                    padding = padding,
+                    onAddArtifact = { navController.navigate(AdminRoutes.ArtifactCreate) },
+                    onEditArtifact = { navController.navigate(AdminRoutes.editArtifact(it)) }
+                )
+            }
+        }
+        composable(AdminRoutes.AiRecognition) {
+            AdminShell(
+                currentRoute = currentRoute,
+                onNavigate = { route -> navController.navigateTopLevel(route) }
+            ) { padding ->
+                RecognitionScreen(repository = repository, padding = padding)
+            }
+        }
+        composable(AdminRoutes.Settings) {
+            AdminShell(
+                currentRoute = currentRoute,
+                onNavigate = { route -> navController.navigateTopLevel(route) }
+            ) { padding ->
+                SettingsScreen(
+                    repository = repository,
+                    padding = padding,
+                    onSystemStatus = { navController.navigate(AdminRoutes.SystemStatus) { launchSingleTop = true } }
+                )
+            }
+        }
+        composable(AdminRoutes.SystemStatus) {
+            SystemStatusScreen(repository = repository, onBack = { navController.popBackStack() })
         }
         composable(AdminRoutes.ArtifactCreate) {
             ArtifactFormScreen(
@@ -84,5 +138,13 @@ fun AdminNavGraph(repository: AdminRepository) {
                 onClose = { navController.popBackStack() }
             )
         }
+    }
+}
+
+private fun androidx.navigation.NavHostController.navigateTopLevel(route: String) {
+    navigate(route) {
+        popUpTo(AdminRoutes.Dashboard) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
     }
 }

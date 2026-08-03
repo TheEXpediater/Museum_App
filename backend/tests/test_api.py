@@ -39,6 +39,7 @@ def test_context(tmp_path):
         jwt_secret_key=JWT_SECRET,
         upload_directory=str(tmp_path / "uploads" / "images"),
         max_image_size_mb=1,
+        ai_enabled=False,
         cors_origins="http://testserver",
         _env_file=None,
     )

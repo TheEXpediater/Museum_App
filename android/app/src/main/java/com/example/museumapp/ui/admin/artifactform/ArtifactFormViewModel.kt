@@ -39,6 +39,9 @@ data class ArtifactFormUiState(
     val isSubmitting: Boolean = false,
     val errorMessage: String? = null,
     val successMessage: String? = null,
+    val savedAiIndexStatus: String? = null,
+    val savedAiIndexedImageCount: Int? = null,
+    val savedAiIndexError: String? = null,
     val fieldErrors: Map<String, String> = emptyMap(),
     val hasUnsavedChanges: Boolean = false,
     val shouldClose: Boolean = false
@@ -73,7 +76,8 @@ class ArtifactFormViewModel(
                 replaceImages = !it.replaceImages,
                 primaryExistingPath = if (!it.replaceImages) null else it.primaryExistingPath,
                 hasUnsavedChanges = true,
-                errorMessage = null
+                errorMessage = null,
+                successMessage = null
             )
         }
     }
@@ -90,6 +94,7 @@ class ArtifactFormViewModel(
                     selectedImages = unique,
                     primarySelectedUri = state.primarySelectedUri ?: unique.firstOrNull(),
                     hasUnsavedChanges = true,
+                    successMessage = null,
                     errorMessage = null
                 )
             }
@@ -102,7 +107,8 @@ class ArtifactFormViewModel(
             it.copy(
                 selectedImages = remaining,
                 primarySelectedUri = if (it.primarySelectedUri == uri) remaining.firstOrNull() else it.primarySelectedUri,
-                hasUnsavedChanges = true
+                hasUnsavedChanges = true,
+                successMessage = null
             )
         }
     }
@@ -116,26 +122,28 @@ class ArtifactFormViewModel(
             state.copy(
                 existingImages = updated,
                 primaryExistingPath = if (removed && state.primaryExistingPath == path) null else state.primaryExistingPath,
-                hasUnsavedChanges = true
+                hasUnsavedChanges = true,
+                successMessage = null
             )
         }
     }
 
     fun selectPrimaryExisting(path: String) {
         _uiState.update {
-            it.copy(primaryExistingPath = path, primarySelectedUri = null, hasUnsavedChanges = true)
+            it.copy(primaryExistingPath = path, primarySelectedUri = null, hasUnsavedChanges = true, successMessage = null)
         }
     }
 
     fun selectPrimarySelected(uri: Uri) {
         _uiState.update {
-            it.copy(primarySelectedUri = uri, primaryExistingPath = null, hasUnsavedChanges = true)
+            it.copy(primarySelectedUri = uri, primaryExistingPath = null, hasUnsavedChanges = true, successMessage = null)
         }
     }
 
     fun save() {
         val state = _uiState.value
         if (state.isSubmitting) return
+        if (!state.hasUnsavedChanges && state.successMessage != null) return
         val errors = validate(state)
         if (errors.isNotEmpty()) {
             _uiState.update { it.copy(fieldErrors = errors, errorMessage = "Please check the highlighted fields.") }
@@ -188,31 +196,35 @@ class ArtifactFormViewModel(
 
     private fun finishSuccessfulSave(artifact: ArtifactDto, oldPaths: List<String>, selectedNewPrimary: Boolean) {
         if (artifactId == null || !selectedNewPrimary) {
-            _uiState.update {
-                it.copy(
-                    isSubmitting = false,
-                    successMessage = "Artifact saved.",
-                    hasUnsavedChanges = false,
-                    shouldClose = true
-                )
-            }
+            applySavedArtifact(artifact)
             return
         }
 
         viewModelScope.launch {
             val newPrimary = artifact.imagePaths.firstOrNull { it !in oldPaths }
             if (newPrimary == null) {
-                _uiState.update { it.copy(isSubmitting = false, successMessage = "Artifact saved.", hasUnsavedChanges = false, shouldClose = true) }
+                applySavedArtifact(artifact)
                 return@launch
             }
             when (val primaryResult = repository.setPrimaryImage(artifact.id, newPrimary)) {
-                is RepositoryResult.Success -> _uiState.update {
-                    it.copy(isSubmitting = false, successMessage = "Artifact saved.", hasUnsavedChanges = false, shouldClose = true)
-                }
+                is RepositoryResult.Success -> applySavedArtifact(primaryResult.data)
                 is RepositoryResult.Error -> _uiState.update {
                     it.copy(isSubmitting = false, errorMessage = primaryResult.message)
                 }
             }
+        }
+    }
+
+    private fun applySavedArtifact(artifact: ArtifactDto) {
+        _uiState.update {
+            it.copy(
+                isSubmitting = false,
+                successMessage = "Artifact saved.",
+                savedAiIndexStatus = artifact.aiIndexStatus,
+                savedAiIndexedImageCount = artifact.aiIndexedImageCount,
+                savedAiIndexError = artifact.aiIndexError,
+                hasUnsavedChanges = false
+            )
         }
     }
 
@@ -236,6 +248,9 @@ class ArtifactFormViewModel(
                                 ExistingImageUi(path = path, url = artifact.imageUrls.getOrElse(index) { "" })
                             },
                             primaryExistingPath = artifact.primaryImagePath,
+                            savedAiIndexStatus = artifact.aiIndexStatus,
+                            savedAiIndexedImageCount = artifact.aiIndexedImageCount,
+                            savedAiIndexError = artifact.aiIndexError,
                             isLoading = false
                         )
                     }
@@ -259,7 +274,14 @@ class ArtifactFormViewModel(
     }
 
     private fun updateField(transform: (ArtifactFormUiState) -> ArtifactFormUiState) {
-        _uiState.update { transform(it).copy(hasUnsavedChanges = true, errorMessage = null, fieldErrors = emptyMap()) }
+        _uiState.update {
+            transform(it).copy(
+                hasUnsavedChanges = true,
+                errorMessage = null,
+                successMessage = null,
+                fieldErrors = emptyMap()
+            )
+        }
     }
 
     private fun List<Uri>.orderedWithPrimary(primary: Uri?): List<Uri> {

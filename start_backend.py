@@ -47,6 +47,11 @@ AI_ENV_DEFAULTS = {
     "OPENCLIP_PRETRAINED": "laion2b_s34b_b79k",
     "OPENCLIP_DEVICE": "auto",
     "AI_MODEL_DOWNLOAD_ALLOWED": "true",
+    "AI_WARMUP_ON_STARTUP": "false",
+    "AI_RECOGNITION_STRONG_THRESHOLD": "0.45",
+    "AI_RECOGNITION_POSSIBLE_THRESHOLD": "0.32",
+    "AI_RECOGNITION_MAX_RESULTS": "5",
+    "AI_RECOGNITION_VECTOR_CANDIDATES": "25",
 }
 
 
@@ -674,8 +679,8 @@ def run_ai_setup() -> int:
     return run_backend_module("scripts.check_ai_setup")
 
 
-def run_backend_module(module: str) -> int:
-    process = run_process([str(VENV_PYTHON), "-m", module], cwd=BACKEND_DIR, capture=False)
+def run_backend_module(module: str, *module_args: str) -> int:
+    process = run_process([str(VENV_PYTHON), "-m", module, *module_args], cwd=BACKEND_DIR, capture=False)
     return process.returncode
 
 
@@ -705,6 +710,8 @@ def run_ai_tests() -> int:
             "tests/test_embedding_service.py",
             "tests/test_qdrant_manager.py",
             "tests/test_ai_health.py",
+            "tests/test_give2_ai.py",
+            "tests/test_openclip_warmup.py",
         ],
         cwd=BACKEND_DIR,
         capture=False,
@@ -714,6 +721,16 @@ def run_ai_tests() -> int:
     else:
         error("AI tests failed.")
     return process.returncode
+
+
+def run_ai_index(*, rebuild: bool) -> int:
+    ensure_environment_configuration()
+    if ai_enabled_from_env():
+        ensure_qdrant_ready()
+    else:
+        info("AI is disabled; Qdrant will not be started")
+    module_args = ["--rebuild"] if rebuild else []
+    return run_backend_module("scripts.index_existing_artifacts", *module_args)
 
 
 def dependency_status(package: str, module_name: str | None = None) -> str:
@@ -798,6 +815,8 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument("--check-ai", action="store_true", help="Start or detect Qdrant and run the AI setup check.")
     mode.add_argument("--test-ai", action="store_true", help="Run the embedding script and AI-focused tests.")
     mode.add_argument("--status", action="store_true", help="Report backend, MongoDB, Qdrant, and AI status.")
+    mode.add_argument("--index-ai", action="store_true", help="Index existing artifact images into Qdrant.")
+    parser.add_argument("--rebuild", action="store_true", help="With --index-ai, rebuild the configured artifact vector collection first.")
     return parser.parse_args()
 
 
@@ -809,6 +828,8 @@ def main() -> int:
         ensure_python_available()
 
         create_virtual_environment()
+        if args.rebuild and not args.index_ai:
+            raise LauncherError("--rebuild can only be used with --index-ai.")
 
         if args.stop:
             return stop_mongodb()
@@ -828,6 +849,9 @@ def main() -> int:
 
         if args.test_ai:
             return run_ai_tests()
+
+        if args.index_ai:
+            return run_ai_index(rebuild=args.rebuild)
 
         if args.test:
             return run_tests()

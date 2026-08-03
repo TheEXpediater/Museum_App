@@ -17,6 +17,10 @@ data class ArtifactDto(
     @Json(name = "image_urls") val imageUrls: List<String>,
     @Json(name = "primary_image_path") val primaryImagePath: String?,
     @Json(name = "primary_image_url") val primaryImageUrl: String?,
+    @Json(name = "ai_index_status") val aiIndexStatus: String? = null,
+    @Json(name = "ai_indexed_image_count") val aiIndexedImageCount: Int? = null,
+    @Json(name = "ai_indexed_at") val aiIndexedAt: String? = null,
+    @Json(name = "ai_index_error") val aiIndexError: String? = null,
     @Json(name = "created_by") val createdBy: String,
     @Json(name = "created_at") val createdAt: String,
     @Json(name = "updated_at") val updatedAt: String

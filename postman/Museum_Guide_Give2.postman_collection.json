@@ -1,0 +1,204 @@
+{
+  "info": {
+    "name": "Museum Guide Give 2 - AI Recognition and Admin",
+    "_postman_id": "a22ef159-4f4a-4a90-8f23-47c51f9df8b3",
+    "description": "Give 2 collection for health, admin auth, artifact CRUD, AI recognition, dashboard, and vector index maintenance.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "admin_email", "value": "admin@example.com" },
+    { "key": "admin_password", "value": "" },
+    { "key": "access_token", "value": "" },
+    { "key": "artifact_id", "value": "" },
+    { "key": "image_name", "value": "" },
+    { "key": "primary_image_path", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health check",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/health"
+      }
+    },
+    {
+      "name": "AI health",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/ai/health"
+      }
+    },
+    {
+      "name": "Admin login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.access_token) pm.collectionVariables.set('access_token', json.access_token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/auth/login"
+      }
+    },
+    {
+      "name": "Dashboard",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/admin/dashboard"
+      }
+    },
+    {
+      "name": "AI Warmup",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/ai/warmup"
+      }
+    },
+    {
+      "name": "AI Warmup Status",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/ai/warmup/status"
+      }
+    },
+    {
+      "name": "Create artifact",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.id) pm.collectionVariables.set('artifact_id', json.id);",
+              "if (json.image_paths && json.image_paths.length) {",
+              "  pm.collectionVariables.set('primary_image_path', json.image_paths[0]);",
+              "  pm.collectionVariables.set('image_name', json.image_paths[0].split('/').pop());",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "artifact_code", "value": "ART-0001", "type": "text" },
+            { "key": "name", "value": "Wooden Plow", "type": "text" },
+            { "key": "description", "value": "A traditional farming tool used by local farmers.", "type": "text" },
+            { "key": "category", "value": "Farm Tools", "type": "text" },
+            { "key": "origin", "value": "Pampanga", "type": "text" },
+            { "key": "historical_period", "value": "Early 20th Century", "type": "text" },
+            { "key": "material", "value": "Wood and metal", "type": "text" },
+            { "key": "dimensions", "value": "120 cm x 35 cm", "type": "text" },
+            { "key": "condition", "value": "Good", "type": "text" },
+            { "key": "images", "type": "file", "src": [] }
+          ]
+        },
+        "url": "{{base_url}}/api/v1/artifacts"
+      }
+    },
+    {
+      "name": "List artifacts",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/artifacts?page=1&page_size=20&sort=newest"
+      }
+    },
+    {
+      "name": "Recognize image",
+      "request": {
+        "method": "POST",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "image", "type": "file", "src": [] },
+            { "key": "limit", "value": "5", "type": "text", "disabled": true }
+          ]
+        },
+        "url": "{{base_url}}/api/v1/ai/recognize?limit=5"
+      }
+    },
+    {
+      "name": "Index one artifact",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/ai/index/artifacts/{{artifact_id}}"
+      }
+    },
+    {
+      "name": "Index all artifacts",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/ai/index/all"
+      }
+    },
+    {
+      "name": "Retry failed indexes",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/ai/index/failed"
+      }
+    },
+    {
+      "name": "Rebuild artifact vector collection",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/ai/index/rebuild"
+      }
+    },
+    {
+      "name": "Index status",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/ai/index/status"
+      }
+    }
+  ]
+}

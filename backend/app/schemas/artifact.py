@@ -16,6 +16,10 @@ class ArtifactResponse(BaseModel):
     image_urls: list[str] = Field(default_factory=list)
     primary_image_path: str | None = None
     primary_image_url: str | None = None
+    ai_index_status: str | None = None
+    ai_indexed_image_count: int | None = None
+    ai_indexed_at: str | None = None
+    ai_index_error: str | None = None
     created_by: str
     created_at: str
     updated_at: str

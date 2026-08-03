@@ -6,11 +6,18 @@ import android.provider.OpenableColumns
 import com.example.museumapp.BuildConfig
 import com.example.museumapp.data.api.AdminApiService
 import com.example.museumapp.data.api.NetworkErrorMessages
+import com.example.museumapp.data.model.AiHealthResponse
+import com.example.museumapp.data.model.AiIndexAllResponse
+import com.example.museumapp.data.model.AiIndexResultResponse
+import com.example.museumapp.data.model.AiIndexStatusResponse
+import com.example.museumapp.data.model.AiWarmupResponse
 import com.example.museumapp.data.model.ArtifactDto
 import com.example.museumapp.data.model.ArtifactListResponse
+import com.example.museumapp.data.model.DashboardSummaryResponse
 import com.example.museumapp.data.model.HealthResponse
 import com.example.museumapp.data.model.LoginRequest
 import com.example.museumapp.data.model.PrimaryImageRequest
+import com.example.museumapp.data.model.RecognitionResponseDto
 import com.example.museumapp.data.model.UserDto
 import com.example.museumapp.data.session.AdminSession
 import com.example.museumapp.data.session.SessionManager
@@ -24,19 +31,65 @@ import retrofit2.HttpException
 import java.io.IOException
 import java.util.UUID
 
+interface AdminRepositoryContract {
+    val session: Flow<AdminSession>
+    val backendBaseUrl: String
+
+    suspend fun checkHealth(): RepositoryResult<HealthResponse>
+    suspend fun aiHealth(): RepositoryResult<AiHealthResponse>
+    suspend fun warmupAi(): RepositoryResult<AiWarmupResponse>
+    suspend fun warmupAiStatus(): RepositoryResult<AiWarmupResponse>
+    suspend fun login(email: String, password: String): RepositoryResult<UserDto>
+    suspend fun logout()
+    suspend fun currentAdmin(): RepositoryResult<UserDto>
+    suspend fun dashboardSummary(): RepositoryResult<DashboardSummaryResponse>
+    suspend fun listArtifacts(
+        page: Int,
+        pageSize: Int,
+        search: String?,
+        category: String?,
+        sort: String
+    ): RepositoryResult<ArtifactListResponse>
+    suspend fun getArtifact(artifactId: String): RepositoryResult<ArtifactDto>
+    suspend fun createArtifact(form: ArtifactFormData, images: List<Uri>): RepositoryResult<ArtifactDto>
+    suspend fun updateArtifact(artifactId: String, form: ArtifactFormData, images: List<Uri>): RepositoryResult<ArtifactDto>
+    suspend fun addImages(artifactId: String, images: List<Uri>): RepositoryResult<ArtifactDto>
+    suspend fun removeImage(artifactId: String, imageName: String): RepositoryResult<ArtifactDto>
+    suspend fun setPrimaryImage(artifactId: String, imagePath: String): RepositoryResult<ArtifactDto>
+    suspend fun deleteArtifact(artifactId: String): RepositoryResult<String>
+    suspend fun recognizeArtifact(image: Uri, limit: Int? = null): RepositoryResult<RecognitionResponseDto>
+    suspend fun indexArtifact(artifactId: String): RepositoryResult<AiIndexResultResponse>
+    suspend fun indexAllArtifacts(): RepositoryResult<AiIndexAllResponse>
+    suspend fun retryFailedIndexes(): RepositoryResult<AiIndexAllResponse>
+    suspend fun rebuildArtifactIndex(): RepositoryResult<AiIndexAllResponse>
+    suspend fun indexStatus(): RepositoryResult<AiIndexStatusResponse>
+}
+
 class AdminRepository(
     private val api: AdminApiService,
     private val sessionManager: SessionManager,
     private val context: Context
-) {
-    val session: Flow<AdminSession> = sessionManager.session
-    val backendBaseUrl: String = BuildConfig.API_BASE_URL
+) : AdminRepositoryContract {
+    override val session: Flow<AdminSession> = sessionManager.session
+    override val backendBaseUrl: String = BuildConfig.API_BASE_URL
 
-    suspend fun checkHealth(): RepositoryResult<HealthResponse> = safeApiCall(clearSessionOnUnauthorized = false) {
+    override suspend fun checkHealth(): RepositoryResult<HealthResponse> = safeApiCall(clearSessionOnUnauthorized = false) {
         api.health()
     }
 
-    suspend fun login(email: String, password: String): RepositoryResult<UserDto> = safeApiCall(
+    override suspend fun aiHealth(): RepositoryResult<AiHealthResponse> = safeApiCall(clearSessionOnUnauthorized = false) {
+        api.aiHealth()
+    }
+
+    override suspend fun warmupAi(): RepositoryResult<AiWarmupResponse> = safeApiCall {
+        api.warmupAi()
+    }
+
+    override suspend fun warmupAiStatus(): RepositoryResult<AiWarmupResponse> = safeApiCall {
+        api.warmupAiStatus()
+    }
+
+    override suspend fun login(email: String, password: String): RepositoryResult<UserDto> = safeApiCall(
         clearSessionOnUnauthorized = false,
         unauthorizedMessage = "Invalid email or password."
     ) {
@@ -45,15 +98,19 @@ class AdminRepository(
         response.user
     }
 
-    suspend fun logout() {
+    override suspend fun logout() {
         sessionManager.clearSession()
     }
 
-    suspend fun currentAdmin(): RepositoryResult<UserDto> = safeApiCall {
+    override suspend fun currentAdmin(): RepositoryResult<UserDto> = safeApiCall {
         api.currentAdmin()
     }
 
-    suspend fun listArtifacts(
+    override suspend fun dashboardSummary(): RepositoryResult<DashboardSummaryResponse> = safeApiCall {
+        api.dashboardSummary()
+    }
+
+    override suspend fun listArtifacts(
         page: Int,
         pageSize: Int,
         search: String?,
@@ -63,15 +120,15 @@ class AdminRepository(
         api.listArtifacts(page, pageSize, search?.takeIf { it.isNotBlank() }, category?.takeIf { it.isNotBlank() }, sort)
     }
 
-    suspend fun getArtifact(artifactId: String): RepositoryResult<ArtifactDto> = safeApiCall {
+    override suspend fun getArtifact(artifactId: String): RepositoryResult<ArtifactDto> = safeApiCall {
         api.getArtifact(artifactId)
     }
 
-    suspend fun createArtifact(form: ArtifactFormData, images: List<Uri>): RepositoryResult<ArtifactDto> = safeApiCall {
+    override suspend fun createArtifact(form: ArtifactFormData, images: List<Uri>): RepositoryResult<ArtifactDto> = safeApiCall {
         api.createArtifact(form.toCreateParts(), imageParts(images))
     }
 
-    suspend fun updateArtifact(
+    override suspend fun updateArtifact(
         artifactId: String,
         form: ArtifactFormData,
         images: List<Uri>
@@ -79,20 +136,44 @@ class AdminRepository(
         api.updateArtifact(artifactId, form.toUpdateParts(), imageParts(images))
     }
 
-    suspend fun addImages(artifactId: String, images: List<Uri>): RepositoryResult<ArtifactDto> = safeApiCall {
+    override suspend fun addImages(artifactId: String, images: List<Uri>): RepositoryResult<ArtifactDto> = safeApiCall {
         api.addImages(artifactId, imageParts(images))
     }
 
-    suspend fun removeImage(artifactId: String, imageName: String): RepositoryResult<ArtifactDto> = safeApiCall {
+    override suspend fun removeImage(artifactId: String, imageName: String): RepositoryResult<ArtifactDto> = safeApiCall {
         api.removeImage(artifactId, imageName)
     }
 
-    suspend fun setPrimaryImage(artifactId: String, imagePath: String): RepositoryResult<ArtifactDto> = safeApiCall {
+    override suspend fun setPrimaryImage(artifactId: String, imagePath: String): RepositoryResult<ArtifactDto> = safeApiCall {
         api.setPrimaryImage(artifactId, PrimaryImageRequest(imagePath))
     }
 
-    suspend fun deleteArtifact(artifactId: String): RepositoryResult<String> = safeApiCall {
+    override suspend fun deleteArtifact(artifactId: String): RepositoryResult<String> = safeApiCall {
         api.deleteArtifact(artifactId).message
+    }
+
+    override suspend fun recognizeArtifact(image: Uri, limit: Int?): RepositoryResult<RecognitionResponseDto> = safeApiCall {
+        api.recognizeArtifact(singleImagePart("image", image), limit)
+    }
+
+    override suspend fun indexArtifact(artifactId: String): RepositoryResult<AiIndexResultResponse> = safeApiCall {
+        api.indexArtifact(artifactId)
+    }
+
+    override suspend fun indexAllArtifacts(): RepositoryResult<AiIndexAllResponse> = safeApiCall {
+        api.indexAllArtifacts()
+    }
+
+    override suspend fun retryFailedIndexes(): RepositoryResult<AiIndexAllResponse> = safeApiCall {
+        api.retryFailedIndexes()
+    }
+
+    override suspend fun rebuildArtifactIndex(): RepositoryResult<AiIndexAllResponse> = safeApiCall {
+        api.rebuildArtifactIndex()
+    }
+
+    override suspend fun indexStatus(): RepositoryResult<AiIndexStatusResponse> = safeApiCall {
+        api.indexStatus()
     }
 
     private suspend fun <T> safeApiCall(
@@ -124,6 +205,7 @@ class AdminRepository(
             413 -> "One of the selected images is too large."
             415 -> "Only JPEG, PNG, and WEBP images can be uploaded."
             422 -> "Please check the form values and try again."
+            503 -> "AI services are temporarily unavailable. Check OpenCLIP and Qdrant status."
             500 -> "The backend encountered an internal error. Try again after checking the server logs."
             else -> "The server could not complete the request."
         }
@@ -177,7 +259,10 @@ class AdminRepository(
     private fun String.asTextPart(): RequestBody = toRequestBody("text/plain".toMediaTypeOrNull())
 
     private fun imageParts(uris: List<Uri>): List<MultipartBody.Part> {
-        return uris.map { uri ->
+        return uris.map { uri -> singleImagePart("images", uri) }
+    }
+
+    private fun singleImagePart(partName: String, uri: Uri): MultipartBody.Part {
             val resolver = context.contentResolver
             val mimeType = resolver.getType(uri) ?: "image/jpeg"
             val displayName = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
@@ -194,7 +279,6 @@ class AdminRepository(
             val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
                 ?: throw IllegalArgumentException("Could not read a selected image.")
             val body = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
-            MultipartBody.Part.createFormData("images", filename, body)
-        }
+            return MultipartBody.Part.createFormData(partName, filename, body)
     }
 }

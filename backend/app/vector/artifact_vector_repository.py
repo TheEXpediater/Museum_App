@@ -69,6 +69,9 @@ class ArtifactVectorRepository:
             points_selector=models.PointIdsList(points=[point_id]),
         )
 
+    def delete_image_vector(self, artifact_id: str, image_path: str) -> None:
+        self.delete_point(point_id_for_image(artifact_id, image_path))
+
     def delete_artifact_vectors(self, artifact_id: str) -> None:
         from qdrant_client import models
 

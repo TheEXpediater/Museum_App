@@ -23,6 +23,7 @@ data class ArtifactListUiState(
     val sort: String = "newest",
     val page: Int = 1,
     val totalPages: Int = 0,
+    val totalItems: Int = 0,
     val deletingId: String? = null,
     val pendingDelete: ArtifactDto? = null
 )
@@ -113,6 +114,7 @@ class ArtifactListViewModel(private val repository: AdminRepository) : ViewModel
                         artifacts = if (reset) result.data.items else it.artifacts + result.data.items,
                         page = result.data.page,
                         totalPages = result.data.totalPages,
+                        totalItems = result.data.totalItems,
                         isLoading = false,
                         isRefreshing = false
                     )

@@ -48,3 +48,11 @@ def test_blank_collection_name_is_rejected():
 
 def test_blank_qdrant_api_key_becomes_none():
     assert make_settings(qdrant_api_key="").qdrant_api_key is None
+
+
+def test_recognition_thresholds_are_validated():
+    settings = make_settings(ai_recognition_strong_threshold=0.7, ai_recognition_possible_threshold=0.4)
+    assert settings.ai_recognition_strong_threshold == 0.7
+    assert settings.ai_recognition_possible_threshold == 0.4
+    with pytest.raises(ValueError):
+        make_settings(ai_recognition_strong_threshold=0.3, ai_recognition_possible_threshold=0.4)

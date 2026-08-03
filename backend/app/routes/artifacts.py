@@ -17,6 +17,7 @@ from app.services.artifact_validation import (
     select_paths_by_name_or_path,
     validate_image_count,
 )
+from app.services.artifact_indexing_service import ArtifactIndexingService
 from app.services.image_storage import cleanup_images, image_url_for_path, safe_delete_image, save_uploads
 from app.utils import to_object_id
 
@@ -49,6 +50,10 @@ def serialize_artifact(document: dict, request: Request) -> ArtifactResponse:
         image_urls=[image_url_for_path(base_url, path) for path in image_paths],
         primary_image_path=primary_image_path,
         primary_image_url=image_url_for_path(base_url, primary_image_path),
+        ai_index_status=document.get("ai_index_status"),
+        ai_indexed_image_count=document.get("ai_indexed_image_count"),
+        ai_indexed_at=serialize_datetime(document.get("ai_indexed_at")) if document.get("ai_indexed_at") else None,
+        ai_index_error=document.get("ai_index_error"),
         created_by=str(document.get("created_by", "")),
         created_at=serialize_datetime(document.get("created_at")),
         updated_at=serialize_datetime(document.get("updated_at")),
@@ -148,6 +153,7 @@ async def create_artifact(
         cleanup_images(image_paths, settings)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not create artifact.") from exc
 
+    artifact = ArtifactIndexingService.from_settings(settings).synchronize_after_create(request.app.state.database, artifact)
     return serialize_artifact(artifact, request)
 
 
@@ -223,6 +229,7 @@ async def update_artifact(
 
     for removed_path in removed_paths:
         safe_delete_image(removed_path, settings)
+    updated = ArtifactIndexingService.from_settings(settings).synchronize_after_update(database, existing, updated)
     return serialize_artifact(updated, request)
 
 
@@ -234,6 +241,7 @@ def delete_artifact(artifact_id: str, request: Request) -> DeleteResponse:
     if deleted is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact was not found.")
     cleanup_images(list(deleted.get("image_paths", [])), request.app.state.settings)
+    ArtifactIndexingService.from_settings(request.app.state.settings).delete_artifact_vectors(artifact_id)
     return DeleteResponse(message="Artifact deleted successfully.")
 
 
@@ -261,6 +269,7 @@ async def add_artifact_images(
     except PyMongoError as exc:
         cleanup_images(new_paths, settings)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not add images.") from exc
+    updated = ArtifactIndexingService.from_settings(settings).synchronize_after_update(database, existing, updated)
     return serialize_artifact(updated, request)
 
 
@@ -282,6 +291,7 @@ def remove_artifact_image(artifact_id: str, image_name: str, request: Request) -
     )
     for removed_path in removed_paths:
         safe_delete_image(removed_path, settings)
+    updated = ArtifactIndexingService.from_settings(settings).synchronize_after_update(database, existing, updated)
     return serialize_artifact(updated, request)
 
 

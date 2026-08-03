@@ -159,6 +159,21 @@ class QdrantManager:
         except Exception:
             return 0
 
+    def delete_collection_if_exists(self) -> bool:
+        self.ping()
+        if not self.collection_exists():
+            return False
+        try:
+            self.client.delete_collection(collection_name=self.settings.qdrant_collection)
+            return True
+        except Exception as exc:
+            raise QdrantUnavailableError("Could not delete the Qdrant collection.") from exc
+
+    def recreate_collection(self, vector_size: int) -> QdrantCollectionStatus:
+        self.delete_collection_if_exists()
+        self._create_collection(vector_size)
+        return self.get_collection_status(expected_vector_size=vector_size)
+
     def _create_collection(self, vector_size: int) -> None:
         try:
             from qdrant_client import models

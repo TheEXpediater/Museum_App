@@ -4,12 +4,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,11 +25,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Sort
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -38,12 +42,14 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,11 +68,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.museumapp.data.model.ArtifactDto
 import com.example.museumapp.data.repository.AdminRepository
+import com.example.museumapp.ui.admin.components.ArtifactAiStatusChip
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ArtifactListScreen(
     repository: AdminRepository,
+    padding: PaddingValues,
     onAddArtifact: () -> Unit,
     onEditArtifact: (String) -> Unit
 ) {
@@ -74,19 +81,7 @@ fun ArtifactListScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Artifacts") },
-                actions = {
-                    IconButton(onClick = viewModel::refresh, enabled = !uiState.isRefreshing) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = "Refresh")
-                    }
-                    IconButton(onClick = viewModel::logout) {
-                        Icon(Icons.Outlined.Logout, contentDescription = "Logout")
-                    }
-                }
-            )
-        },
+        modifier = Modifier.padding(padding),
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = onAddArtifact,
@@ -94,22 +89,22 @@ fun ArtifactListScreen(
                 text = { Text("Add Artifact") }
             )
         }
-    ) { padding ->
+    ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .background(MaterialTheme.colorScheme.background)
+                .padding(innerPadding)
                 .padding(horizontal = 16.dp)
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Spacer(Modifier.height(8.dp))
+            ListHeader(uiState, viewModel::refresh)
             SearchAndFilterRow(uiState, viewModel)
-            Spacer(Modifier.height(12.dp))
-            if (uiState.errorMessage != null) {
-                Text(uiState.errorMessage.orEmpty(), color = MaterialTheme.colorScheme.error)
-                Spacer(Modifier.height(8.dp))
-            }
             when {
                 uiState.isLoading -> LoadingState()
+                uiState.errorMessage != null && uiState.artifacts.isEmpty() -> ErrorState(uiState.errorMessage.orEmpty(), viewModel::refresh)
                 uiState.artifacts.isEmpty() -> EmptyState()
                 else -> ArtifactListContent(
                     uiState = uiState,
@@ -144,6 +139,31 @@ fun ArtifactListScreen(
 }
 
 @Composable
+private fun ListHeader(uiState: ArtifactListUiState, onRefresh: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column {
+            Text("Artifacts", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                text = "${uiState.totalItems} record(s)",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        IconButton(onClick = onRefresh, enabled = !uiState.isRefreshing) {
+            if (uiState.isRefreshing) {
+                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(Icons.Outlined.Refresh, contentDescription = "Refresh artifacts")
+            }
+        }
+    }
+}
+
+@Composable
 private fun SearchAndFilterRow(uiState: ArtifactListUiState, viewModel: ArtifactListViewModel) {
     var menuExpanded by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -163,13 +183,15 @@ private fun SearchAndFilterRow(uiState: ArtifactListUiState, viewModel: Artifact
                 onValueChange = viewModel::updateCategory,
                 modifier = Modifier.weight(1f),
                 label = { Text("Category") },
+                leadingIcon = { Icon(Icons.Outlined.FilterList, contentDescription = null) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { viewModel.applyFilters() })
             )
             Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(Icons.Outlined.MoreVert, contentDescription = "Sort")
+                OutlinedButton(onClick = { menuExpanded = true }, modifier = Modifier.heightIn(min = 56.dp)) {
+                    Icon(Icons.Outlined.Sort, contentDescription = null)
+                    Text(sortLabel(uiState.sort))
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                     SortOption("Newest", "newest", uiState.sort, viewModel) { menuExpanded = false }
@@ -178,9 +200,9 @@ private fun SearchAndFilterRow(uiState: ArtifactListUiState, viewModel: Artifact
                     SortOption("Name Z-A", "name_desc", uiState.sort, viewModel) { menuExpanded = false }
                 }
             }
-            Button(onClick = viewModel::applyFilters) {
-                Text("Apply")
-            }
+        }
+        Button(onClick = viewModel::applyFilters, modifier = Modifier.fillMaxWidth()) {
+            Text("Apply Filters")
         }
     }
 }
@@ -196,7 +218,7 @@ private fun SortOption(
     DropdownMenuItem(
         text = {
             Text(
-                text = if (selected == value) "$label selected" else label,
+                text = label,
                 fontWeight = if (selected == value) FontWeight.SemiBold else FontWeight.Normal
             )
         },
@@ -205,6 +227,13 @@ private fun SortOption(
             closeMenu()
         }
     )
+}
+
+private fun sortLabel(value: String): String = when (value) {
+    "oldest" -> "Oldest"
+    "name_asc" -> "A-Z"
+    "name_desc" -> "Z-A"
+    else -> "Newest"
 }
 
 @Composable
@@ -216,10 +245,14 @@ private fun ArtifactListContent(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        uiState.errorMessage?.let { message ->
+            item { Text(message, color = MaterialTheme.colorScheme.error) }
+        }
         items(uiState.artifacts, key = { it.id }) { artifact ->
-            ArtifactRow(
+            ArtifactCard(
                 artifact = artifact,
                 deleting = uiState.deletingId == artifact.id,
                 onEdit = { onEditArtifact(artifact.id) },
@@ -230,29 +263,26 @@ private fun ArtifactListContent(
             item {
                 Button(
                     onClick = onLoadMore,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 88.dp)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Load More")
                 }
             }
-        } else {
-            item { Spacer(Modifier.height(88.dp)) }
         }
     }
 }
 
 @Composable
-private fun ArtifactRow(
+private fun ArtifactCard(
     artifact: ArtifactDto,
     deleting: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
+    var menuExpanded by remember { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Row(
@@ -261,19 +291,55 @@ private fun ArtifactRow(
         ) {
             ArtifactThumbnail(artifact.primaryImageUrl)
             Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(artifact.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(artifact.artifactCode, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                Text(artifact.category, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ) {
+                        Text(
+                            artifact.artifactCode,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                    Text(
+                        artifact.category,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                ArtifactAiStatusChip(artifact.aiIndexStatus)
             }
-            IconButton(onClick = onEdit) {
-                Icon(Icons.Outlined.Edit, contentDescription = "Edit ${artifact.name}")
-            }
-            IconButton(onClick = onDelete, enabled = !deleting) {
-                if (deleting) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(Icons.Outlined.Delete, contentDescription = "Delete ${artifact.name}")
+            Box {
+                IconButton(onClick = { menuExpanded = true }, enabled = !deleting) {
+                    if (deleting) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Outlined.MoreVert, contentDescription = "Artifact actions")
+                    }
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Edit") },
+                        leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                        onClick = {
+                            menuExpanded = false
+                            onEdit()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                        onClick = {
+                            menuExpanded = false
+                            onDelete()
+                        }
+                    )
                 }
             }
         }
@@ -284,8 +350,8 @@ private fun ArtifactRow(
 private fun ArtifactThumbnail(imageUrl: String?) {
     Box(
         modifier = Modifier
-            .size(72.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .size(84.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
     ) {
@@ -306,14 +372,36 @@ private fun ArtifactThumbnail(imageUrl: String?) {
 
 @Composable
 private fun LoadingState() {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator()
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        Text("Loading artifacts", style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun ErrorState(message: String, onRetry: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(message, color = MaterialTheme.colorScheme.onErrorContainer)
+            Button(onClick = onRetry) {
+                Text("Retry")
+            }
+        }
     }
 }
 
 @Composable
 private fun EmptyState() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("No artifacts found.", style = MaterialTheme.typography.bodyLarge)
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Outlined.Image, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("No artifacts found.", style = MaterialTheme.typography.bodyLarge)
+        }
     }
 }

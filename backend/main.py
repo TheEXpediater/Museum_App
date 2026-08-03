@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import logging
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -15,11 +16,13 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import Settings, get_settings
 from app.database.mongodb import MongoConnectionError, ensure_indexes, mongo_manager
-from app.routes import ai, artifacts, auth
+from app.routes import admin, ai, artifacts, auth
 from app.services.image_storage import ensure_upload_directory
+from app.services.openclip_warmup_service import get_openclip_warmup_service
 
 
 API_PREFIX = "/api/v1"
+logger = logging.getLogger(__name__)
 
 
 def create_app(settings: Settings | None = None, database=None) -> FastAPI:
@@ -61,6 +64,11 @@ def create_app(settings: Settings | None = None, database=None) -> FastAPI:
             app.state.database = mongo_manager.connect(settings)
         else:
             ensure_indexes(app.state.database)
+        if settings.ai_enabled and settings.ai_warmup_on_startup:
+            try:
+                get_openclip_warmup_service(settings).start()
+            except Exception:
+                logger.exception("Failed to start OpenCLIP warmup during application startup.")
 
     @app.on_event("shutdown")
     def shutdown() -> None:
@@ -86,6 +94,7 @@ def create_app(settings: Settings | None = None, database=None) -> FastAPI:
     app.include_router(auth.router, prefix=API_PREFIX)
     app.include_router(artifacts.router, prefix=API_PREFIX)
     app.include_router(ai.router, prefix=API_PREFIX)
+    app.include_router(admin.router, prefix=API_PREFIX)
 
     ensure_upload_directory(settings)
     app.mount("/uploads", StaticFiles(directory=str(settings.upload_root_path), check_dir=False), name="uploads")
