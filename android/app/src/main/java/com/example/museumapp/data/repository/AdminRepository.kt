@@ -25,9 +25,11 @@ import kotlinx.coroutines.flow.Flow
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import retrofit2.HttpException
+import java.io.File
 import java.io.IOException
 import java.util.UUID
 
@@ -58,6 +60,7 @@ interface AdminRepositoryContract {
     suspend fun setPrimaryImage(artifactId: String, imagePath: String): RepositoryResult<ArtifactDto>
     suspend fun deleteArtifact(artifactId: String): RepositoryResult<String>
     suspend fun recognizeArtifact(image: Uri, limit: Int? = null): RepositoryResult<RecognitionResponseDto>
+    suspend fun recognizeArtifactFile(image: File, limit: Int? = null): RepositoryResult<RecognitionResponseDto>
     suspend fun indexArtifact(artifactId: String): RepositoryResult<AiIndexResultResponse>
     suspend fun indexAllArtifacts(): RepositoryResult<AiIndexAllResponse>
     suspend fun retryFailedIndexes(): RepositoryResult<AiIndexAllResponse>
@@ -154,6 +157,10 @@ class AdminRepository(
 
     override suspend fun recognizeArtifact(image: Uri, limit: Int?): RepositoryResult<RecognitionResponseDto> = safeApiCall {
         api.recognizeArtifact(singleImagePart("image", image), limit)
+    }
+
+    override suspend fun recognizeArtifactFile(image: File, limit: Int?): RepositoryResult<RecognitionResponseDto> = safeApiCall {
+        api.recognizeArtifact(fileImagePart("image", image), limit)
     }
 
     override suspend fun indexArtifact(artifactId: String): RepositoryResult<AiIndexResultResponse> = safeApiCall {
@@ -263,22 +270,30 @@ class AdminRepository(
     }
 
     private fun singleImagePart(partName: String, uri: Uri): MultipartBody.Part {
-            val resolver = context.contentResolver
-            val mimeType = resolver.getType(uri) ?: "image/jpeg"
-            val displayName = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-                ?.use { cursor ->
-                    val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
-                }
-            val extension = when (mimeType) {
-                "image/png" -> ".png"
-                "image/webp" -> ".webp"
-                else -> ".jpg"
+        val resolver = context.contentResolver
+        val mimeType = resolver.getType(uri) ?: "image/jpeg"
+        val displayName = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
             }
-            val filename = displayName ?: "selected-${UUID.randomUUID()}$extension"
-            val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: throw IllegalArgumentException("Could not read a selected image.")
-            val body = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
-            return MultipartBody.Part.createFormData(partName, filename, body)
+        val extension = when (mimeType) {
+            "image/png" -> ".png"
+            "image/webp" -> ".webp"
+            else -> ".jpg"
+        }
+        val filename = displayName ?: "selected-${UUID.randomUUID()}$extension"
+        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: throw IllegalArgumentException("Could not read a selected image.")
+        val body = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
+        return MultipartBody.Part.createFormData(partName, filename, body)
+    }
+
+    private fun fileImagePart(partName: String, file: File): MultipartBody.Part {
+        if (!file.isFile || file.length() <= 0L) {
+            throw IllegalArgumentException("The captured image could not be processed.")
+        }
+        val body = file.asRequestBody("image/jpeg".toMediaTypeOrNull())
+        return MultipartBody.Part.createFormData(partName, file.name, body)
     }
 }

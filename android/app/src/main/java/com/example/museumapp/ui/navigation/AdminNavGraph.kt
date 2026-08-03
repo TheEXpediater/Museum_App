@@ -13,6 +13,7 @@ import androidx.navigation.navArgument
 import com.example.museumapp.data.repository.AdminRepository
 import com.example.museumapp.data.session.AdminSession
 import com.example.museumapp.ui.admin.components.AdminShell
+import com.example.museumapp.ui.admin.artifactdetails.ArtifactDetailsScreen
 import com.example.museumapp.ui.admin.artifactform.ArtifactFormScreen
 import com.example.museumapp.ui.admin.artifactlist.ArtifactListScreen
 import com.example.museumapp.ui.admin.dashboard.DashboardScreen
@@ -30,8 +31,10 @@ object AdminRoutes {
     const val SystemStatus = "admin_system_status"
     const val ArtifactCreate = "admin_artifact_create"
     const val ArtifactEdit = "admin_artifact_edit/{artifactId}"
+    const val ArtifactDetails = "admin_artifact_details/{artifactId}"
 
     fun editArtifact(artifactId: String): String = "admin_artifact_edit/$artifactId"
+    fun artifactDetails(artifactId: String): String = "admin_artifact_details/$artifactId"
 }
 
 @Composable
@@ -103,7 +106,17 @@ fun AdminNavGraph(repository: AdminRepository) {
                 currentRoute = currentRoute,
                 onNavigate = { route -> navController.navigateTopLevel(route) }
             ) { padding ->
-                RecognitionScreen(repository = repository, padding = padding)
+                RecognitionScreen(
+                    repository = repository,
+                    padding = padding,
+                    onOpenSystemStatus = { navController.navigate(AdminRoutes.SystemStatus) { launchSingleTop = true } },
+                    onViewIndexedArtifacts = { navController.navigateTopLevel(AdminRoutes.ArtifactList) },
+                    onViewArtifact = { artifactId ->
+                        navController.navigate(AdminRoutes.artifactDetails(artifactId)) {
+                            launchSingleTop = true
+                        }
+                    }
+                )
             }
         }
         composable(AdminRoutes.Settings) {
@@ -120,6 +133,21 @@ fun AdminNavGraph(repository: AdminRepository) {
         }
         composable(AdminRoutes.SystemStatus) {
             SystemStatusScreen(repository = repository, onBack = { navController.popBackStack() })
+        }
+        composable(
+            route = AdminRoutes.ArtifactDetails,
+            arguments = listOf(navArgument("artifactId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            ArtifactDetailsScreen(
+                repository = repository,
+                artifactId = backStackEntry.arguments?.getString("artifactId"),
+                onBack = { navController.popBackStack() },
+                onEditArtifact = { artifactId ->
+                    navController.navigate(AdminRoutes.editArtifact(artifactId)) {
+                        launchSingleTop = true
+                    }
+                }
+            )
         }
         composable(AdminRoutes.ArtifactCreate) {
             ArtifactFormScreen(

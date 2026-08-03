@@ -18,6 +18,7 @@ import com.example.museumapp.data.repository.RepositoryResult
 import com.example.museumapp.data.session.AdminSession
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import java.io.File
 
 class FakeAdminRepository : AdminRepositoryContract {
     val sessionState = MutableStateFlow(
@@ -84,6 +85,7 @@ class FakeAdminRepository : AdminRepositoryContract {
     )
 
     var recognizedUri: Uri? = null
+    var recognizedFile: File? = null
     var logoutCalled = false
     var warmupCalls = 0
     var warmupStatusCalls = 0
@@ -115,6 +117,10 @@ class FakeAdminRepository : AdminRepositoryContract {
     override suspend fun deleteArtifact(artifactId: String): RepositoryResult<String> = RepositoryResult.Error("unused")
     override suspend fun recognizeArtifact(image: Uri, limit: Int?): RepositoryResult<RecognitionResponseDto> {
         recognizedUri = image
+        return recognitionResult
+    }
+    override suspend fun recognizeArtifactFile(image: File, limit: Int?): RepositoryResult<RecognitionResponseDto> {
+        recognizedFile = image
         return recognitionResult
     }
     override suspend fun indexArtifact(artifactId: String): RepositoryResult<AiIndexResultResponse> = RepositoryResult.Error("unused")
