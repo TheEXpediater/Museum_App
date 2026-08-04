@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import Settings, get_settings
 from app.database.mongodb import MongoConnectionError, ensure_indexes, mongo_manager
-from app.routes import admin, ai, artifacts, auth
+from app.routes import admin, ai, artifacts, auth, public, student, visitor
 from app.services.image_storage import ensure_upload_directory
 from app.services.openclip_warmup_service import get_openclip_warmup_service
 
@@ -48,9 +48,16 @@ def create_app(settings: Settings | None = None, database=None) -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(_: Request, exc: RequestValidationError):
+        errors = []
+        for error in exc.errors():
+            cleaned_error = dict(error)
+            context = cleaned_error.get("ctx")
+            if isinstance(context, dict) and "error" in context:
+                cleaned_error["ctx"] = {**context, "error": str(context["error"])}
+            errors.append(cleaned_error)
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"detail": "Invalid request data.", "errors": exc.errors()},
+            content={"detail": "Invalid request data.", "errors": errors},
         )
 
     @app.exception_handler(MongoConnectionError)
@@ -92,6 +99,10 @@ def create_app(settings: Settings | None = None, database=None) -> FastAPI:
         }
 
     app.include_router(auth.router, prefix=API_PREFIX)
+    app.include_router(visitor.router, prefix=API_PREFIX)
+    app.include_router(student.router, prefix=API_PREFIX)
+    app.include_router(public.public_router, prefix=API_PREFIX)
+    app.include_router(public.visitor_artifact_router, prefix=API_PREFIX)
     app.include_router(artifacts.router, prefix=API_PREFIX)
     app.include_router(ai.router, prefix=API_PREFIX)
     app.include_router(admin.router, prefix=API_PREFIX)

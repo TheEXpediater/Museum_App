@@ -9,7 +9,15 @@ import okhttp3.Response
 class AuthInterceptor(private val sessionManager: SessionManager) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val isPublicEndpoint = request.url.encodedPath in setOf("/api/v1/auth/login", "/api/v1/health")
+        val path = request.url.encodedPath
+        val isPublicEndpoint = path in setOf(
+            "/api/v1/auth/login",
+            "/api/v1/health",
+            "/api/v1/ai/health",
+            "/api/v1/visitor/guest-session",
+            "/api/v1/student/register",
+            "/api/v1/student/login"
+        ) || path.startsWith("/api/v1/public/")
         val requestBuilder = request.newBuilder()
         if (!isPublicEndpoint) {
             val session = runBlocking { sessionManager.session.first() }

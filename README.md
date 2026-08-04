@@ -2,7 +2,142 @@
 
 Give 2 implements the Admin Artifact Management System with AI image recognition: secure admin login, JWT session handling, artifact CRUD, multipart image upload, local image storage, OpenCLIP embeddings, Qdrant vector search, artifact matching, AI maintenance tools, and green Material 3 Android admin screens.
 
-Out of scope for Give 2: visitor camera scanning workflow, visitor artifact information flow, 3D model viewing, visitor navigation, visitor analytics, and reports. Those belong to Give 3 or later.
+Give 3 adds a separate guest and student visitor experience inside the same Android app and FastAPI backend. Fresh installs open visitor onboarding instead of administrator login. The completed administrator application, administrator navigation, artifact management, OpenCLIP setup, Qdrant indexing, camera test, System Status, and Settings remain separate and preserved.
+
+Out of scope for this phase: continuous/video recognition, face recognition, registrar-backed Student ID verification, email verification, password reset, visitor analytics beyond guest session records, 3D artifacts, social comments, and admin authoring screens for news/articles.
+
+## Visitor Application
+
+Startup routing uses DataStore state for onboarding completion and the active account type:
+
+```text
+No session + onboarding incomplete -> Visitor Onboarding
+No session + onboarding complete   -> Visitor Entry
+guest or student session           -> Visitor Home
+admin session                      -> existing Administrator app
+```
+
+Account types are `guest`, `student`, and `admin`. Guest and student sessions use the same app token store as admin sessions with an `account_type` marker, but onboarding completion is kept separately so logout and token expiry do not reset onboarding.
+
+Visitor screens:
+
+```text
+Onboarding
+Visitor Entry
+Guest Information
+Student Registration
+Student Login
+Visitor Home
+Artifacts / Facts and Articles / Museum Information
+Visitor Artifact Details
+AI Scan bottom sheet
+Visitor Camera Scan
+Visitor Settings
+```
+
+Visitor bottom navigation is separate from the administrator shell:
+
+```text
+Home | Artifacts | raised center Scan action | Settings
+```
+
+The center Scan action opens a Material 3 bottom sheet with visitor-friendly readiness text. It does not expose OpenCLIP, Qdrant, reindexing, model dimensions, System Status, or other administrator AI controls. The camera scan reuses the existing recognition ViewModel state machine, image preparation helper, Retrofit client, multipart upload path, and `/api/v1/ai/recognize` backend pipeline.
+
+Visitor Home shows latest published news, active announcements, featured/recent artifacts, and backend-configured museum information. Missing museum details are shown as `To be configured.` No official hours, address, contact details, coordinates, statistics, PSAU seal, or exact-building claims are invented.
+
+## Visitor Assets
+
+The removable source folder `visitor_images_source` was copied into Android runtime assets:
+
+```text
+android/app/src/main/assets/visitor_ui/illustrations/onboarding_welcome.webp
+android/app/src/main/assets/visitor_ui/illustrations/onboarding_explore.webp
+android/app/src/main/assets/visitor_ui/illustrations/onboarding_ai_scan.webp
+android/app/src/main/assets/visitor_ui/illustrations/auth_guest_student.webp
+android/app/src/main/assets/visitor_ui/illustrations/home_museum_hero.webp
+android/app/src/main/assets/visitor_ui/illustrations/artifacts_facts_articles.webp
+android/app/src/main/assets/visitor_ui/illustrations/museum_location.webp
+android/app/src/main/assets/visitor_ui/illustrations/news_announcements.webp
+android/app/src/main/assets/visitor_ui/icons/psau_museum_app_logo.webp
+android/app/src/main/assets/visitor_ui/icons/ai_scan_icon.webp
+```
+
+Runtime image loading uses Coil asset URIs from `VisitorAssets`, for example:
+
+```text
+file:///android_asset/visitor_ui/illustrations/onboarding_welcome.webp
+file:///android_asset/visitor_ui/icons/ai_scan_icon.webp
+```
+
+Runtime code does not reference `visitor_images_source`. After the APK builds successfully, the root `visitor_images_source` folder is safe to delete. The supplied app logo is used only as an in-app visitor brand image, not an official PSAU seal.
+
+## Visitor Backend
+
+Visitor authentication and authorization use typed JWT roles:
+
+```text
+admin
+student
+guest
+```
+
+Dependencies:
+
+```text
+require_admin   -> admin only
+require_student -> student only
+require_visitor -> student or guest
+```
+
+Admin routes still require `admin`. Guest sessions are stored in `guest_sessions`, not in the administrator `users` collection. Student accounts are stored in `students`, not mixed into administrator users.
+
+New visitor and public endpoints:
+
+```text
+POST /api/v1/visitor/guest-session
+POST /api/v1/student/register
+POST /api/v1/student/login
+GET  /api/v1/visitor/me
+POST /api/v1/visitor/logout
+
+GET /api/v1/public/home
+GET /api/v1/public/news
+GET /api/v1/public/news/{id}
+GET /api/v1/public/announcements
+GET /api/v1/public/articles
+GET /api/v1/public/articles/{id}
+GET /api/v1/public/museum-info
+GET /api/v1/public/programs
+
+GET /api/v1/visitor/artifacts
+GET /api/v1/visitor/artifacts/{id}
+POST /api/v1/ai/recognize
+```
+
+`POST /api/v1/ai/recognize` now requires an authenticated `admin`, `student`, or `guest` token. AI maintenance endpoints remain administrator-only.
+
+New MongoDB collections:
+
+```text
+students
+guest_sessions
+news
+announcements
+museum_articles
+museum_information
+programs
+```
+
+Indexes include unique normalized Student ID, unique normalized student email, guest-session expiry TTL, guest device/session timestamps, publication/activity filters for public content, article category, and unique normalized program names.
+
+Optional demonstration content can be seeded only when collections are empty:
+
+```powershell
+cd backend
+python -m scripts.seed_public_content
+```
+
+The seed content is clearly labeled demonstration content and should be replaced with official museum content before production use.
 
 ## Simplified Backend Startup
 
@@ -418,25 +553,38 @@ Set collection variables:
 base_url=http://localhost:8000
 admin_email=<created admin email>
 admin_password=<created admin password>
+student_id=<demo student id>
+student_email=<demo student email>
+student_password=<demo student password, not committed>
 ```
 
 Run this sequence:
 
 1. `Health check`
 2. `AI health`
-3. `Admin login`
-4. `Dashboard`
-5. `Create artifact`
-6. `List artifacts`
-7. `AI Warmup`
-8. `AI Warmup Status`
-9. `Index all artifacts`
-10. `Index status`
-11. `Recognize image`
+3. `Guest Session`
+4. `Visitor Me`
+5. `Public Home`
+6. `Public News`
+7. `Public Announcements`
+8. `Public Articles`
+9. `Museum Information`
+10. `Programs`
+11. `Visitor Artifact List`
+12. `Visitor Recognition`
+13. `Admin login`
+14. `Dashboard`
+15. `Create artifact`
+16. `List artifacts`
+17. `AI Warmup`
+18. `AI Warmup Status`
+19. `Index all artifacts`
+20. `Index status`
+21. `Recognize image`
 
-For Give 1-only regression checks, `postman/Museum_Guide_Give1.postman_collection.json` is still available.
+`Guest Session`, `Student Register`, and `Student Login` store `visitor_token` automatically for visitor requests. `Admin login` stores `access_token` automatically for admin requests. For Give 1-only regression checks, `postman/Museum_Guide_Give1.postman_collection.json` is still available.
 
-The collection stores `access_token` automatically after `Admin login`. Postman stays configured for requests from the Windows development computer; it does not configure the Android app.
+Postman stays configured for requests from the Windows development computer; it does not configure the Android app.
 
 ## API Summary
 
@@ -445,6 +593,24 @@ Authentication:
 ```text
 POST /api/v1/auth/login
 GET  /api/v1/auth/me
+POST /api/v1/visitor/guest-session
+POST /api/v1/student/register
+POST /api/v1/student/login
+GET  /api/v1/visitor/me
+POST /api/v1/visitor/logout
+```
+
+Public content:
+
+```text
+GET /api/v1/public/home
+GET /api/v1/public/news
+GET /api/v1/public/news/{id}
+GET /api/v1/public/announcements
+GET /api/v1/public/articles
+GET /api/v1/public/articles/{id}
+GET /api/v1/public/museum-info
+GET /api/v1/public/programs
 ```
 
 Artifacts:
@@ -458,6 +624,8 @@ DELETE /api/v1/artifacts/{artifact_id}
 POST   /api/v1/artifacts/{artifact_id}/images
 DELETE /api/v1/artifacts/{artifact_id}/images/{image_name}
 PATCH  /api/v1/artifacts/{artifact_id}/primary-image
+GET    /api/v1/visitor/artifacts
+GET    /api/v1/visitor/artifacts/{artifact_id}
 ```
 
 AI and dashboard:
@@ -480,6 +648,13 @@ MongoDB collections:
 ```text
 users
 artifacts
+students
+guest_sessions
+news
+announcements
+museum_articles
+museum_information
+programs
 ```
 
 Uploaded files are stored under:
@@ -506,6 +681,12 @@ python start_backend.py --test
 .\gradlew.bat :android:app:testDebugUnitTest
 .\gradlew.bat :android:app:assembleDebug
 ```
+
+These commands cover the preserved Give 1/Give 2 admin behavior and the Give 3 visitor additions. Backend tests include guest session creation, guest validation, student registration/login, duplicate handling, password hashing, typed JWT roles, visitor/admin authorization boundaries, token expiry, public content filtering, visitor artifact access, and visitor recognition authorization. Android unit tests include startup routing, visitor form validation, visitor navigation destinations, asset URI constants, Home state, scan readiness, and settings logout.
+
+## Known Limitations
+
+Public news, announcements, articles, museum information, and programs are read-only for Android visitors in this phase. Administrator content management screens are intentionally excluded until a separate approved phase. Museum information must be configured in MongoDB or seeded with clearly labeled demonstration data. Map actions are disabled until latitude and longitude are configured. Student ID verification against a PSAU registrar source, email verification, password reset, visitor analytics, and continuous recognition are not implemented in this phase.
 
 ## Troubleshooting
 

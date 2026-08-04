@@ -1,0 +1,1566 @@
+CODEX IMPLEMENTATION PROMPT
+
+PROJECT
+
+PSAU Museum Guide
+Separate Guest and Student Visitor Application
+
+ROLE
+
+Act as a senior Android, Kotlin, Jetpack Compose, CameraX, FastAPI, MongoDB, JWT authentication, security, and mobile product engineer.
+
+Work directly inside the existing Museum Guide repository.
+
+Inspect the repository before changing files.
+
+The administrator application is complete and working. Preserve it.
+
+Do not replace the administrator login, administrator navigation, artifact management, OpenCLIP setup, Qdrant indexing, administrator camera test, System Status, or administrator Settings.
+
+This task adds a separate guest and student visitor experience inside the same Android application and backend.
+
+MAIN GOAL
+
+Create a modern PSAU Museum Guide experience for museum guests and registered students.
+
+The visitor interface must look different from the administrator interface.
+
+The administrator interface is professional and functional.
+
+The visitor interface must feel welcoming, illustrated, modern, green, student-focused, and museum-focused.
+
+The visitor application must include:
+
+1. Fresh-install onboarding.
+2. Entry role selection.
+3. Guest access.
+4. Student registration.
+5. Student login.
+6. Session persistence.
+7. Visitor Home.
+8. Latest news.
+9. Announcements.
+10. Featured artifacts.
+11. Artifact browsing.
+12. Artifact facts and articles.
+13. Museum information and location.
+14. Center AI Scan action.
+15. Camera-based artifact recognition.
+16. Recognition results.
+17. Visitor artifact details.
+18. Visitor Settings.
+19. Logout and switch account.
+20. Administrator access through a separate small action.
+
+ASSET FOLDER RULE
+
+A removable source folder named:
+
+visitor_images_source
+
+will be placed in the repository root.
+
+Read:
+
+ANDROID_IMAGE_COPY_INSTRUCTIONS.txt
+ASSET_MANIFEST.json
+
+Before implementing the UI, copy all supplied images into:
+
+android/app/src/main/assets/visitor_ui/
+
+The Android application must load only from the Android assets folder.
+
+Use Coil asset URIs:
+
+file:///android_asset/visitor_ui/illustrations/<filename>
+file:///android_asset/visitor_ui/icons/<filename>
+
+Never reference visitor_images_source from runtime code.
+
+After the files are copied and the application builds, the root visitor_images_source folder must be safe to delete.
+
+Do not delete the source folder automatically.
+
+Do not modify, crop, recolor, regenerate, or overwrite the supplied images unless a confirmed layout problem requires a non-destructive optimized copy.
+
+SUPPLIED IMAGE NAMES
+
+Illustrations:
+
+onboarding_welcome.webp
+onboarding_explore.webp
+onboarding_ai_scan.webp
+auth_guest_student.webp
+home_museum_hero.webp
+artifacts_facts_articles.webp
+museum_location.webp
+news_announcements.webp
+
+Icons:
+
+psau_museum_app_logo.webp
+ai_scan_icon.webp
+
+Use Material icons for standard controls and navigation.
+
+Do not create raster icons for Home, Artifacts, Settings, Back, Search, Filter, Share, Logout, or Location.
+
+Do not treat the generated app logo as the official PSAU seal.
+
+Do not claim the illustrated building is the exact PSAU museum building.
+
+PHASE 1. REPOSITORY AUDIT
+
+Inspect at least:
+
+1. Android application entry point.
+2. Existing session storage.
+3. Existing administrator authentication.
+4. Current JWT handling.
+5. AuthInterceptor.
+6. AdminNavGraph.
+7. Administrator shell.
+8. Existing CameraX recognition implementation.
+9. RecognitionViewModel.
+10. Recognition result models.
+11. Artifact API and DTOs.
+12. Artifact detail screen.
+13. Material theme files.
+14. FastAPI application registration.
+15. Authentication routes.
+16. User and artifact repositories.
+17. MongoDB initialization and indexes.
+18. Existing tests.
+19. README.
+20. Postman collections.
+
+Return a concise implementation plan before editing.
+
+Preserve the current architecture where it is sound.
+
+Do not create duplicate Retrofit clients, duplicate databases, duplicate recognition algorithms, or duplicate CameraX implementations.
+
+PHASE 2. APPLICATION STARTUP ROUTING
+
+Implement a startup router that understands four states:
+
+1. No session.
+2. Guest session.
+3. Student session.
+4. Administrator session.
+
+Also store onboarding completion.
+
+Required routing:
+
+Onboarding incomplete and no valid session:
+Open Visitor Onboarding.
+
+Onboarding complete and no valid session:
+Open Visitor Entry.
+
+Valid guest session:
+Open Visitor Home.
+
+Valid student session:
+Open Visitor Home.
+
+Valid administrator session:
+Open the existing Administrator application.
+
+Do not open Administrator Login as the default screen for a normal fresh install.
+
+Store onboarding completion with DataStore.
+
+Store the active account type with the current secure session storage.
+
+Account types:
+
+guest
+student
+admin
+
+Do not store plain passwords.
+
+When a token expires:
+
+Clear only the expired active session.
+Return to the correct entry screen.
+Do not delete unrelated remembered settings.
+
+PHASE 3. VISITOR ONBOARDING
+
+Create three onboarding pages.
+
+Page 1
+
+Image:
+
+file:///android_asset/visitor_ui/illustrations/onboarding_welcome.webp
+
+Title:
+
+Welcome to the PSAU Museum
+
+Body:
+
+Explore university heritage, museum collections, and visitor information from your phone.
+
+Page 2
+
+Image:
+
+file:///android_asset/visitor_ui/illustrations/onboarding_explore.webp
+
+Title:
+
+Explore Artifacts and Stories
+
+Body:
+
+Browse artifacts, facts, articles, announcements, and featured museum stories.
+
+Page 3
+
+Image:
+
+file:///android_asset/visitor_ui/illustrations/onboarding_ai_scan.webp
+
+Title:
+
+Scan and Learn
+
+Body:
+
+Point your camera at an indexed artifact, press Scan, and view its information through AI recognition.
+
+Onboarding requirements:
+
+1. Horizontal swipe.
+2. Page indicator.
+3. Skip action.
+4. Next action.
+5. Get Started action.
+6. Responsive image height.
+7. No text embedded inside the image.
+8. Light green visitor theme.
+9. Proper system bar insets.
+10. Accessible controls.
+11. Orientation and process recreation support.
+12. Save completion only after Skip or Get Started.
+
+Do not show administrator controls during onboarding.
+
+PHASE 4. VISITOR ENTRY SCREEN
+
+Create a visitor entry screen.
+
+Use:
+
+file:///android_asset/visitor_ui/illustrations/auth_guest_student.webp
+file:///android_asset/visitor_ui/icons/psau_museum_app_logo.webp
+
+Content:
+
+PSAU Museum Guide
+
+Subtitle:
+
+Choose how you want to continue.
+
+Primary actions:
+
+1. Continue as Guest.
+2. Student Login.
+3. Create Student Account.
+
+Secondary action:
+
+Administrator Login.
+
+Administrator Login opens the current administrator login screen.
+
+Do not duplicate administrator login.
+
+The visitor entry screen must use a modern illustrated layout.
+
+Use a large illustration, soft green background shapes, rounded cards, strong typography, and clear actions.
+
+Keep the three primary options readable on narrow devices.
+
+Do not place all registration fields on the entry screen.
+
+PHASE 5. GUEST ACCESS
+
+Guest access does not use a password.
+
+Create a focused Guest Information screen.
+
+Required fields:
+
+1. First Name.
+2. Last Name.
+3. PSAU Relationship.
+4. Conditional details.
+
+PSAU Relationship options:
+
+Alumni or Former Student
+Current Employee
+Former Employee
+General Visitor
+Other
+
+When Alumni or Former Student is selected:
+
+Show optional Batch or Graduation Year.
+
+When Current Employee or Former Employee is selected:
+
+Show optional Office or Department.
+
+When Other is selected:
+
+Require Please Specify.
+
+Do not provide Current Student as a guest relationship option.
+
+Current students must register or log in as Student.
+
+Primary action:
+
+Continue to Museum.
+
+Validation:
+
+First name required.
+Last name required.
+Relationship required.
+Other detail required when Other is selected.
+Trim repeated whitespace.
+Limit unsafe field lengths.
+Reject control characters.
+Use clear inline errors.
+
+Backend behavior:
+
+Create a guest session record.
+Issue a signed JWT with role guest.
+Return the guest profile.
+Persist the token securely.
+Open Visitor Home.
+
+Recommended guest session document:
+
+id
+first_name
+last_name
+display_name
+relationship_type
+relationship_detail
+batch_or_graduation_year
+office_or_department
+role
+created_at
+expires_at
+last_seen_at
+device_session_id
+
+Use a configurable guest session expiration.
+
+A practical initial value is 24 hours.
+
+Do not store a guest password.
+
+Do not store guests inside the administrator user collection.
+
+Do not let guest tokens access administrator APIs.
+
+PHASE 6. STUDENT REGISTRATION
+
+Create a separate Student Registration screen.
+
+Required fields:
+
+1. Student ID.
+2. First Name.
+3. Middle Initial, optional.
+4. Last Name.
+5. Year Level.
+6. Course or Program.
+7. Email.
+8. Password.
+9. Confirm Password.
+
+Name handling:
+
+Store first name separately.
+Store last name separately.
+Store middle initial separately.
+Middle initial accepts zero or one letter.
+Build display name safely.
+
+Student ID:
+
+Required.
+Trim whitespace.
+Normalize case.
+Set a reasonable maximum length.
+Create a unique database index.
+Do not impose a specific PSAU ID pattern unless the repository already has a confirmed rule.
+
+Year Level options:
+
+First Year
+Second Year
+Third Year
+Fourth Year
+Fifth Year
+Graduate Student
+
+Course or Program:
+
+Use a searchable dropdown.
+Load the list from:
+
+GET /api/v1/public/programs
+
+When the backend list is empty, allow a safe free-text value rather than blocking registration.
+
+Do not invent an official complete PSAU program list.
+
+Keep programs configurable.
+
+Email:
+
+Required.
+Normalize lowercase.
+Validate format.
+Create a unique database index.
+
+Password:
+
+Minimum 8 characters.
+Require one uppercase letter.
+Require one lowercase letter.
+Require one number.
+Support show and hide.
+Confirm Password must match.
+Never log password values.
+Never return password hashes.
+
+Use the existing maintained direct bcrypt implementation.
+
+Do not reintroduce the Passlib bcrypt compatibility warning.
+
+Recommended student document:
+
+id
+student_id
+first_name
+middle_initial
+last_name
+display_name
+year_level
+course
+email
+password_hash
+role
+is_active
+created_at
+updated_at
+last_login_at
+
+Registration success:
+
+Create the student account.
+Issue a student JWT.
+Persist the session.
+Open Visitor Home.
+
+Duplicate handling:
+
+Use a safe message for an existing Student ID.
+Use a safe message for an existing email.
+Do not expose unrelated account details.
+
+PHASE 7. STUDENT LOGIN
+
+Create Student Login.
+
+Fields:
+
+Student ID or Email.
+Password.
+
+Features:
+
+1. Show or hide password.
+2. Inline validation.
+3. Loading state.
+4. Disable duplicate submission.
+5. Safe error message.
+6. Session persistence.
+7. Keyboard-aware scrolling.
+8. Back to Visitor Entry.
+
+Safe invalid login message:
+
+Invalid student ID, email, or password.
+
+Do not add Forgot Password unless a complete reset workflow is implemented.
+
+Do not reuse the administrator login endpoint.
+
+PHASE 8. AUTHENTICATION AND AUTHORIZATION
+
+Add typed JWT roles:
+
+admin
+student
+guest
+
+Add backend authorization dependencies:
+
+require_admin
+require_student
+require_visitor
+
+require_visitor accepts:
+
+student
+guest
+
+The existing admin dependency must continue to accept admin only.
+
+Required security tests:
+
+1. Guest blocked from administrator endpoints.
+2. Student blocked from administrator endpoints.
+3. Administrator still reaches administrator endpoints.
+4. Guest reaches permitted visitor endpoints.
+5. Student reaches permitted visitor endpoints.
+6. Expired guest token rejected.
+7. Expired student token rejected.
+8. Token role tampering rejected.
+
+Recommended endpoints:
+
+POST /api/v1/visitor/guest-session
+POST /api/v1/student/register
+POST /api/v1/student/login
+GET /api/v1/visitor/me
+
+Optional:
+
+POST /api/v1/visitor/logout
+
+A stateless logout acknowledgement is acceptable because Android clears the token.
+
+Do not let visitor authentication changes break administrator login.
+
+PHASE 9. SEPARATE VISITOR NAVIGATION
+
+Create a separate visitor navigation shell.
+
+Do not reuse the plain administrator shell.
+
+Visitor bottom navigation:
+
+Home
+Artifacts
+Center Scan Action
+Settings
+
+The Scan action is a raised circular or rounded floating center action.
+
+The center action must remain visually prominent.
+
+Use:
+
+file:///android_asset/visitor_ui/icons/ai_scan_icon.webp
+
+Use Material icons for:
+
+Home
+Artifacts
+Settings
+
+Bottom navigation rules:
+
+1. Home and Artifacts appear on the left.
+2. Settings appears on the right.
+3. Center Scan sits above or inside the navigation bar.
+4. Labels remain one line.
+5. Use correct bottom insets.
+6. Avoid overlap on 320 dp width.
+7. Support font scale 1.3.
+8. Preserve selected destination state.
+9. Avoid duplicate destinations.
+10. Use launchSingleTop and restoreState.
+
+The visitor shell and administrator shell must remain separate.
+
+PHASE 10. VISITOR VISUAL THEME
+
+Create a dedicated visitor Material 3 theme.
+
+Do not replace the administrator theme.
+
+Visitor colors:
+
+Primary:
+#14532D
+
+Primary Dark:
+#0B3D24
+
+Secondary:
+#2E7D32
+
+Accent:
+#69A86B
+
+Primary Container:
+#DDF3E2
+
+Secondary Container:
+#EAF5EC
+
+Background:
+#F5F8F5
+
+Surface:
+#FFFFFF
+
+Surface Variant:
+#E8EFE9
+
+Main Text:
+#17211A
+
+Secondary Text:
+#627066
+
+Highlight:
+#D5A93A
+
+Error:
+Use Material 3 error roles.
+
+Visitor design rules:
+
+1. Light-first interface.
+2. Large illustrated hero areas.
+3. Soft green organic background shapes.
+4. Rounded 16 dp to 28 dp cards.
+5. Consistent 4 dp spacing system.
+6. Clear type hierarchy.
+7. Real artifact photos inside artifact cards.
+8. Generated illustrations for onboarding and empty states.
+9. Minimal shadows.
+10. Tonal elevation.
+11. Comfortable whitespace.
+12. Accessible contrast.
+13. Friendly student-oriented copy.
+14. Smooth but restrained animation.
+15. No glassmorphism.
+16. No heavy gradients.
+17. No plain dense administrator status cards.
+18. No technical AI terminology on visitor pages.
+
+Use the existing system font.
+
+Do not add font files.
+
+PHASE 11. VISITOR HOME
+
+Create a visually rich Home screen.
+
+Use:
+
+file:///android_asset/visitor_ui/illustrations/home_museum_hero.webp
+file:///android_asset/visitor_ui/illustrations/news_announcements.webp
+
+Home structure:
+
+1. Welcome Header.
+
+Guest example:
+
+Welcome, Maria
+
+Guest chip:
+
+Guest Visitor
+
+Student example:
+
+Welcome, Juan
+
+Student chip:
+
+Student
+
+2. Museum Hero.
+
+Title:
+
+PSAU Museum
+
+Subtitle:
+
+Explore the heritage, collections, and stories of Pampanga State Agricultural University.
+
+Actions:
+
+Explore Artifacts
+Scan Artifact
+
+3. Latest News.
+
+Display recent published news.
+
+Each item shows:
+
+Cover image when available.
+Title.
+Short summary.
+Published date.
+Read More.
+
+4. Announcements.
+
+Display current active announcements.
+
+Each item shows:
+
+Title.
+Message preview.
+Date.
+Priority.
+Optional expiration.
+
+5. Featured Artifacts.
+
+Use existing artifact records.
+
+Show:
+
+Primary image.
+Name.
+Category.
+Short description.
+View Details.
+
+6. Quick Museum Information.
+
+Show:
+
+Location summary.
+Opening hours.
+Visitor guidelines action.
+
+Do not invent museum hours, address, contact details, or coordinates.
+
+Use backend-configured values.
+
+When not configured, show:
+
+To be configured.
+
+Do not ship fake statistics.
+
+Use polished loading, empty, error, and refreshing states.
+
+PHASE 12. PUBLIC CONTENT DATA
+
+Add MongoDB collections:
+
+news
+announcements
+museum_articles
+museum_information
+programs
+
+Public read endpoints:
+
+GET /api/v1/public/home
+GET /api/v1/public/news
+GET /api/v1/public/news/{id}
+GET /api/v1/public/announcements
+GET /api/v1/public/articles
+GET /api/v1/public/articles/{id}
+GET /api/v1/public/museum-info
+GET /api/v1/public/programs
+
+News document:
+
+id
+title
+summary
+body
+cover_image_url
+published_at
+is_published
+created_at
+updated_at
+
+Announcement document:
+
+id
+title
+message
+priority
+starts_at
+expires_at
+is_active
+created_at
+updated_at
+
+Article document:
+
+id
+title
+summary
+body
+cover_image_url
+category
+published_at
+is_published
+created_at
+updated_at
+
+Museum information:
+
+museum_name
+description
+campus_location
+opening_hours
+contact_email
+contact_phone
+visitor_guidelines
+accessibility_information
+latitude
+longitude
+updated_at
+
+Do not invent PSAU official details.
+
+Create a safe seed script with clearly labeled demonstration content only when collections are empty.
+
+Do not overwrite real content.
+
+Do not add full administrator content management screens in this phase unless the existing admin architecture has a clean, low-risk extension point.
+
+Document content management as a later enhancement when excluded.
+
+PHASE 13. ARTIFACTS NAVIGATION
+
+The visitor Artifacts destination must include three internal sections or tabs:
+
+1. Artifacts.
+2. Facts and Articles.
+3. Museum Information.
+
+Use:
+
+file:///android_asset/visitor_ui/illustrations/artifacts_facts_articles.webp
+file:///android_asset/visitor_ui/illustrations/museum_location.webp
+
+Artifacts section:
+
+Search.
+Category filters.
+Featured artifacts.
+All artifacts.
+Loading state.
+Empty state.
+Error state.
+Pagination or Load More.
+
+Visitor artifact cards show:
+
+Primary image.
+Artifact name.
+Artifact code.
+Category.
+Short description.
+View Details.
+
+Do not show:
+
+Edit.
+Delete.
+AI index status.
+MongoDB ID.
+Administrator overflow actions.
+
+Facts and Articles section:
+
+Published museum articles.
+Artifact facts.
+Article categories.
+Search.
+Read Article.
+
+Museum Information section:
+
+Museum description.
+Campus location.
+Opening hours.
+Contact information.
+Visitor guidelines.
+Accessibility information.
+Open Map.
+Directions.
+
+Only enable map actions when coordinates exist.
+
+Use a geo Intent.
+
+PHASE 14. VISITOR ARTIFACT DETAILS
+
+Create a visitor read-only Artifact Details screen.
+
+Show:
+
+1. Image gallery.
+2. Artifact name.
+3. Artifact code.
+4. Category.
+5. Description.
+6. Origin.
+7. Historical period.
+8. Material.
+9. Dimensions.
+10. Condition.
+11. Related facts.
+12. Related articles.
+13. Scan Again action when opened from recognition.
+14. Share action using Android share sheet, optional.
+
+Do not show edit controls.
+
+Do not show delete controls.
+
+Do not show AI indexing details.
+
+Reuse the existing artifact detail API.
+
+Use a visitor presentation model when administrator fields should remain hidden.
+
+PHASE 15. CENTER AI SCAN MODAL
+
+When the user taps the center Scan action:
+
+Open a Material 3 modal bottom sheet.
+
+Title:
+
+AI Scan for Artifact
+
+Body:
+
+Point your camera at an artifact, keep the object inside the guide, and press Scan.
+
+Use:
+
+file:///android_asset/visitor_ui/illustrations/onboarding_ai_scan.webp
+
+Show simple readiness:
+
+Artifact scanning ready.
+Number of indexed artifacts, when available.
+Backend connection.
+
+Do not show:
+
+OpenCLIP.
+Qdrant.
+Vector dimension.
+System Status.
+Reindex.
+Retry failed indexes.
+Model technical information.
+
+Primary action:
+
+Open Camera.
+
+Secondary action:
+
+Cancel.
+
+When scanning is unavailable:
+
+Show:
+
+Artifact scanning is temporarily unavailable.
+
+Actions:
+
+Try Again.
+Continue Browsing.
+
+Do not send visitors to administrator System Status.
+
+PHASE 16. VISITOR CAMERA SCAN
+
+Reuse the working administrator CameraX implementation.
+
+Do not copy and fork the camera engine unless reuse is technically impossible.
+
+Extract shared camera recognition components into a neutral package when needed.
+
+Preserve the fixed camera lifecycle behavior.
+
+Visitor camera screen:
+
+1. Rear camera preview.
+2. Green scanner frame.
+3. Instruction:
+   Place the artifact inside the frame.
+4. Secondary instruction:
+   Hold the camera steady, then press Scan.
+5. Torch control when supported.
+6. Large Scan button.
+7. Capturing state.
+8. Analyzing state.
+9. No-match state.
+10. Failure state.
+11. Scan Again.
+
+Required flow:
+
+Tap center Scan.
+Open AI Scan modal.
+Tap Open Camera.
+Position artifact.
+Tap Scan.
+Capture one still image.
+Prepare JPEG.
+Upload automatically.
+Use existing recognition API.
+Display result.
+Open visitor artifact details.
+
+Reuse:
+
+POST /api/v1/ai/recognize
+Current OpenCLIP service.
+Current Qdrant search.
+Current multipart handling.
+Current CameraX fix.
+Current temporary file preparation.
+Current response models where safe.
+
+Do not add:
+
+Continuous recognition.
+Automatic capture.
+Video scanning.
+Object detection.
+Face recognition.
+New AI models.
+
+Visitor recognition result:
+
+Best Match.
+Strong or Possible match label.
+Artifact image.
+Artifact name.
+Artifact code.
+Category.
+Short description.
+View Artifact.
+Alternative matches.
+Scan Again.
+
+Hide the similarity number by default.
+
+An optional Technical Details expansion may show similarity score for academic testing.
+
+Do not describe the score as certainty or accuracy percentage.
+
+Visitor errors:
+
+No reliable artifact match was found.
+
+Move closer and keep the artifact inside the frame.
+
+Artifact scanning is temporarily unavailable.
+
+Connection was lost. Please try again.
+
+PHASE 17. VISITOR SETTINGS
+
+Guest Settings:
+
+Profile illustration or initials.
+Full name.
+Relationship to PSAU.
+Relationship details.
+Museum Information.
+App version.
+Switch Account.
+Log Out.
+
+Student Settings:
+
+Profile initials.
+Student ID.
+Full name.
+Year level.
+Course.
+Email.
+Museum Information.
+App version.
+Switch Account.
+Log Out.
+
+Do not display passwords.
+
+Do not allow Student ID editing.
+
+Do not add incomplete profile editing.
+
+Switch Account:
+
+Show confirmation.
+Clear active visitor session.
+Return to Visitor Entry.
+Keep onboarding completion.
+
+Log Out:
+
+Show confirmation.
+Clear active visitor session.
+Return to Visitor Entry.
+Clear protected visitor back stack.
+
+Administrator Login:
+
+Provide a small separate action in Visitor Entry or Visitor Settings.
+
+Do not put Administrator Login in visitor bottom navigation.
+
+PHASE 18. ANDROID ARCHITECTURE
+
+Recommended package:
+
+com.example.museumapp.ui.visitor
+
+Recommended subpackages:
+
+onboarding
+entry
+guest
+student
+home
+artifacts
+articles
+museuminfo
+scan
+settings
+components
+navigation
+theme
+
+Recommended data areas:
+
+VisitorAuthModels.kt
+PublicContentModels.kt
+VisitorSessionStore.kt
+VisitorRepository.kt
+PublicContentRepository.kt
+
+Follow the current project architecture.
+
+Use:
+
+ViewModel.
+StateFlow.
+Lifecycle-aware state collection.
+Typed Retrofit models.
+Moshi.
+Repository layer.
+DataStore.
+Coil.
+Navigation Compose.
+CameraX.
+
+Do not place network calls inside composables.
+
+Represent:
+
+Loading.
+Content.
+Empty.
+Error.
+Refreshing.
+
+Prevent duplicate submissions.
+
+Keep forms keyboard aware.
+
+Keep state through recomposition.
+
+PHASE 19. OFFLINE AND CACHE BEHAVIOR
+
+Cache the latest successful public content when practical.
+
+At minimum:
+
+1. Keep the last successful artifact list in memory during the session.
+2. Keep the last successful Home response in memory during the session.
+3. Show a clear Retry action.
+4. Do not open AI Scan without backend access.
+5. Do not show stale content as live without a cached label when persistence is added.
+
+Do not add a complex offline database unless the repository already uses Room.
+
+PHASE 20. DATABASE INDEXES
+
+Student collection:
+
+Unique normalized student_id.
+Unique normalized email.
+Index is_active.
+Index created_at.
+
+Guest sessions:
+
+Index expires_at.
+TTL index when supported.
+Index device_session_id.
+Index created_at.
+
+News:
+
+Index published_at.
+Index is_published.
+
+Announcements:
+
+Index starts_at.
+Index expires_at.
+Index is_active.
+
+Articles:
+
+Index published_at.
+Index is_published.
+Index category.
+
+Programs:
+
+Unique normalized program name.
+Index active.
+
+PHASE 21. IMAGE INTEGRATION REQUIREMENTS
+
+Load asset images through Coil.
+
+Create a focused helper or constants object for asset URIs.
+
+Example:
+
+object VisitorAssets {
+    const val OnboardingWelcome =
+        "file:///android_asset/visitor_ui/illustrations/onboarding_welcome.webp"
+}
+
+Do not scatter raw asset paths through every screen.
+
+Use contentScale carefully.
+
+Onboarding images:
+
+ContentScale.Fit.
+
+Hero images:
+
+ContentScale.Crop or Fit based on card shape.
+
+Entry image:
+
+ContentScale.Fit.
+
+Never stretch images.
+
+Use placeholders during image loading.
+
+Use accessible content descriptions where the image conveys meaning.
+
+Use null content descriptions only for purely decorative images.
+
+Do not include the source image folder in the release APK.
+
+Only Android assets under android/app/src/main/assets are packaged.
+
+PHASE 22. TESTING
+
+Backend tests:
+
+1. Guest session creation.
+2. Guest name validation.
+3. Guest relationship validation.
+4. Other requires details.
+5. Current Student unavailable in guest choices.
+6. Student registration success.
+7. Duplicate Student ID.
+8. Duplicate email.
+9. Password validation.
+10. Password hashing.
+11. Student login by Student ID.
+12. Student login by email.
+13. Invalid login.
+14. Student JWT role.
+15. Guest JWT role.
+16. Guest blocked from admin endpoint.
+17. Student blocked from admin endpoint.
+18. Administrator regression.
+19. Visitor profile endpoint.
+20. Expired guest token.
+21. Public Home response.
+22. Published news filtering.
+23. Active announcement filtering.
+24. Article filtering.
+25. Program list.
+26. Museum information.
+27. Visitor artifact access.
+28. Visitor recognition authorization.
+29. Existing Give 1 and Give 2 tests.
+
+Android unit tests:
+
+1. Startup routing.
+2. Onboarding completion.
+3. Guest form validation.
+4. Guest conditional fields.
+5. Student registration validation.
+6. Student login.
+7. Session account type persistence.
+8. Visitor navigation destinations.
+9. Home ViewModel.
+10. Home empty state.
+11. News state.
+12. Announcement state.
+13. Artifact visitor mapping.
+14. Article state.
+15. Museum information state.
+16. AI Scan readiness.
+17. AI Scan success.
+18. AI Scan no match.
+19. Visitor recognition result.
+20. Settings logout.
+21. Switch account.
+22. Administrator navigation unchanged.
+23. Asset URI constants.
+24. Missing asset fallback.
+
+Compose UI tests:
+
+1. Three onboarding pages.
+2. Skip and Get Started.
+3. Visitor entry actions.
+4. Guest relationship selector.
+5. Other conditional field.
+6. Student registration fields.
+7. Student login.
+8. Visitor Home hero.
+9. Latest News.
+10. Announcements.
+11. Featured Artifacts.
+12. Artifact search.
+13. Facts and Articles tab.
+14. Museum Information tab.
+15. Center Scan action.
+16. AI Scan modal.
+17. Camera launch.
+18. Recognition result.
+19. Visitor Artifact Details.
+20. Visitor Settings.
+21. Administrator Login action.
+22. Bottom navigation.
+23. Narrow-screen layout.
+24. Font scale 1.3.
+
+Manual device tests:
+
+1. Fresh install.
+2. Complete onboarding.
+3. Skip onboarding.
+4. Guest access.
+5. Guest Other relationship.
+6. Guest session restart.
+7. Student registration.
+8. Duplicate Student ID.
+9. Duplicate email.
+10. Student login.
+11. Student session restart.
+12. Home content.
+13. News details.
+14. Announcements.
+15. Artifact browsing.
+16. Article reading.
+17. Museum information.
+18. Map action with configured coordinates.
+19. AI Scan.
+20. Strong match.
+21. Possible match.
+22. No match.
+23. Network loss.
+24. Camera permission denied.
+25. Camera permission permanently denied.
+26. Guest logout.
+27. Student logout.
+28. Switch account.
+29. Administrator login.
+30. Existing administrator regression.
+
+PHASE 23. README AND POSTMAN
+
+Update README with:
+
+1. Visitor architecture.
+2. Account types.
+3. Guest access.
+4. Student registration.
+5. Student login.
+6. Session routing.
+7. Visitor navigation.
+8. Public content endpoints.
+9. Museum information configuration.
+10. AI Scan flow.
+11. Asset folder integration.
+12. Image URI mapping.
+13. How to remove visitor_images_source safely.
+14. Testing commands.
+15. Known limitations.
+16. Content management excluded from this phase when applicable.
+
+Update Postman with:
+
+Guest Session.
+Student Register.
+Student Login.
+Visitor Me.
+Public Home.
+Public News.
+Public Announcements.
+Public Articles.
+Museum Information.
+Programs.
+Visitor Artifact List.
+Visitor Recognition.
+
+Do not include real passwords or tokens.
+
+PHASE 24. REQUIRED COMMANDS
+
+Run from the repository root:
+
+python start_backend.py --check
+python start_backend.py --test
+python start_backend.py --check-ai
+python start_backend.py --test-ai
+.\gradlew.bat :android:app:testDebugUnitTest
+.\gradlew.bat :android:app:assembleDebug
+
+Do not claim success unless commands pass.
+
+PHASE 25. ACCEPTANCE CRITERIA
+
+This task is complete only when:
+
+1. Fresh install opens visitor onboarding.
+2. Onboarding uses the supplied images.
+3. Visitor Entry offers Guest, Student Login, Student Registration, and Administrator Login.
+4. Guest access works without a password.
+5. Guest relationship conditions work.
+6. Student registration contains all requested fields.
+7. Student login works through Student ID or email.
+8. Guest and student sessions persist.
+9. Administrator sessions still open the administrator application.
+10. Guest and student tokens cannot access administrator APIs.
+11. Visitor Home includes latest news, announcements, featured artifacts, and museum information.
+12. Artifacts destination includes Artifacts, Facts and Articles, and Museum Information.
+13. The center Scan action opens an AI Scan modal.
+14. Camera scan reuses the working administrator recognition pipeline.
+15. Recognition results open visitor artifact details.
+16. Visitor Settings shows account information and logout.
+17. Visitor UI is visibly different from the administrator UI.
+18. Visitor UI uses a modern green illustrated theme.
+19. Runtime assets exist inside android/app/src/main/assets/visitor_ui.
+20. Runtime code never references visitor_images_source.
+21. The root visitor_images_source folder is safe to delete after integration.
+22. Existing administrator features still work.
+23. Backend tests pass.
+24. Android tests pass.
+25. Debug APK builds.
+26. README and Postman are updated.
+27. No fake official PSAU seal is presented.
+28. No watermarked stock images remain.
+29. No administrator AI technical controls appear in visitor screens.
+30. No raw password or password hash is exposed.
+
+OUT OF SCOPE
+
+Do not implement:
+
+1. Continuous camera recognition.
+2. Video recognition.
+3. Face recognition.
+4. Student ID verification against a real PSAU registrar database.
+5. Email verification unless email infrastructure already exists.
+6. Password reset without a complete secure workflow.
+7. Visitor analytics beyond basic session records.
+8. 3D artifact viewing.
+9. Social comments.
+10. News authoring screens unless added as a separate approved phase.
+11. An official PSAU seal.
+12. A claim that supplied illustrations show the exact real museum building.
+
+FINAL CODEX RESPONSE
+
+At completion, report:
+
+1. Architecture summary.
+2. Files added.
+3. Files changed.
+4. Images copied into Android assets.
+5. Runtime asset paths.
+6. Database collections.
+7. Database indexes.
+8. New endpoints.
+9. Authentication rules.
+10. Visitor screens.
+11. Navigation behavior.
+12. Camera scan reuse.
+13. Test commands.
+14. Exact test results.
+15. Manual verification.
+16. Known limitations.
+17. Any excluded later work.
+
+Do not provide a vague report.
+
+Do not say should work.
+
+Report verified results honestly.
+
+START NOW
+
+1. Inspect the repository.
+2. Read this prompt.
+3. Read ANDROID_IMAGE_COPY_INSTRUCTIONS.txt.
+4. Read ASSET_MANIFEST.json.
+5. Return a concise implementation plan.
+6. Copy the images into the Android app.
+7. Implement the separate guest and student visitor application.
+8. Run all tests.
+9. Fix failures.
+10. Provide the final verified report.

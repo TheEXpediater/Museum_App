@@ -10,7 +10,13 @@
     { "key": "admin_email", "value": "admin@example.com" },
     { "key": "admin_password", "value": "" },
     { "key": "access_token", "value": "" },
+    { "key": "visitor_token", "value": "" },
+    { "key": "student_id", "value": "PSAU-2026-001" },
+    { "key": "student_email", "value": "student@example.com" },
+    { "key": "student_password", "value": "" },
     { "key": "artifact_id", "value": "" },
+    { "key": "news_id", "value": "" },
+    { "key": "article_id", "value": "" },
     { "key": "image_name", "value": "" },
     { "key": "primary_image_path", "value": "" }
   ],
@@ -27,6 +33,186 @@
       "request": {
         "method": "GET",
         "url": "{{base_url}}/api/v1/ai/health"
+      }
+    },
+    {
+      "name": "Guest Session",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.access_token) pm.collectionVariables.set('visitor_token', json.access_token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"first_name\": \"Maria\",\n  \"last_name\": \"Santos\",\n  \"relationship_type\": \"General Visitor\",\n  \"device_session_id\": \"postman-demo-device\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/visitor/guest-session"
+      }
+    },
+    {
+      "name": "Student Register",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.access_token) pm.collectionVariables.set('visitor_token', json.access_token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"student_id\": \"{{student_id}}\",\n  \"first_name\": \"Juan\",\n  \"middle_initial\": \"D\",\n  \"last_name\": \"Reyes\",\n  \"year_level\": \"Third Year\",\n  \"course\": \"Agriculture\",\n  \"email\": \"{{student_email}}\",\n  \"password\": \"{{student_password}}\",\n  \"confirm_password\": \"{{student_password}}\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/student/register"
+      }
+    },
+    {
+      "name": "Student Login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.access_token) pm.collectionVariables.set('visitor_token', json.access_token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identifier\": \"{{student_id}}\",\n  \"password\": \"{{student_password}}\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/student/login"
+      }
+    },
+    {
+      "name": "Visitor Me",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{visitor_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/visitor/me"
+      }
+    },
+    {
+      "name": "Public Home",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/public/home"
+      }
+    },
+    {
+      "name": "Public News",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (Array.isArray(json) && json[0] && json[0].id) pm.collectionVariables.set('news_id', json[0].id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/public/news"
+      }
+    },
+    {
+      "name": "Public Announcements",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/public/announcements"
+      }
+    },
+    {
+      "name": "Public Articles",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (Array.isArray(json) && json[0] && json[0].id) pm.collectionVariables.set('article_id', json[0].id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/public/articles"
+      }
+    },
+    {
+      "name": "Museum Information",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/public/museum-info"
+      }
+    },
+    {
+      "name": "Programs",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/public/programs"
+      }
+    },
+    {
+      "name": "Visitor Artifact List",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{visitor_token}}" }
+        ],
+        "url": "{{base_url}}/api/v1/visitor/artifacts?page=1&page_size=20&sort=newest"
+      }
+    },
+    {
+      "name": "Visitor Recognition",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{visitor_token}}" }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "image", "type": "file", "src": [] }
+          ]
+        },
+        "url": "{{base_url}}/api/v1/ai/recognize?limit=5"
       }
     },
     {
@@ -140,6 +326,9 @@
       "name": "Recognize image",
       "request": {
         "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
         "body": {
           "mode": "formdata",
           "formdata": [

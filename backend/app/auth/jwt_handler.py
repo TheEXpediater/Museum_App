@@ -18,8 +18,15 @@ class TokenExpiredError(TokenError):
     pass
 
 
-def create_access_token(user_id: str, email: str, role: str, settings: Settings) -> tuple[str, int]:
-    expires_delta = timedelta(minutes=settings.jwt_access_token_expire_minutes)
+def create_access_token(
+    user_id: str,
+    email: str,
+    role: str,
+    settings: Settings,
+    *,
+    expires_delta: timedelta | None = None,
+) -> tuple[str, int]:
+    expires_delta = expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes)
     expires_at = utc_now() + expires_delta
     payload: dict[str, Any] = {
         "sub": user_id,

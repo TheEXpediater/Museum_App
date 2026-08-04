@@ -33,12 +33,17 @@ import java.io.File
 import java.io.IOException
 import java.util.UUID
 
-interface AdminRepositoryContract {
+interface RecognitionRepositoryContract {
+    suspend fun aiHealth(): RepositoryResult<AiHealthResponse>
+    suspend fun recognizeArtifact(image: Uri, limit: Int? = null): RepositoryResult<RecognitionResponseDto>
+    suspend fun recognizeArtifactFile(image: File, limit: Int? = null): RepositoryResult<RecognitionResponseDto>
+}
+
+interface AdminRepositoryContract : RecognitionRepositoryContract {
     val session: Flow<AdminSession>
     val backendBaseUrl: String
 
     suspend fun checkHealth(): RepositoryResult<HealthResponse>
-    suspend fun aiHealth(): RepositoryResult<AiHealthResponse>
     suspend fun warmupAi(): RepositoryResult<AiWarmupResponse>
     suspend fun warmupAiStatus(): RepositoryResult<AiWarmupResponse>
     suspend fun login(email: String, password: String): RepositoryResult<UserDto>
@@ -59,8 +64,6 @@ interface AdminRepositoryContract {
     suspend fun removeImage(artifactId: String, imageName: String): RepositoryResult<ArtifactDto>
     suspend fun setPrimaryImage(artifactId: String, imagePath: String): RepositoryResult<ArtifactDto>
     suspend fun deleteArtifact(artifactId: String): RepositoryResult<String>
-    suspend fun recognizeArtifact(image: Uri, limit: Int? = null): RepositoryResult<RecognitionResponseDto>
-    suspend fun recognizeArtifactFile(image: File, limit: Int? = null): RepositoryResult<RecognitionResponseDto>
     suspend fun indexArtifact(artifactId: String): RepositoryResult<AiIndexResultResponse>
     suspend fun indexAllArtifacts(): RepositoryResult<AiIndexAllResponse>
     suspend fun retryFailedIndexes(): RepositoryResult<AiIndexAllResponse>

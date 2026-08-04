@@ -5,7 +5,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import JSONResponse
 
-from app.auth.dependencies import require_admin
+from app.auth.dependencies import require_admin, require_authenticated_app_user
 from app.ai import model_manager as openclip_models
 from app.repositories import artifact_repository
 from app.schemas.ai import (
@@ -151,6 +151,7 @@ async def recognize_artifact(
     request: Request,
     image: UploadFile = File(...),
     limit: int | None = Query(default=None, ge=1, le=20),
+    _: dict = Depends(require_authenticated_app_user),
 ) -> RecognitionResponse:
     max_bytes = request.app.state.settings.max_image_size_mb * 1024 * 1024
     image_bytes = await image.read(max_bytes + 1)

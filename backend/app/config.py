@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str = Field(alias="JWT_SECRET_KEY")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     jwt_access_token_expire_minutes: int = Field(default=480, alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
+    guest_session_expire_hours: int = Field(default=24, alias="GUEST_SESSION_EXPIRE_HOURS")
     upload_directory: str = Field(default="uploads/images", alias="UPLOAD_DIRECTORY")
     max_image_size_mb: int = Field(default=10, alias="MAX_IMAGE_SIZE_MB")
     cors_origins: str = Field(
@@ -133,6 +134,13 @@ class Settings(BaseSettings):
     def token_expiry_must_be_positive(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("JWT_ACCESS_TOKEN_EXPIRE_MINUTES must be greater than zero")
+        return value
+
+    @field_validator("guest_session_expire_hours")
+    @classmethod
+    def guest_session_expiry_must_be_positive(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("GUEST_SESSION_EXPIRE_HOURS must be greater than zero")
         return value
 
     @property

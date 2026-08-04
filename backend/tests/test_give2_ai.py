@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from io import BytesIO
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.ai.embedding_service import EmbeddingError, EmbeddingResult
+from app.auth.jwt_handler import create_access_token
 from app.auth.password import hash_password
 from app.config import Settings
 from app.repositories import artifact_repository
@@ -439,8 +441,25 @@ def test_admin_authorization_required_for_index_maintenance(route_context):
     assert response.status_code == 401
 
 
-def test_recognition_endpoint_is_public_for_future_visitor_use(route_context, monkeypatch):
-    client, _, _ = route_context
+def test_recognition_endpoint_accepts_authenticated_visitors(route_context, monkeypatch):
+    client, database, _ = route_context
+    guest_id = database.guest_sessions.insert_one(
+        {
+            "first_name": "Maria",
+            "last_name": "Santos",
+            "display_name": "Maria Santos",
+            "relationship_type": "General Visitor",
+            "relationship_detail": None,
+            "batch_or_graduation_year": None,
+            "office_or_department": None,
+            "role": "guest",
+            "created_at": utc_now(),
+            "expires_at": utc_now() + timedelta(hours=24),
+            "last_seen_at": utc_now(),
+            "device_session_id": "test-device",
+        }
+    ).inserted_id
+    token, _ = create_access_token(str(guest_id), "", "guest", make_settings())
 
     class FakeRecognitionRouteService:
         def recognize(self, *_args, **_kwargs):
@@ -456,6 +475,7 @@ def test_recognition_endpoint_is_public_for_future_visitor_use(route_context, mo
     response = client.post(
         "/api/v1/ai/recognize",
         files={"image": ("query.jpg", image_bytes(), "image/jpeg")},
+        headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200
     assert response.json()["matched"] is False

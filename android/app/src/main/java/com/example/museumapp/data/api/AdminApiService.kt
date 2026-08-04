@@ -7,14 +7,28 @@ import com.example.museumapp.data.model.AiIndexStatusResponse
 import com.example.museumapp.data.model.AiWarmupResponse
 import com.example.museumapp.data.model.ArtifactDto
 import com.example.museumapp.data.model.ArtifactListResponse
+import com.example.museumapp.data.model.ArticleDto
+import com.example.museumapp.data.model.AnnouncementDto
 import com.example.museumapp.data.model.DashboardSummaryResponse
 import com.example.museumapp.data.model.DeleteResponse
+import com.example.museumapp.data.model.GuestSessionRequestDto
 import com.example.museumapp.data.model.HealthResponse
 import com.example.museumapp.data.model.LoginRequest
 import com.example.museumapp.data.model.LoginResponse
+import com.example.museumapp.data.model.MuseumInformationDto
+import com.example.museumapp.data.model.NewsDto
 import com.example.museumapp.data.model.PrimaryImageRequest
+import com.example.museumapp.data.model.ProgramDto
+import com.example.museumapp.data.model.PublicArtifactDto
+import com.example.museumapp.data.model.PublicArtifactListResponseDto
+import com.example.museumapp.data.model.PublicHomeResponseDto
 import com.example.museumapp.data.model.RecognitionResponseDto
+import com.example.museumapp.data.model.StudentLoginRequestDto
+import com.example.museumapp.data.model.StudentRegisterRequestDto
 import com.example.museumapp.data.model.UserDto
+import com.example.museumapp.data.model.VisitorLogoutResponseDto
+import com.example.museumapp.data.model.VisitorMeResponseDto
+import com.example.museumapp.data.model.VisitorTokenResponseDto
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import retrofit2.http.Body
@@ -43,6 +57,60 @@ interface AdminApiService {
 
     @POST("api/v1/auth/login")
     suspend fun login(@Body request: LoginRequest): LoginResponse
+
+    @POST("api/v1/visitor/guest-session")
+    suspend fun createGuestSession(@Body request: GuestSessionRequestDto): VisitorTokenResponseDto
+
+    @POST("api/v1/student/register")
+    suspend fun registerStudent(@Body request: StudentRegisterRequestDto): VisitorTokenResponseDto
+
+    @POST("api/v1/student/login")
+    suspend fun loginStudent(@Body request: StudentLoginRequestDto): VisitorTokenResponseDto
+
+    @GET("api/v1/visitor/me")
+    suspend fun visitorMe(): VisitorMeResponseDto
+
+    @POST("api/v1/visitor/logout")
+    suspend fun visitorLogout(): VisitorLogoutResponseDto
+
+    @GET("api/v1/public/home")
+    suspend fun publicHome(): PublicHomeResponseDto
+
+    @GET("api/v1/public/news")
+    suspend fun publicNews(): List<NewsDto>
+
+    @GET("api/v1/public/news/{newsId}")
+    suspend fun publicNewsDetails(@Path("newsId") newsId: String): NewsDto
+
+    @GET("api/v1/public/announcements")
+    suspend fun publicAnnouncements(): List<AnnouncementDto>
+
+    @GET("api/v1/public/articles")
+    suspend fun publicArticles(
+        @Query("search") search: String? = null,
+        @Query("category") category: String? = null
+    ): List<ArticleDto>
+
+    @GET("api/v1/public/articles/{articleId}")
+    suspend fun publicArticleDetails(@Path("articleId") articleId: String): ArticleDto
+
+    @GET("api/v1/public/museum-info")
+    suspend fun museumInformation(): MuseumInformationDto
+
+    @GET("api/v1/public/programs")
+    suspend fun programs(): List<ProgramDto>
+
+    @GET("api/v1/visitor/artifacts")
+    suspend fun visitorArtifacts(
+        @Query("page") page: Int,
+        @Query("page_size") pageSize: Int,
+        @Query("search") search: String?,
+        @Query("category") category: String?,
+        @Query("sort") sort: String
+    ): PublicArtifactListResponseDto
+
+    @GET("api/v1/visitor/artifacts/{artifactId}")
+    suspend fun visitorArtifactDetails(@Path("artifactId") artifactId: String): PublicArtifactDto
 
     @GET("api/v1/auth/me")
     suspend fun currentAdmin(): UserDto

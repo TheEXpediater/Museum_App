@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.museumapp.data.model.RecognitionResponseDto
-import com.example.museumapp.data.repository.AdminRepositoryContract
+import com.example.museumapp.data.repository.RecognitionRepositoryContract
 import com.example.museumapp.data.repository.RepositoryResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,7 +54,7 @@ data class RecognitionUiState(
         get() = recognitionBlockedMessage == null && !isRecognizing && mode == RecognitionUiMode.CameraReady
 }
 
-class RecognitionViewModel(private val repository: AdminRepositoryContract) : ViewModel() {
+class RecognitionViewModel(private val repository: RecognitionRepositoryContract) : ViewModel() {
     private val _uiState = MutableStateFlow(RecognitionUiState())
     val uiState: StateFlow<RecognitionUiState> = _uiState.asStateFlow()
     private var pendingCaptureFile: File? = null
@@ -324,7 +324,7 @@ class RecognitionViewModel(private val repository: AdminRepositoryContract) : Vi
     }
 
     companion object {
-        fun factory(repository: AdminRepositoryContract): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+        fun factory(repository: RecognitionRepositoryContract): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T = RecognitionViewModel(repository) as T
         }

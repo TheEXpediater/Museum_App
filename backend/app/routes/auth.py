@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import require_admin
 from app.auth.jwt_handler import create_access_token
 from app.auth.password import verify_password
 from app.repositories.user_repository import find_user_by_email
@@ -35,5 +35,5 @@ def login(payload: LoginRequest, request: Request) -> LoginResponse:
 
 
 @router.get("/me", response_model=AuthUser)
-def current_admin(current_user: dict = Depends(get_current_user)) -> AuthUser:
+def current_admin(current_user: dict = Depends(require_admin)) -> AuthUser:
     return user_response(current_user)
