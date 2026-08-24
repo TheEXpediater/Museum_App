@@ -4,10 +4,14 @@ import com.example.museumapp.data.session.AdminSession
 import com.example.museumapp.data.session.VisitorSession
 import com.example.museumapp.ui.visitor.components.VisitorAssets
 import com.example.museumapp.ui.visitor.components.VisitorFormValidation
+import com.example.museumapp.ui.visitor.entry.VisitorEntryHeroRegions
 import com.example.museumapp.ui.visitor.navigation.StartupDestination
 import com.example.museumapp.ui.visitor.navigation.VisitorRoutes
 import com.example.museumapp.ui.visitor.navigation.VisitorTopLevelDestinations
 import com.example.museumapp.ui.visitor.navigation.resolveStartupDestination
+import com.example.museumapp.ui.visitor.onboarding.VisitorOnboardingPages
+import com.example.museumapp.ui.visitor.onboarding.isVisitorOnboardingLastPage
+import com.example.museumapp.ui.visitor.onboarding.visitorOnboardingActionLabel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -23,11 +27,21 @@ class VisitorStartupAndValidationTest {
     }
 
     @Test
-    fun completedOnboardingWithoutSessionRoutesToVisitorEntry() {
+    fun completedOnboardingWithoutSessionStillRoutesToVisitorOnboarding() {
         assertEquals(
-            StartupDestination.VisitorEntry,
+            StartupDestination.VisitorOnboarding,
             resolveStartupDestination(true, AdminSession(), VisitorSession())
         )
+    }
+
+    @Test
+    fun unauthenticatedStartupAlwaysRoutesToOnboarding() {
+        listOf(false, true).forEach { onboardingCompleted ->
+            assertEquals(
+                StartupDestination.VisitorOnboarding,
+                resolveStartupDestination(onboardingCompleted, AdminSession(), VisitorSession())
+            )
+        }
     }
 
     @Test
@@ -48,6 +62,52 @@ class VisitorStartupAndValidationTest {
             StartupDestination.Admin,
             resolveStartupDestination(false, AdminSession(accessToken = "token", role = "admin"), VisitorSession(accessToken = "token", accountType = "guest"))
         )
+    }
+
+    @Test
+    fun onboardingCompletionTargetIsVisitorEntry() {
+        assertEquals("visitor_entry", VisitorRoutes.Entry)
+    }
+
+    @Test
+    fun visitorRoutesPreserveGuestAndStudentAuthDestinations() {
+        assertEquals("visitor_guest_info", VisitorRoutes.GuestInfo)
+        assertEquals("visitor_student_login", VisitorRoutes.StudentLogin)
+        assertEquals("visitor_student_register", VisitorRoutes.StudentRegister)
+    }
+
+    @Test
+    fun visitorEntryHeroUsesTwoAccessibleArtworkRegions() {
+        assertEquals(listOf("Continue as Guest", "Student Access"), VisitorEntryHeroRegions.map { it.label })
+        assertEquals(listOf("Continue as Guest", "Student Access"), VisitorEntryHeroRegions.map { it.contentDescription })
+        assertEquals(VisitorEntryHeroRegions.map { it.label }, VisitorEntryHeroRegions.map { it.contentDescription })
+        assertTrue(VisitorEntryHeroRegions.all { it.right > it.left && it.bottom > it.top })
+        assertTrue(VisitorEntryHeroRegions.all { it.left >= 0f && it.top >= 0f && it.right <= 1f && it.bottom <= 1f })
+    }
+
+    @Test
+    fun onboardingPagesUseApprovedAssetsAndCopy() {
+        assertEquals(3, VisitorOnboardingPages.size)
+        assertEquals(VisitorAssets.OnboardingWelcome, VisitorOnboardingPages[0].image)
+        assertEquals("Welcome to PSAU Museum Guide", VisitorOnboardingPages[0].title)
+        assertEquals("Explore the heritage, artifacts, and stories of the museum.", VisitorOnboardingPages[0].body)
+
+        assertEquals(VisitorAssets.OnboardingExplore, VisitorOnboardingPages[1].image)
+        assertEquals("Discover the Collection", VisitorOnboardingPages[1].title)
+        assertEquals("Browse artifacts, historical information, facts, and museum stories.", VisitorOnboardingPages[1].body)
+
+        assertEquals(VisitorAssets.OnboardingAiScan, VisitorOnboardingPages[2].image)
+        assertEquals("Discover with AI", VisitorOnboardingPages[2].title)
+        assertEquals("Scan an artifact and let the museum guide help identify it.", VisitorOnboardingPages[2].body)
+    }
+
+    @Test
+    fun onboardingPrimaryActionBecomesGetStartedOnFinalPage() {
+        assertFalse(isVisitorOnboardingLastPage(0))
+        assertEquals("Next", visitorOnboardingActionLabel(0))
+        assertEquals("Next", visitorOnboardingActionLabel(1))
+        assertTrue(isVisitorOnboardingLastPage(2))
+        assertEquals("Get Started", visitorOnboardingActionLabel(2))
     }
 
     @Test
@@ -95,5 +155,13 @@ class VisitorStartupAndValidationTest {
         assertEquals(17, VisitorAssets.RequiredAssets.size)
         assertTrue(VisitorAssets.RequiredAssets.all { it.startsWith("file:///android_asset/visitor_ui/") })
         assertTrue(VisitorAssets.RequiredAssets.none { it.contains("visitor_images_source") })
+    }
+
+    @Test
+    fun scanAssetReferencesUseApprovedAiScanIcon() {
+        assertEquals("file:///android_asset/visitor_ui/icons/ai_scan_icon.webp", VisitorAssets.AiScanIcon)
+        assertEquals(VisitorAssets.AiScanIcon, VisitorAssets.ScanIcon)
+        assertTrue(VisitorAssets.RequiredAssets.contains(VisitorAssets.AiScanIcon))
+        assertFalse(VisitorAssets.RequiredAssets.any { it.endsWith("/scan_icon.webp") })
     }
 }

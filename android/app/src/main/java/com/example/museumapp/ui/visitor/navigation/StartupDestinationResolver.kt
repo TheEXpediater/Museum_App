@@ -12,14 +12,13 @@ enum class StartupDestination {
 }
 
 fun resolveStartupDestination(
-    onboardingCompleted: Boolean,
+    _onboardingCompleted: Boolean,
     adminSession: AdminSession,
     visitorSession: VisitorSession
 ): StartupDestination {
     return when {
         adminSession.isAuthenticated -> StartupDestination.Admin
         visitorSession.isVisitorAuthenticated -> StartupDestination.VisitorHome
-        !onboardingCompleted -> StartupDestination.VisitorOnboarding
-        else -> StartupDestination.VisitorEntry
+        else -> StartupDestination.VisitorOnboarding
     }
 }

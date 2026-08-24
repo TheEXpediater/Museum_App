@@ -33,33 +33,38 @@ import com.example.museumapp.ui.visitor.components.VisitorIllustration
 import com.example.museumapp.ui.visitor.components.VisitorSpacing
 import kotlinx.coroutines.launch
 
-private data class OnboardingPage(val image: String, val title: String, val body: String)
+data class OnboardingPage(val image: String, val title: String, val body: String)
 
-private val Pages = listOf(
+val VisitorOnboardingPages = listOf(
     OnboardingPage(
         VisitorAssets.OnboardingWelcome,
-        "Welcome to the Museum Guide",
-        "Begin with a calm path through PSAU heritage, collections, and visitor information."
+        "Welcome to PSAU Museum Guide",
+        "Explore the heritage, artifacts, and stories of the museum."
     ),
     OnboardingPage(
         VisitorAssets.OnboardingExplore,
-        "Explore Artifacts and Stories",
-        "Browse artifact records, published facts, articles, announcements, and curated highlights."
+        "Discover the Collection",
+        "Browse artifacts, historical information, facts, and museum stories."
     ),
     OnboardingPage(
         VisitorAssets.OnboardingAiScan,
-        "Scan and Learn",
-        "Use the camera scanner to identify recognized artifacts and continue into their museum records."
+        "Discover with AI",
+        "Scan an artifact and let the museum guide help identify it."
     )
 )
+
+fun isVisitorOnboardingLastPage(page: Int): Boolean = page == VisitorOnboardingPages.lastIndex
+
+fun visitorOnboardingActionLabel(page: Int): String =
+    if (isVisitorOnboardingLastPage(page)) "Get Started" else "Next"
 
 @Composable
 fun VisitorOnboardingScreen(
     onComplete: () -> Unit
 ) {
-    val pagerState = rememberPagerState(pageCount = { Pages.size })
+    val pagerState = rememberPagerState(pageCount = { VisitorOnboardingPages.size })
     val scope = rememberCoroutineScope()
-    val isLastPage = pagerState.currentPage == Pages.lastIndex
+    val isLastPage = isVisitorOnboardingLastPage(pagerState.currentPage)
 
     Column(
         modifier = Modifier
@@ -79,7 +84,7 @@ fun VisitorOnboardingScreen(
             state = pagerState,
             modifier = Modifier.weight(1f)
         ) { page ->
-            val item = Pages[page]
+            val item = VisitorOnboardingPages[page]
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -114,7 +119,7 @@ fun VisitorOnboardingScreen(
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(VisitorSpacing.Sm), verticalAlignment = Alignment.CenterVertically) {
-            Pages.indices.forEach { index ->
+            VisitorOnboardingPages.indices.forEach { index ->
                 Box(
                     modifier = Modifier
                         .clip(CircleShape)
@@ -134,7 +139,7 @@ fun VisitorOnboardingScreen(
             },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(if (isLastPage) "Enter the Museum" else "Next")
+            Text(visitorOnboardingActionLabel(pagerState.currentPage))
         }
     }
 }

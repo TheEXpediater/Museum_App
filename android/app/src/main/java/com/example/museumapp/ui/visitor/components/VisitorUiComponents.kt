@@ -429,6 +429,81 @@ fun CollectionCard(
 }
 
 @Composable
+fun VisitorAccessCard(
+    title: String,
+    body: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    primary: Boolean = false,
+    actionLabel: String? = null,
+    secondaryActionLabel: String? = null,
+    onSecondaryAction: (() -> Unit)? = null
+) {
+    val backgroundColor = if (primary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+    val contentColor = if (primary) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
+    val supportingColor = if (primary) {
+        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.78f)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val border = if (primary) {
+        null
+    } else {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.42f))
+    }
+
+    Surface(
+        onClick = onClick,
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 112.dp),
+        shape = RoundedCornerShape(VisitorCorners.Lg),
+        color = backgroundColor,
+        contentColor = contentColor,
+        border = border
+    ) {
+        Column(
+            modifier = Modifier.padding(VisitorSpacing.Lg),
+            verticalArrangement = Arrangement.spacedBy(VisitorSpacing.Md)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(VisitorSpacing.Md),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = if (primary) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.14f) else MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = contentColor,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+                    }
+                }
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(VisitorSpacing.Xs)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, color = contentColor)
+                    Text(body, style = MaterialTheme.typography.bodyMedium, color = supportingColor)
+                }
+                Icon(Icons.Outlined.ChevronRight, contentDescription = null, modifier = Modifier.size(24.dp), tint = contentColor)
+            }
+            actionLabel?.let {
+                Text(it, style = MaterialTheme.typography.labelLarge, color = contentColor)
+            }
+            if (secondaryActionLabel != null && onSecondaryAction != null) {
+                TextButton(
+                    onClick = onSecondaryAction,
+                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = VisitorSpacing.Sm)
+                ) {
+                    Text(secondaryActionLabel)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun ScanButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
