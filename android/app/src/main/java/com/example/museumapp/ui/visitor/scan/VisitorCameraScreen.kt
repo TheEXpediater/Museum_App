@@ -16,6 +16,7 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.view.CameraController
 import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -36,9 +37,9 @@ import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.FlashOff
 import androidx.compose.material.icons.outlined.FlashOn
 import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,6 +52,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -66,7 +68,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -75,15 +76,20 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
 import com.example.museumapp.data.model.ArtifactMatchDto
 import com.example.museumapp.data.model.RecognitionResponseDto
 import com.example.museumapp.data.repository.VisitorRepositoryContract
 import com.example.museumapp.ui.admin.recognition.RecognitionImagePreparer
 import com.example.museumapp.ui.admin.recognition.RecognitionUiMode
 import com.example.museumapp.ui.admin.recognition.RecognitionViewModel
+import com.example.museumapp.ui.visitor.components.ScanButton
+import com.example.museumapp.ui.visitor.components.VisitorAssetImage
+import com.example.museumapp.ui.visitor.components.VisitorCorners
+import com.example.museumapp.ui.visitor.components.VisitorSpacing
+import com.example.museumapp.ui.visitor.theme.VisitorMuseumTokens
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -130,11 +136,18 @@ fun VisitorCameraScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+    val scannerSurface = permissionState == CameraPermissionUiState.Granted &&
+        uiState.mode !in setOf(RecognitionUiMode.Success, RecognitionUiMode.NoMatch, RecognitionUiMode.Failure)
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Scan Artifact") },
+                title = { Text("Museum Scanner") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = if (scannerSurface) VisitorMuseumTokens.MuseumNavy else MaterialTheme.colorScheme.background,
+                    titleContentColor = if (scannerSurface) Color.White else MaterialTheme.colorScheme.primary,
+                    navigationIconContentColor = if (scannerSurface) Color.White else MaterialTheme.colorScheme.primary
+                ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
@@ -146,10 +159,10 @@ fun VisitorCameraScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
+                .background(if (scannerSurface) Color(0xFF070A0F) else MaterialTheme.colorScheme.background)
                 .padding(padding)
                 .navigationBarsPadding()
-                .padding(16.dp),
+                .padding(VisitorSpacing.Lg),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             when (permissionState) {
@@ -261,12 +274,12 @@ private fun ScannerContent(
     viewModel: RecognitionViewModel
 ) {
     val context = LocalContext.current
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(VisitorSpacing.Md), modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(3f / 4f)
-                .clip(RoundedCornerShape(24.dp))
+                .clip(RoundedCornerShape(VisitorCorners.Xl))
                 .background(Color.Black)
         ) {
             AndroidView(
@@ -283,8 +296,22 @@ private fun ScannerContent(
                     .align(Alignment.Center)
                     .fillMaxWidth(0.78f)
                     .aspectRatio(1f)
-                    .border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp))
+                    .border(2.dp, VisitorMuseumTokens.AntiqueGold, RoundedCornerShape(VisitorCorners.Xl))
             )
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(VisitorSpacing.Lg),
+                shape = RoundedCornerShape(VisitorCorners.Md),
+                color = Color.Black.copy(alpha = 0.58f),
+                contentColor = Color.White
+            ) {
+                Text(
+                    "Keep the artifact centered and steady.",
+                    modifier = Modifier.padding(horizontal = VisitorSpacing.Md, vertical = VisitorSpacing.Sm),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
             if (uiState.mode == RecognitionUiMode.Capturing || uiState.mode == RecognitionUiMode.Processing) {
                 Box(
                     modifier = Modifier
@@ -293,33 +320,33 @@ private fun ScannerContent(
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CircularProgressIndicator(color = Color.White)
-                        Text(if (uiState.mode == RecognitionUiMode.Capturing) "Capturing" else "Analyzing", color = Color.White)
+                        CircularProgressIndicator(color = VisitorMuseumTokens.AntiqueGold)
+                        Text(if (uiState.mode == RecognitionUiMode.Capturing) "Capturing" else "Reading artifact image", color = Color.White)
                     }
                 }
             }
         }
-        Text("Place the artifact inside the frame.", style = MaterialTheme.typography.titleMedium)
-        Text("Hold the camera steady, then press Scan.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Artifact recognition guide", style = MaterialTheme.typography.titleLarge, color = Color.White)
+        Text("Use even light, keep the object inside the frame, then scan.", color = Color.White.copy(alpha = 0.78f))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             OutlinedButton(
                 onClick = { viewModel.setTorchEnabled(!uiState.torchEnabled) },
                 modifier = Modifier.weight(1f),
-                enabled = uiState.hasFlashUnit
+                enabled = uiState.hasFlashUnit,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.38f))
             ) {
                 Icon(if (uiState.torchEnabled) Icons.Outlined.FlashOff else Icons.Outlined.FlashOn, contentDescription = null)
                 Text(if (uiState.torchEnabled) "Torch Off" else "Torch")
             }
-            Button(
+            ScanButton(
                 onClick = { captureVisitorImage(context, controller, cameraExecutor, scope, viewModel) },
                 modifier = Modifier.weight(1f),
-                enabled = uiState.canRecognize
-            ) {
-                Icon(Icons.Outlined.CameraAlt, contentDescription = null)
-                Text("Scan")
-            }
+                enabled = uiState.canRecognize,
+                label = "Scan"
+            )
         }
-        uiState.recognitionBlockedMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        uiState.recognitionBlockedMessage?.let { Text(it, color = Color(0xFFFFDAD6)) }
     }
 }
 
@@ -381,38 +408,42 @@ private fun RecognitionResultCard(response: RecognitionResponseDto?, onViewArtif
         FailureCard("Artifact scanning is temporarily unavailable.", onScanAgain)
         return
     }
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Best Match", style = MaterialTheme.typography.headlineSmall)
+    Column(verticalArrangement = Arrangement.spacedBy(VisitorSpacing.Md)) {
+        Text("Recognition Result", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.primary)
+        Text("Review the closest museum record before opening the artifact details.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         MatchCard(best, response.matchLevel, onViewArtifact)
         if (response.otherMatches.isNotEmpty()) {
-            Text("Alternative matches", style = MaterialTheme.typography.titleMedium)
+            Text("Other possible matches", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
             response.otherMatches.forEach { MatchCard(it, "possible", onViewArtifact) }
         }
-        OutlinedButton(onClick = onScanAgain, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Outlined.Refresh, contentDescription = null)
-            Text("Scan Again")
-        }
+        ScanButton(onClick = onScanAgain, modifier = Modifier.fillMaxWidth(), label = "Scan Again")
     }
 }
 
 @Composable
 private fun MatchCard(match: ArtifactMatchDto, level: String, onViewArtifact: (String) -> Unit) {
-    Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Surface(
+        shape = RoundedCornerShape(VisitorCorners.Lg),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(modifier = Modifier.padding(VisitorSpacing.Md), horizontalArrangement = Arrangement.spacedBy(VisitorSpacing.Md), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
-                    .size(86.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .size(96.dp)
+                    .clip(RoundedCornerShape(VisitorCorners.Md))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), RoundedCornerShape(VisitorCorners.Md))
+                    .padding(VisitorSpacing.Sm),
                 contentAlignment = Alignment.Center
             ) {
                 if (match.artifact.primaryImageUrl.isNullOrBlank()) {
                     Icon(Icons.Outlined.Image, contentDescription = null)
                 } else {
-                    AsyncImage(
+                    VisitorAssetImage(
                         model = match.artifact.primaryImageUrl,
                         contentDescription = match.artifact.name,
-                        contentScale = ContentScale.Crop,
+                        contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -423,10 +454,10 @@ private fun MatchCard(match: ArtifactMatchDto, level: String, onViewArtifact: (S
                     color = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ) {
-                    Text(if (level == "strong") "Strong Match" else "Possible Match", modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                    Text(if (level == "strong") "Strong match" else "Possible match", modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
                 }
                 Text(match.artifact.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(match.artifact.artifactCode, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                Text(match.artifact.artifactCode, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.SemiBold)
                 Text(match.artifact.category, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Button(onClick = { onViewArtifact(match.artifact.id) }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null)
@@ -447,13 +478,10 @@ private fun NoMatchCard(onScanAgain: () -> Unit) {
 
 @Composable
 private fun FailureCard(message: String, onScanAgain: () -> Unit) {
-    Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Card(shape = RoundedCornerShape(VisitorCorners.Lg), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(modifier = Modifier.padding(VisitorSpacing.Lg), verticalArrangement = Arrangement.spacedBy(VisitorSpacing.Md)) {
             Text(message, style = MaterialTheme.typography.bodyLarge)
-            Button(onClick = onScanAgain, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Outlined.Refresh, contentDescription = null)
-                Text("Scan Again")
-            }
+            ScanButton(onClick = onScanAgain, modifier = Modifier.fillMaxWidth(), label = "Scan Again")
         }
     }
 }

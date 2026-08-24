@@ -8,6 +8,7 @@ object VisitorRoutes {
     const val StudentRegister = "visitor_student_register"
     const val Home = "visitor_home"
     const val Artifacts = "visitor_artifacts"
+    const val Scan = "visitor_scan"
     const val Settings = "visitor_settings"
     const val Camera = "visitor_camera"
     const val ArtifactDetails = "visitor_artifact_details/{artifactId}?fromScan={fromScan}"

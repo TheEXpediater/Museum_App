@@ -12,7 +12,16 @@ object VisitorAssets {
     const val MuseumLocation = "$Base/illustrations/museum_location.webp"
     const val NewsAnnouncements = "$Base/illustrations/news_announcements.webp"
     const val AppLogo = "$Base/icons/psau_museum_app_logo.webp"
-    const val AiScanIcon = "$Base/icons/ai_scan_icon.webp"
+    const val ScanIcon = "$Base/icons/scan_icon.webp"
+    const val MuseumIcon = "$Base/icons/museum_icon.webp"
+    const val ArtifactIcon = "$Base/icons/artifact_icon.webp"
+    const val LocationIcon = "$Base/icons/location_icon.webp"
+    const val LearnIcon = "$Base/icons/learn_icon.webp"
+    const val ProfileIcon = "$Base/icons/profile_icon.webp"
+    const val BookmarkIcon = "$Base/icons/bookmark_icon.webp"
+    const val SearchIcon = "$Base/icons/search_icon.webp"
+
+    const val AiScanIcon = ScanIcon
 
     val RequiredAssets = listOf(
         OnboardingWelcome,
@@ -24,6 +33,13 @@ object VisitorAssets {
         MuseumLocation,
         NewsAnnouncements,
         AppLogo,
-        AiScanIcon
+        ScanIcon,
+        MuseumIcon,
+        ArtifactIcon,
+        LocationIcon,
+        LearnIcon,
+        ProfileIcon,
+        BookmarkIcon,
+        SearchIcon
     )
 }

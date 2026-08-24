@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -27,6 +28,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.museumapp.data.repository.VisitorRepositoryContract
+import com.example.museumapp.ui.visitor.components.VisitorSpacing
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,6 +61,11 @@ fun StudentLoginScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Student Login") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.primary,
+                    navigationIconContentColor = MaterialTheme.colorScheme.primary
+                ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
@@ -72,11 +80,12 @@ fun StudentLoginScreen(
                 .background(MaterialTheme.colorScheme.background)
                 .padding(padding)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
+                .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(VisitorSpacing.Xl),
+            verticalArrangement = Arrangement.spacedBy(VisitorSpacing.Md)
         ) {
-            Text("Welcome back.", style = MaterialTheme.typography.headlineSmall)
+            Text("Welcome back.", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
             OutlinedTextField(
                 value = uiState.identifier,
                 onValueChange = viewModel::updateIdentifier,

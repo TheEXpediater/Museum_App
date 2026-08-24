@@ -81,16 +81,18 @@ class VisitorStartupAndValidationTest {
     }
 
     @Test
-    fun visitorNavigationDestinationsKeepCenterScanOutOfTopLevelItems() {
-        assertEquals(listOf("Home", "Artifacts", "Settings"), VisitorTopLevelDestinations.map { it.label })
+    fun visitorNavigationDestinationsExposeVisitorScanAction() {
+        assertEquals(listOf("Home", "Artifacts", "Scan", "Settings"), VisitorTopLevelDestinations.map { it.label })
         assertEquals(VisitorRoutes.Home, VisitorTopLevelDestinations[0].route)
         assertEquals(VisitorRoutes.Artifacts, VisitorTopLevelDestinations[1].route)
-        assertEquals(VisitorRoutes.Settings, VisitorTopLevelDestinations[2].route)
+        assertEquals(VisitorRoutes.Scan, VisitorTopLevelDestinations[2].route)
+        assertTrue(VisitorTopLevelDestinations[2].opensScanSheet)
+        assertEquals(VisitorRoutes.Settings, VisitorTopLevelDestinations[3].route)
     }
 
     @Test
     fun assetUrisUseAndroidAssetsFolder() {
-        assertEquals(10, VisitorAssets.RequiredAssets.size)
+        assertEquals(17, VisitorAssets.RequiredAssets.size)
         assertTrue(VisitorAssets.RequiredAssets.all { it.startsWith("file:///android_asset/visitor_ui/") })
         assertTrue(VisitorAssets.RequiredAssets.none { it.contains("visitor_images_source") })
     }
