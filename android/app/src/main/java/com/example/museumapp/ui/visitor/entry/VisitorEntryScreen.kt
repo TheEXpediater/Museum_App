@@ -1,31 +1,39 @@
 package com.example.museumapp.ui.visitor.entry
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Login
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,63 +43,68 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.example.museumapp.ui.visitor.components.VisitorAssetImage
 import com.example.museumapp.ui.visitor.components.VisitorAssets
-import com.example.museumapp.ui.visitor.components.VisitorCorners
 import com.example.museumapp.ui.visitor.components.VisitorSpacing
 
-private const val AuthHeroAspectRatio = 1122f / 1410f
-private const val NarrowHeroFitThreshold = 0.56f
+private const val RoleSectionTopSpacerWeight = 0.34f
+private const val RoleSectionBottomSpacerWeight = 0.66f
 
-data class VisitorEntryHeroRegion(
-    val label: String,
+data class VisitorEntrySelectionSpec(
+    val target: String,
     val contentDescription: String,
-    val left: Float,
-    val top: Float,
-    val right: Float,
-    val bottom: Float
+    val icon: String,
+    val illustration: String
 )
 
-val VisitorEntryHeroRegions = listOf(
-    VisitorEntryHeroRegion(
-        label = "Continue as Guest",
-        contentDescription = "Continue as Guest",
-        left = 0.08f,
-        top = 0.32f,
-        right = 0.47f,
-        bottom = 0.86f
+val VisitorEntrySelections = listOf(
+    VisitorEntrySelectionSpec(
+        target = "Guest",
+        contentDescription = "Sign in as Guest",
+        icon = VisitorAssets.VisitorGuestIcon,
+        illustration = VisitorAssets.VisitorGuestCharacter
     ),
-    VisitorEntryHeroRegion(
-        label = "Student Access",
-        contentDescription = "Student Access",
-        left = 0.53f,
-        top = 0.32f,
-        right = 0.92f,
-        bottom = 0.86f
+    VisitorEntrySelectionSpec(
+        target = "Student",
+        contentDescription = "Sign in as Student",
+        icon = VisitorAssets.VisitorStudentIcon,
+        illustration = VisitorAssets.VisitorStudentCharacter
     )
 )
+
+object VisitorEntryTestTags {
+    const val Root = "visitor_entry_root"
+    const val GuestCard = "visitor_entry_guest_card"
+    const val StudentCard = "visitor_entry_student_card"
+    const val AdminLogin = "visitor_entry_admin_login"
+    const val GuestCharacter = "visitor_entry_guest_character"
+    const val StudentCharacter = "visitor_entry_student_character"
+    const val StudentLogin = "visitor_entry_student_login"
+    const val StudentRegister = "visitor_entry_student_register"
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,71 +114,50 @@ fun VisitorEntryScreen(
     onStudentRegister: () -> Unit,
     onAdminLogin: () -> Unit
 ) {
-    var showStudentAccess by remember { mutableStateOf(false) }
+    var showStudentAccess by rememberSaveable { mutableStateOf(false) }
 
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .testTag(VisitorEntryTestTags.Root)
     ) {
-        val contentScale = if (maxWidth / maxHeight < NarrowHeroFitThreshold) {
-            ContentScale.Fit
+        val horizontalPadding = if (maxWidth >= 600.dp) {
+            (maxWidth * 0.16f).coerceIn(48.dp, 180.dp)
         } else {
-            ContentScale.Crop
+            (maxWidth * 0.06f).coerceIn(18.dp, 26.dp)
         }
-        val imageBounds = heroImageBounds(maxWidth, maxHeight, contentScale)
-        val guestRegion = VisitorEntryHeroRegions[0]
-        val studentRegion = VisitorEntryHeroRegions[1]
-        val guestBounds = imageBounds.regionBounds(guestRegion, maxWidth, maxHeight)
-        val studentBounds = imageBounds.regionBounds(studentRegion, maxWidth, maxHeight)
+        val selectionGap = (maxWidth * 0.04f).coerceIn(12.dp, 28.dp)
+        val cardWidth = ((maxWidth - horizontalPadding * 2f - selectionGap) / 2f)
+            .coerceIn(128.dp, if (maxWidth >= 600.dp) 252.dp else 188.dp)
+        val topPadding = (maxHeight * 0.045f).coerceIn(22.dp, 48.dp)
+        val bottomPadding = (maxHeight * 0.035f).coerceIn(18.dp, 36.dp)
+        val compactHeight = maxHeight < 700.dp
 
-        AsyncImage(
-            model = VisitorAssets.AuthGuestStudent,
-            contentDescription = null,
-            contentScale = contentScale,
-            modifier = Modifier.fillMaxSize()
-        )
+        VisitorEntryBackground()
 
-        HeroChoiceOverlay(
-            bounds = guestBounds,
-            label = guestRegion.label,
-            contentDescription = guestRegion.contentDescription,
-            onClick = onGuest
-        )
-        HeroChoiceOverlay(
-            bounds = studentBounds,
-            label = studentRegion.label,
-            contentDescription = studentRegion.contentDescription,
-            onClick = { showStudentAccess = true }
-        )
-
-        TextButton(
-            onClick = onAdminLogin,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = VisitorSpacing.Md)
-                .semantics {
-                    contentDescription = "Administrator Login"
-                    role = Role.Button
-                }
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
-                contentColor = MaterialTheme.colorScheme.primary,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = VisitorSpacing.Md, vertical = VisitorSpacing.Sm),
-                    horizontalArrangement = Arrangement.spacedBy(VisitorSpacing.Sm),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Outlined.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Administrator Login", style = MaterialTheme.typography.labelLarge)
-                }
-            }
+        if (compactHeight) {
+            VisitorEntryScrollableContent(
+                horizontalPadding = horizontalPadding,
+                topPadding = topPadding,
+                bottomPadding = bottomPadding,
+                cardWidth = cardWidth,
+                selectionGap = selectionGap,
+                onGuest = onGuest,
+                onStudent = { showStudentAccess = true },
+                onAdminLogin = onAdminLogin
+            )
+        } else {
+            VisitorEntryAnchoredContent(
+                horizontalPadding = horizontalPadding,
+                topPadding = topPadding,
+                bottomPadding = bottomPadding,
+                cardWidth = cardWidth,
+                selectionGap = selectionGap,
+                onGuest = onGuest,
+                onStudent = { showStudentAccess = true },
+                onAdminLogin = onAdminLogin
+            )
         }
     }
 
@@ -185,75 +177,259 @@ fun VisitorEntryScreen(
 }
 
 @Composable
-private fun HeroChoiceOverlay(
-    bounds: HeroBounds,
-    label: String,
-    contentDescription: String,
+private fun VisitorEntryAnchoredContent(
+    horizontalPadding: Dp,
+    topPadding: Dp,
+    bottomPadding: Dp,
+    cardWidth: Dp,
+    selectionGap: Dp,
+    onGuest: () -> Unit,
+    onStudent: () -> Unit,
+    onAdminLogin: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .padding(horizontal = horizontalPadding)
+            .padding(top = topPadding, bottom = bottomPadding),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        SignInHeader()
+        Spacer(modifier = Modifier.weight(RoleSectionTopSpacerWeight))
+        VisitorRoleSelectionSection(
+            modifier = Modifier.fillMaxWidth(),
+            cardWidth = cardWidth,
+            selectionGap = selectionGap,
+            onGuest = onGuest,
+            onStudent = onStudent
+        )
+        Spacer(modifier = Modifier.weight(RoleSectionBottomSpacerWeight))
+        AdministratorLoginAction(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 420.dp),
+            onClick = onAdminLogin
+        )
+    }
+}
+
+@Composable
+private fun VisitorEntryScrollableContent(
+    horizontalPadding: Dp,
+    topPadding: Dp,
+    bottomPadding: Dp,
+    cardWidth: Dp,
+    selectionGap: Dp,
+    onGuest: () -> Unit,
+    onStudent: () -> Unit,
+    onAdminLogin: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = horizontalPadding)
+            .padding(top = topPadding, bottom = bottomPadding),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        SignInHeader()
+        Spacer(modifier = Modifier.height(VisitorSpacing.Xl))
+        VisitorRoleSelectionSection(
+            modifier = Modifier.fillMaxWidth(),
+            cardWidth = cardWidth,
+            selectionGap = selectionGap,
+            onGuest = onGuest,
+            onStudent = onStudent
+        )
+        Spacer(modifier = Modifier.height(VisitorSpacing.Xl))
+        AdministratorLoginAction(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 420.dp),
+            onClick = onAdminLogin
+        )
+    }
+}
+
+@Composable
+private fun VisitorEntryBackground() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        AsyncImage(
+            model = VisitorAssets.VisitorEntryBackground,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.background.copy(alpha = 0.10f),
+                            MaterialTheme.colorScheme.background.copy(alpha = 0.36f),
+                            MaterialTheme.colorScheme.background.copy(alpha = 0.72f)
+                        )
+                    )
+                )
+        )
+    }
+}
+
+@Composable
+private fun VisitorRoleSelectionSection(
+    cardWidth: Dp,
+    selectionGap: Dp,
+    onGuest: () -> Unit,
+    onStudent: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(selectionGap, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        VisitorRoleCard(
+            title = VisitorEntrySelections[0].target,
+            icon = VisitorEntrySelections[0].icon,
+            image = VisitorEntrySelections[0].illustration,
+            contentDescription = VisitorEntrySelections[0].contentDescription,
+            cardTestTag = VisitorEntryTestTags.GuestCard,
+            illustrationTestTag = VisitorEntryTestTags.GuestCharacter,
+            modifier = Modifier
+                .width(cardWidth)
+                .aspectRatio(VisitorRoleCardAspectRatio),
+            onPress = onGuest
+        )
+        VisitorRoleCard(
+            title = VisitorEntrySelections[1].target,
+            icon = VisitorEntrySelections[1].icon,
+            image = VisitorEntrySelections[1].illustration,
+            contentDescription = VisitorEntrySelections[1].contentDescription,
+            cardTestTag = VisitorEntryTestTags.StudentCard,
+            illustrationTestTag = VisitorEntryTestTags.StudentCharacter,
+            modifier = Modifier
+                .width(cardWidth)
+                .aspectRatio(VisitorRoleCardAspectRatio),
+            onPress = onStudent
+        )
+    }
+}
+
+@Composable
+private fun SignInHeader() {
+    Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+        contentColor = MaterialTheme.colorScheme.primary,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.32f)),
+        shadowElevation = 2.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = VisitorSpacing.Lg, vertical = VisitorSpacing.Sm),
+            horizontalArrangement = Arrangement.spacedBy(VisitorSpacing.Sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            VisitorAssetImage(
+                model = VisitorAssets.VisitorSignInIcon,
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(24.dp)
+            )
+            Text(
+                text = "Sign in as",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+            )
+        }
+    }
+}
+
+@Composable
+private fun AdministratorLoginAction(
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val shape = RoundedCornerShape(VisitorCorners.Xl)
-    val highlightColor = if (pressed) {
-        MaterialTheme.colorScheme.secondary.copy(alpha = 0.16f)
-    } else {
-        Color.White.copy(alpha = 0.03f)
-    }
-    val borderColor = if (pressed) {
-        MaterialTheme.colorScheme.secondary.copy(alpha = 0.82f)
-    } else {
-        Color.White.copy(alpha = 0.24f)
-    }
-    val labelBackground = if (pressed) {
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)
-    } else {
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.66f)
-    }
-    val labelBottomPadding = (bounds.height * 0.08f).coerceIn(VisitorSpacing.Sm, VisitorSpacing.Xl)
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = when {
+            isPressed -> 0.99f
+            isHovered -> 1.015f
+            else -> 1f
+        },
+        label = "adminLoginScale"
+    )
+    val shadowElevation by animateDpAsState(
+        targetValue = when {
+            isPressed -> 1.dp
+            isHovered -> 8.dp
+            else -> 4.dp
+        },
+        label = "adminLoginShadow"
+    )
+    val containerColor by animateColorAsState(
+        targetValue = when {
+            isPressed -> MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
+            isHovered -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.92f)
+            else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+        },
+        label = "adminLoginContainer"
+    )
 
-    Box(
-        modifier = Modifier
-            .offset(x = bounds.left, y = bounds.top)
-            .size(width = bounds.width, height = bounds.height)
-            .clip(shape)
-            .background(highlightColor)
-            .border(BorderStroke(if (pressed) 2.dp else 1.dp, borderColor), shape)
-            .semantics {
-                this.contentDescription = contentDescription
-                role = Role.Button
+    Surface(
+        modifier = modifier
+            .heightIn(min = 56.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
             }
+            .hoverable(interactionSource)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clip(RoundedCornerShape(32.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
                 role = Role.Button,
+                onClickLabel = "Administrator Login",
                 onClick = onClick
             )
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Administrator Login"
+                role = Role.Button
+            }
+            .testTag(VisitorEntryTestTags.AdminLogin),
+        shape = RoundedCornerShape(32.dp),
+        color = containerColor,
+        contentColor = MaterialTheme.colorScheme.primary,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = shadowElevation
     ) {
-        Text(
-            text = label,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(horizontal = VisitorSpacing.Sm)
-                .padding(bottom = labelBottomPadding)
-                .background(labelBackground, RoundedCornerShape(VisitorCorners.Sm))
-                .border(
-                    BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = if (pressed) 0.56f else 0.28f)),
-                    RoundedCornerShape(VisitorCorners.Sm)
-                )
-                .padding(horizontal = VisitorSpacing.Sm, vertical = VisitorSpacing.Xs)
-                .clearAndSetSemantics {},
-            color = MaterialTheme.colorScheme.primary,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            style = MaterialTheme.typography.labelLarge.copy(
-                fontWeight = FontWeight.SemiBold,
-                shadow = Shadow(
-                    color = Color.White.copy(alpha = 0.72f),
-                    offset = Offset(0f, 1f),
-                    blurRadius = 2f
-                )
+        Row(
+            modifier = Modifier.padding(horizontal = VisitorSpacing.Lg, vertical = VisitorSpacing.Md),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            VisitorAssetImage(
+                model = VisitorAssets.VisitorAdminIcon,
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(24.dp)
             )
-        )
+            Spacer(modifier = Modifier.width(VisitorSpacing.Md))
+            Text(
+                text = "Administrator Login",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
     }
 }
 
@@ -277,61 +453,26 @@ private fun StudentAccessSheet(
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Button(onClick = onStudentLogin, modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = onStudentLogin,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(VisitorEntryTestTags.StudentLogin)
+            ) {
                 Icon(Icons.AutoMirrored.Outlined.Login, contentDescription = null)
+                Spacer(modifier = Modifier.width(VisitorSpacing.Sm))
                 Text("Sign In")
             }
-            OutlinedButton(onClick = onStudentRegister, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = onStudentRegister,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(VisitorEntryTestTags.StudentRegister)
+            ) {
                 Icon(Icons.Outlined.PersonAdd, contentDescription = null)
+                Spacer(modifier = Modifier.width(VisitorSpacing.Sm))
                 Text("Create Student Account")
             }
         }
     }
-}
-
-private data class HeroImageBounds(
-    val left: Dp,
-    val top: Dp,
-    val width: Dp,
-    val height: Dp
-) {
-    fun regionBounds(region: VisitorEntryHeroRegion, containerWidth: Dp, containerHeight: Dp): HeroBounds {
-        val rawLeft = left + width * region.left
-        val rawTop = top + height * region.top
-        val rawRight = left + width * region.right
-        val rawBottom = top + height * region.bottom
-        val clampedLeft = rawLeft.coerceIn(0.dp, containerWidth)
-        val clampedTop = rawTop.coerceIn(0.dp, containerHeight)
-        val clampedRight = rawRight.coerceIn(0.dp, containerWidth)
-        val clampedBottom = rawBottom.coerceIn(0.dp, containerHeight)
-        return HeroBounds(
-            left = clampedLeft,
-            top = clampedTop,
-            width = (clampedRight - clampedLeft).coerceAtLeast(48.dp),
-            height = (clampedBottom - clampedTop).coerceAtLeast(48.dp)
-        )
-    }
-}
-
-private data class HeroBounds(
-    val left: Dp,
-    val top: Dp,
-    val width: Dp,
-    val height: Dp
-)
-
-private fun heroImageBounds(containerWidth: Dp, containerHeight: Dp, contentScale: ContentScale): HeroImageBounds {
-    val containerRatio = containerWidth / containerHeight
-    val imageUsesFullWidth = when (contentScale) {
-        ContentScale.Fit -> containerRatio <= AuthHeroAspectRatio
-        else -> containerRatio >= AuthHeroAspectRatio
-    }
-    val width = if (imageUsesFullWidth) containerWidth else containerHeight * AuthHeroAspectRatio
-    val height = if (imageUsesFullWidth) containerWidth / AuthHeroAspectRatio else containerHeight
-    return HeroImageBounds(
-        left = (containerWidth - width) / 2f,
-        top = (containerHeight - height) / 2f,
-        width = width,
-        height = height
-    )
 }

@@ -2,9 +2,10 @@ package com.example.museumapp.ui.visitor
 
 import com.example.museumapp.data.session.AdminSession
 import com.example.museumapp.data.session.VisitorSession
+import com.example.museumapp.ui.navigation.AdminRoutes
 import com.example.museumapp.ui.visitor.components.VisitorAssets
 import com.example.museumapp.ui.visitor.components.VisitorFormValidation
-import com.example.museumapp.ui.visitor.entry.VisitorEntryHeroRegions
+import com.example.museumapp.ui.visitor.entry.VisitorEntrySelections
 import com.example.museumapp.ui.visitor.navigation.StartupDestination
 import com.example.museumapp.ui.visitor.navigation.VisitorRoutes
 import com.example.museumapp.ui.visitor.navigation.VisitorTopLevelDestinations
@@ -77,12 +78,28 @@ class VisitorStartupAndValidationTest {
     }
 
     @Test
-    fun visitorEntryHeroUsesTwoAccessibleArtworkRegions() {
-        assertEquals(listOf("Continue as Guest", "Student Access"), VisitorEntryHeroRegions.map { it.label })
-        assertEquals(listOf("Continue as Guest", "Student Access"), VisitorEntryHeroRegions.map { it.contentDescription })
-        assertEquals(VisitorEntryHeroRegions.map { it.label }, VisitorEntryHeroRegions.map { it.contentDescription })
-        assertTrue(VisitorEntryHeroRegions.all { it.right > it.left && it.bottom > it.top })
-        assertTrue(VisitorEntryHeroRegions.all { it.left >= 0f && it.top >= 0f && it.right <= 1f && it.bottom <= 1f })
+    fun visitorEntryUsesLayeredImageCardsWithAccessibleTargets() {
+        assertEquals("file:///android_asset/visitor/background/campus-background.png", VisitorAssets.VisitorEntryBackground)
+        assertEquals("file:///android_asset/visitor_entry/characters/char_guest_female.png", VisitorAssets.VisitorGuestCharacter)
+        assertEquals("file:///android_asset/visitor_entry/characters/char_student_male.png", VisitorAssets.VisitorStudentCharacter)
+        assertEquals("file:///android_asset/visitor_entry/icons/icon_guest.png", VisitorAssets.VisitorGuestIcon)
+        assertEquals("file:///android_asset/visitor_entry/icons/icon_student.png", VisitorAssets.VisitorStudentIcon)
+        assertEquals("file:///android_asset/visitor_entry/icons/icon_admin.png", VisitorAssets.VisitorAdminIcon)
+        assertEquals(listOf("Guest", "Student"), VisitorEntrySelections.map { it.target })
+        assertEquals(
+            listOf("Sign in as Guest", "Sign in as Student"),
+            VisitorEntrySelections.map { it.contentDescription }
+        )
+        assertEquals(listOf(VisitorAssets.VisitorGuestIcon, VisitorAssets.VisitorStudentIcon), VisitorEntrySelections.map { it.icon })
+        assertEquals(
+            listOf(VisitorAssets.VisitorGuestCharacter, VisitorAssets.VisitorStudentCharacter),
+            VisitorEntrySelections.map { it.illustration }
+        )
+    }
+
+    @Test
+    fun administratorLoginRouteIsPreserved() {
+        assertEquals("admin_login", AdminRoutes.Login)
     }
 
     @Test
@@ -152,8 +169,23 @@ class VisitorStartupAndValidationTest {
 
     @Test
     fun assetUrisUseAndroidAssetsFolder() {
-        assertEquals(17, VisitorAssets.RequiredAssets.size)
-        assertTrue(VisitorAssets.RequiredAssets.all { it.startsWith("file:///android_asset/visitor_ui/") })
+        assertEquals(31, VisitorAssets.RequiredAssets.size)
+        assertTrue(VisitorAssets.RequiredAssets.contains(VisitorAssets.VisitorEntryBackground))
+        assertTrue(VisitorAssets.RequiredAssets.contains(VisitorAssets.VisitorEntrySceneTop))
+        assertTrue(VisitorAssets.RequiredAssets.contains(VisitorAssets.VisitorEntrySceneBottom))
+        assertTrue(VisitorAssets.RequiredAssets.contains(VisitorAssets.VisitorGuestCharacter))
+        assertTrue(VisitorAssets.RequiredAssets.contains(VisitorAssets.VisitorStudentCharacter))
+        assertTrue(VisitorAssets.RequiredAssets.contains(VisitorAssets.VisitorGuestIcon))
+        assertTrue(VisitorAssets.RequiredAssets.contains(VisitorAssets.VisitorStudentIcon))
+        assertTrue(VisitorAssets.RequiredAssets.contains(VisitorAssets.VisitorAdminIcon))
+        assertTrue(
+            VisitorAssets.RequiredAssets.all {
+                it.startsWith("file:///android_asset/visitor_ui/") ||
+                    it.startsWith("file:///android_asset/visitor_entry/") ||
+                    it.startsWith("file:///android_asset/visitor/")
+            }
+        )
+        assertTrue(VisitorAssets.RequiredAssets.none { it.contains("/visitor_ui/entry/") })
         assertTrue(VisitorAssets.RequiredAssets.none { it.contains("visitor_images_source") })
     }
 
