@@ -72,7 +72,11 @@ def list_programs(database: Database) -> list[dict]:
 
 
 def list_featured_artifacts(database: Database, *, limit: int = 5) -> list[dict]:
-    featured = list(database.artifacts.find({"is_featured": True}).sort([("updated_at", DESCENDING)]).limit(limit))
+    featured = list(
+        database.artifacts.find({"$and": [{"is_featured": True}, artifact_repository.published_query()]})
+        .sort([("updated_at", DESCENDING)])
+        .limit(limit)
+    )
     if featured:
         return featured
-    return artifact_repository.list_recent_artifacts(database, limit=limit)
+    return artifact_repository.list_recent_published_artifacts(database, limit=limit)

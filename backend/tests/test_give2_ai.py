@@ -66,24 +66,31 @@ def create_stored_image(settings: Settings, filename: str) -> str:
     return f"uploads/images/{filename}"
 
 
-def insert_artifact(database, *, code: str, image_paths: list[str] | None = None, name: str = "Wooden Plow") -> dict:
-    return artifact_repository.create_artifact(
-        database,
-        {
-            "artifact_code": code,
-            "name": name,
-            "description": "A traditional farming tool.",
-            "category": "Farm Tools",
-            "origin": "Pampanga",
-            "historical_period": "Early 20th Century",
-            "material": "Wood",
-            "dimensions": "120 cm x 35 cm",
-            "condition": "Good",
-            "image_paths": image_paths or [],
-            "primary_image_path": image_paths[0] if image_paths else None,
-            "created_by": "admin",
-        },
-    )
+def insert_artifact(
+    database,
+    *,
+    code: str,
+    image_paths: list[str] | None = None,
+    name: str = "Wooden Plow",
+    status: str | None = None,
+) -> dict:
+    data = {
+        "artifact_code": code,
+        "name": name,
+        "description": "A traditional farming tool.",
+        "category": "Farm Tools",
+        "origin": "Pampanga",
+        "historical_period": "Early 20th Century",
+        "material": "Wood",
+        "dimensions": "120 cm x 35 cm",
+        "condition": "Good",
+        "image_paths": image_paths or [],
+        "primary_image_path": image_paths[0] if image_paths else None,
+        "created_by": "admin",
+    }
+    if status is not None:
+        data["status"] = status
+    return artifact_repository.create_artifact(database, data)
 
 
 class FakeEmbeddingService:
@@ -353,6 +360,18 @@ def test_recognition_below_threshold_returns_no_match(tmp_path):
 
     assert response.matched is False
     assert response.match_level == "no_match"
+
+
+def test_recognition_ignores_draft_artifact_hits(tmp_path):
+    settings = make_settings(tmp_path)
+    database = mongomock.MongoClient()["museum_guide_test"]
+    draft = insert_artifact(database, code="ART-DRAFT", image_paths=["uploads/images/one.jpg"], status="draft")
+    vector_repo = FakeVectorRepository(search_response=[make_hit(str(draft["_id"]), 0.95)])
+    service = ArtifactRecognitionService(settings, embedding_service=FakeEmbeddingService(), qdrant_manager=FakeQdrantManager(count=1), vector_repository=vector_repo)
+
+    response = service.recognize(database, image_bytes=image_bytes(), content_type="image/jpeg", base_url="http://testserver/")
+
+    assert response.matched is False
 
 
 def test_stale_vector_is_dropped_from_recognition(tmp_path):

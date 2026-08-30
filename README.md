@@ -157,6 +157,8 @@ python start_backend.py --check-ai
 python start_backend.py --test-ai
 python start_backend.py --index-ai
 python start_backend.py --index-ai --rebuild
+python start_backend.py --import-artifacts
+python start_backend.py --import-artifacts --dry-run
 python start_backend.py --stop
 ```
 
@@ -352,6 +354,46 @@ python start_backend.py --index-ai --rebuild
 For a small capstone dataset, `POST /api/v1/ai/index/all` runs synchronously. Large collections should move this work into a background job with progress tracking.
 
 The Android System Status screen labels this action `Index Artifact Images`. It confirms before starting and warns that the first run may load OpenCLIP. When there are no artifact images, the app shows `Add at least one artifact image before indexing.`
+
+## Bulk Artifact Import
+
+Place removable ZIP collections under the repository-root folder `artifact_import_source/`. This folder is ignored by Git and is only an import source; the app continues to store managed runtime images under `backend/uploads/images/`.
+
+Example:
+
+```text
+artifact_import_source/
+    Agricultural Tools/
+        Wooden Plow.zip
+        Hand Sickle.zip
+    Rice Mortar.zip
+```
+
+Each ZIP represents one artifact. The ZIP filename becomes the initial artifact name with only `.zip` removed, so `Wooden Plow.zip` becomes `Wooden Plow`. A direct parent folder becomes the initial category; ZIPs directly inside `artifact_import_source/` use `Uncategorized`. Imported records are created as Draft artifacts with generated temporary codes such as `DRAFT-WOODEN-PLOW-A13F72`. Administrators can rename the artifact, replace the temporary code with the official accession code, choose a managed category, add custom metadata fields, and publish later.
+
+Run from `backend`:
+
+```powershell
+python -m scripts.import_artifact_zips
+python -m scripts.import_artifact_zips --source ../artifact_import_source
+python -m scripts.import_artifact_zips --dry-run
+python -m scripts.import_artifact_zips --update-existing
+```
+
+Or from the repository root:
+
+```powershell
+python start_backend.py --import-artifacts
+python start_backend.py --import-artifacts --dry-run
+```
+
+The importer validates ZIP paths defensively, rejects path traversal and nested archives, ignores unrelated files, validates real JPEG/JPG/PNG/WEBP image contents, and imports every valid image in an accepted artifact ZIP. It keeps archive-level safety thresholds for suspicious entry counts and total uncompressed size, but there is no product-level maximum number of images per artifact. Source ZIPs are never deleted and are never required at runtime after import.
+
+Main-image selection is deterministic. The importer first looks for `main`, `primary`, or `cover` image filenames, then `01_main`, `01_primary`, or `01_cover` prefixes, all case-insensitive. If no explicit main image is found, it sorts image filenames with case-insensitive natural sorting and uses the first image, setting `primary_image_needs_review=true` so the Android admin app shows a review banner before publishing.
+
+Duplicate protection uses internal import provenance: `import_source_name` and the ZIP SHA-256 `import_source_hash`. Re-running the importer skips previously imported ZIPs by default. Use `--update-existing` explicitly to replace images for matching imported artifacts. AI indexing is separate by default; use the existing `Index Artifact Images` workflow or the indexing commands above after artifact data is reviewed.
+
+Artifact metadata now supports typed `custom_fields` for Additional Information. Supported field types are Text, Number with optional unit, Long Text, and Date. Standard fields such as name, artifact code, category, description, primary image, images, and status remain first-class fields.
 
 ### Recognition Thresholds
 
@@ -648,6 +690,7 @@ MongoDB collections:
 ```text
 users
 artifacts
+artifact_categories
 students
 guest_sessions
 news

@@ -8,15 +8,18 @@ data class ArtifactDto(
     val name: String,
     val description: String,
     val category: String,
+    val status: String = "published",
     val origin: String?,
     @Json(name = "historical_period") val historicalPeriod: String?,
     val material: String?,
     val dimensions: String?,
     val condition: String?,
+    @Json(name = "custom_fields") val customFields: List<ArtifactCustomFieldDto> = emptyList(),
     @Json(name = "image_paths") val imagePaths: List<String>,
     @Json(name = "image_urls") val imageUrls: List<String>,
     @Json(name = "primary_image_path") val primaryImagePath: String?,
     @Json(name = "primary_image_url") val primaryImageUrl: String?,
+    @Json(name = "primary_image_needs_review") val primaryImageNeedsReview: Boolean = false,
     @Json(name = "ai_index_status") val aiIndexStatus: String? = null,
     @Json(name = "ai_indexed_image_count") val aiIndexedImageCount: Int? = null,
     @Json(name = "ai_indexed_at") val aiIndexedAt: String? = null,
@@ -24,6 +27,14 @@ data class ArtifactDto(
     @Json(name = "created_by") val createdBy: String,
     @Json(name = "created_at") val createdAt: String,
     @Json(name = "updated_at") val updatedAt: String
+)
+
+data class ArtifactCustomFieldDto(
+    val id: String,
+    val label: String,
+    val value: String,
+    val unit: String? = null,
+    val type: String
 )
 
 data class ArtifactListResponse(
@@ -40,4 +51,31 @@ data class DeleteResponse(
 
 data class PrimaryImageRequest(
     @Json(name = "image_path") val imagePath: String
+)
+
+data class ArtifactCategoryDto(
+    val id: String,
+    val name: String,
+    @Json(name = "normalized_name") val normalizedName: String,
+    @Json(name = "is_active") val isActive: Boolean = true,
+    @Json(name = "suggested_fields") val suggestedFields: List<ArtifactCategorySuggestedFieldDto> = emptyList(),
+    @Json(name = "created_at") val createdAt: String,
+    @Json(name = "updated_at") val updatedAt: String
+)
+
+data class ArtifactCategorySuggestedFieldDto(
+    val label: String,
+    val type: String = "text",
+    val unit: String? = null
+)
+
+data class ArtifactCategoryCreateRequest(
+    val name: String,
+    @Json(name = "suggested_fields") val suggestedFields: List<ArtifactCategorySuggestedFieldDto> = emptyList()
+)
+
+data class ArtifactCategoryUpdateRequest(
+    val name: String? = null,
+    @Json(name = "is_active") val isActive: Boolean? = null,
+    @Json(name = "suggested_fields") val suggestedFields: List<ArtifactCategorySuggestedFieldDto>? = null
 )

@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import Settings, get_settings
 from app.database.mongodb import MongoConnectionError, ensure_indexes, mongo_manager
-from app.routes import admin, ai, artifacts, auth, public, student, visitor
+from app.routes import admin, ai, artifact_categories, artifacts, auth, public, student, visitor
 from app.services.image_storage import ensure_upload_directory
 from app.services.openclip_warmup_service import get_openclip_warmup_service
 
@@ -104,6 +104,7 @@ def create_app(settings: Settings | None = None, database=None) -> FastAPI:
     app.include_router(public.public_router, prefix=API_PREFIX)
     app.include_router(public.visitor_artifact_router, prefix=API_PREFIX)
     app.include_router(artifacts.router, prefix=API_PREFIX)
+    app.include_router(artifact_categories.router, prefix=API_PREFIX)
     app.include_router(ai.router, prefix=API_PREFIX)
     app.include_router(admin.router, prefix=API_PREFIX)
 

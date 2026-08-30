@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from io import BytesIO
+import json
 import os
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from PIL import Image
 from app.auth.jwt_handler import create_access_token
 from app.auth.password import hash_password, verify_password
 from app.config import BACKEND_DIR, ENV_FILE, Settings
-from app.utils import utc_now
+from app.utils import to_object_id, utc_now
 from scripts.create_admin import create_or_update_admin, validate_email, validate_password
 
 
@@ -60,10 +61,28 @@ def test_context(tmp_path):
         yield client, database, settings, str(admin_id)
 
 
-def image_bytes(format_name: str = "JPEG", size: tuple[int, int] = (32, 32)) -> bytes:
+def image_bytes(
+    format_name: str = "JPEG",
+    size: tuple[int, int] = (32, 32),
+    color: tuple[int, int, int] = (180, 40, 40),
+) -> bytes:
     buffer = BytesIO()
-    Image.new("RGB", size, color=(180, 40, 40)).save(buffer, format=format_name)
+    Image.new("RGB", size, color=color).save(buffer, format=format_name)
     return buffer.getvalue()
+
+
+def image_upload_files(count: int, *, start: int = 1) -> list[tuple[str, tuple[str, bytes, str]]]:
+    return [
+        (
+            "images",
+            (
+                f"photo-{index:02d}.jpg",
+                image_bytes(color=((index * 37) % 256, (index * 71) % 256, (index * 109) % 256)),
+                "image/jpeg",
+            ),
+        )
+        for index in range(start, start + count)
+    ]
 
 
 def login(client: TestClient) -> dict:
@@ -303,6 +322,29 @@ def test_artifact_creation_with_valid_image(test_context):
     assert artifact["image_urls"][0].startswith("http://testserver/uploads/images/")
 
 
+@pytest.mark.parametrize("image_count", [1, 5, 6, 20, 42])
+def test_artifact_creation_accepts_many_valid_images_without_discarding(test_context, image_count):
+    client, _, _, _ = test_context
+    response = client.post(
+        "/api/v1/artifacts",
+        data={
+            "artifact_code": f"ART-MANY-{image_count}",
+            "name": f"Artifact With {image_count} Images",
+            "category": "Tests",
+            "primary_image_index": "0",
+        },
+        files=image_upload_files(image_count),
+        headers=auth_headers(client),
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert len(body["image_paths"]) == image_count
+    assert len(set(body["image_paths"])) == image_count
+    assert body["primary_image_path"] == body["image_paths"][0]
+    assert body["image_paths"].count(body["primary_image_path"]) == 1
+
+
 def test_artifact_image_urls_use_request_host_for_lan_clients(test_context):
     client, _, _, _ = test_context
     response = client.post(
@@ -404,6 +446,40 @@ def test_adding_another_image(test_context):
     assert len(response.json()["image_paths"]) == 2
 
 
+def test_add_images_preserves_existing_many_image_artifact_without_discarding(test_context):
+    client, _, _, _ = test_context
+    headers = auth_headers(client)
+    created = client.post(
+        "/api/v1/artifacts",
+        data={
+            "artifact_code": "ART-MANY-ADD",
+            "name": "Many Image Artifact",
+            "category": "Tests",
+            "primary_image_index": "0",
+        },
+        files=image_upload_files(20),
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    artifact = created.json()
+    original_paths = artifact["image_paths"]
+    original_primary = artifact["primary_image_path"]
+
+    response = client.post(
+        f"/api/v1/artifacts/{artifact['id']}/images",
+        files=image_upload_files(22, start=101),
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body["image_paths"]) == 42
+    assert body["image_paths"][:20] == original_paths
+    assert len(set(body["image_paths"])) == 42
+    assert body["primary_image_path"] == original_primary
+    assert body["image_paths"].count(body["primary_image_path"]) == 1
+
+
 def test_removing_an_image(test_context):
     client, _, settings, _ = test_context
     headers = auth_headers(client)
@@ -470,3 +546,168 @@ def test_invalid_mongodb_id_handling(test_context):
     assert client.get("/api/v1/artifacts/not-a-valid-id", headers=headers).status_code == 404
     assert client.patch("/api/v1/artifacts/not-a-valid-id", data={"name": "Nope"}, headers=headers).status_code == 404
     assert client.delete("/api/v1/artifacts/not-a-valid-id", headers=headers).status_code == 404
+
+
+def test_draft_creation_allows_incomplete_metadata_and_custom_fields(test_context):
+    client, _, _, _ = test_context
+    custom_fields = [
+        {"id": "weight", "label": "Weight", "value": "3.5", "unit": "kg", "type": "number"},
+        {"id": "local-name", "label": "Local Name", "value": "Araro", "unit": None, "type": "text"},
+    ]
+    response = client.post(
+        "/api/v1/artifacts",
+        data={
+            "artifact_code": "DRAFT-1",
+            "name": "Imported Draft",
+            "status": "draft",
+            "custom_fields": json.dumps(custom_fields),
+        },
+        headers=auth_headers(client),
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["status"] == "draft"
+    assert body["description"] == ""
+    assert body["category"] == "Uncategorized"
+    assert body["custom_fields"][0]["label"] == "Weight"
+
+
+def test_duplicate_custom_field_labels_are_rejected(test_context):
+    client, _, _, _ = test_context
+    response = client.post(
+        "/api/v1/artifacts",
+        data={
+            "artifact_code": "DRAFT-2",
+            "name": "Duplicate Field Draft",
+            "custom_fields": json.dumps(
+                [
+                    {"id": "a", "label": "Weight", "value": "1", "type": "number"},
+                    {"id": "b", "label": "weight", "value": "2", "type": "number"},
+                ]
+            ),
+        },
+        headers=auth_headers(client),
+    )
+
+    assert response.status_code == 422
+    assert "duplicate labels" in response.json()["detail"]
+
+
+def test_multiple_uploaded_images_require_explicit_primary_and_respect_index(test_context):
+    client, _, _, _ = test_context
+    headers = auth_headers(client)
+    data = {
+        "artifact_code": "ART-MULTI",
+        "name": "Multiple Images",
+        "description": "Has multiple images",
+        "category": "Tests",
+    }
+    files = [
+        ("images", ("first.jpg", image_bytes(size=(32, 32)), "image/jpeg")),
+        ("images", ("second.jpg", image_bytes(size=(40, 40)), "image/jpeg")),
+    ]
+    missing_primary = client.post("/api/v1/artifacts", data=data, files=files, headers=headers)
+    assert missing_primary.status_code == 422
+    assert missing_primary.json()["detail"] == "Select a main image before saving."
+
+    files = [
+        ("images", ("first.jpg", image_bytes(size=(32, 32)), "image/jpeg")),
+        ("images", ("second.jpg", image_bytes(size=(40, 40)), "image/jpeg")),
+    ]
+    response = client.post(
+        "/api/v1/artifacts",
+        data={**data, "artifact_code": "ART-MULTI-2", "primary_image_index": "1"},
+        files=files,
+        headers=headers,
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["primary_image_path"] == body["image_paths"][1]
+
+
+def test_publish_validation_requires_category_and_primary_image(test_context):
+    client, _, _, _ = test_context
+    headers = auth_headers(client)
+    artifact = client.post(
+        "/api/v1/artifacts",
+        data={"artifact_code": "DRAFT-PUBLISH", "name": "Publish Candidate", "status": "draft"},
+        files=[("images", ("only.jpg", image_bytes(), "image/jpeg"))],
+        headers=headers,
+    ).json()
+
+    invalid = client.patch(f"/api/v1/artifacts/{artifact['id']}", data={"status": "published"}, headers=headers)
+    assert invalid.status_code == 422
+    assert "Category" in invalid.json()["detail"]
+
+    valid = client.patch(
+        f"/api/v1/artifacts/{artifact['id']}",
+        data={"category": "Farm Tools", "status": "published"},
+        headers=headers,
+    )
+    assert valid.status_code == 200, valid.text
+    assert valid.json()["status"] == "published"
+
+
+def test_removing_primary_image_requires_replacement_when_other_images_remain(test_context):
+    client, _, _, _ = test_context
+    headers = auth_headers(client)
+    response = client.post(
+        "/api/v1/artifacts",
+        data={
+            "artifact_code": "ART-PRIMARY-REMOVE",
+            "name": "Primary Remove",
+            "category": "Tests",
+            "primary_image_index": "0",
+        },
+        files=[
+            ("images", ("first.jpg", image_bytes(size=(32, 32)), "image/jpeg")),
+            ("images", ("second.jpg", image_bytes(size=(40, 40)), "image/jpeg")),
+        ],
+        headers=headers,
+    )
+    assert response.status_code == 201, response.text
+    artifact = response.json()
+    first_name = Path(artifact["image_paths"][0]).name
+    second_path = artifact["image_paths"][1]
+
+    blocked = client.delete(f"/api/v1/artifacts/{artifact['id']}/images/{first_name}", headers=headers)
+    assert blocked.status_code == 422
+    assert "Choose a new main image" in blocked.json()["detail"]
+
+    removed = client.delete(
+        f"/api/v1/artifacts/{artifact['id']}/images/{first_name}",
+        params={"replacement_primary_image_path": second_path},
+        headers=headers,
+    )
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["primary_image_path"] == second_path
+
+
+def test_category_management_endpoints(test_context):
+    client, database, _, _ = test_context
+    headers = auth_headers(client)
+    created = client.post("/api/v1/artifact-categories", json={"name": "Agricultural Tools"}, headers=headers)
+    assert created.status_code == 201, created.text
+    category = created.json()
+    assert category["normalized_name"] == "agricultural tools"
+
+    artifact = create_artifact(client, headers, code="ART-CATEGORY")
+    update = client.patch(
+        f"/api/v1/artifacts/{artifact['id']}",
+        data={"category": "Agricultural Tools"},
+        headers=headers,
+    )
+    assert update.status_code == 200
+
+    renamed = client.patch(
+        f"/api/v1/artifact-categories/{category['id']}",
+        json={"name": "Farm Implements"},
+        headers=headers,
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert database.artifacts.find_one({"_id": to_object_id(artifact["id"])})["category"] == "Farm Implements"
+
+    deactivated = client.delete(f"/api/v1/artifact-categories/{category['id']}", headers=headers)
+    assert deactivated.status_code == 200
+    assert deactivated.json()["is_active"] is False

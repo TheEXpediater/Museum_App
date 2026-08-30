@@ -13,8 +13,16 @@ data class PublicArtifactDto(
     val material: String? = null,
     val dimensions: String? = null,
     val condition: String? = null,
+    @Json(name = "custom_fields") val customFields: List<PublicArtifactCustomFieldDto> = emptyList(),
     @Json(name = "image_urls") val imageUrls: List<String> = emptyList(),
     @Json(name = "primary_image_url") val primaryImageUrl: String? = null
+)
+
+data class PublicArtifactCustomFieldDto(
+    val label: String,
+    val value: String,
+    val unit: String? = null,
+    val type: String
 )
 
 data class PublicArtifactListResponseDto(

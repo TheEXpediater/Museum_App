@@ -158,6 +158,8 @@ class ArtifactRecognitionService:
             if artifact is None:
                 self._drop_stale_hits(group)
                 continue
+            if not artifact_repository.artifact_is_published(artifact):
+                continue
             matches.append(self._match_response(artifact, group, base_url))
         return matches
 
@@ -168,10 +170,10 @@ class ArtifactRecognitionService:
             response=ArtifactMatchResponse(
                 artifact=RecognizedArtifact(
                     id=str(artifact["_id"]),
-                    artifact_code=artifact["artifact_code"],
-                    name=artifact["name"],
-                    description=artifact["description"],
-                    category=artifact["category"],
+                    artifact_code=artifact.get("artifact_code", ""),
+                    name=artifact.get("name", ""),
+                    description=artifact.get("description") or "",
+                    category=artifact.get("category") or "Uncategorized",
                     origin=artifact.get("origin"),
                     historical_period=artifact.get("historical_period"),
                     material=artifact.get("material"),

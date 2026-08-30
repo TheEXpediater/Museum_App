@@ -27,6 +27,7 @@ class StoredImage:
     image_path: str
     filename: str
     digest: str
+    source_filename: str | None = None
 
 
 def ensure_upload_directory(settings: Settings) -> None:
@@ -79,6 +80,21 @@ async def save_one_upload(upload: UploadFile, settings: Settings) -> StoredImage
             detail=f"Image exceeds the {settings.max_image_size_mb} MB size limit.",
         )
 
+    extension, digest = validate_image_bytes(data, settings, content_type=upload.content_type)
+
+    return save_image_bytes(data, settings, extension=extension, digest=digest, source_filename=upload.filename)
+
+
+def validate_image_bytes(data: bytes, settings: Settings, *, content_type: str | None = None) -> tuple[str, str]:
+    if not data:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Uploaded image is empty.")
+    max_bytes = settings.max_image_size_mb * 1024 * 1024
+    if len(data) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Image exceeds the {settings.max_image_size_mb} MB size limit.",
+        )
+
     try:
         with Image.open(BytesIO(data)) as image:
             image.verify()
@@ -90,13 +106,31 @@ async def save_one_upload(upload: UploadFile, settings: Settings) -> StoredImage
         ) from exc
 
     extension = FORMAT_TO_EXTENSION.get(image_format or "")
-    if extension is None or upload.content_type not in FORMAT_TO_MIME_TYPES.get(image_format or "", set()):
+    if extension is None:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only JPEG, JPG, PNG, and WEBP images are allowed.",
+        )
+    if content_type is not None and content_type not in FORMAT_TO_MIME_TYPES.get(image_format or "", set()):
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Image content does not match an allowed image type.",
         )
 
-    digest = hashlib.sha256(data).hexdigest()
+    return extension, hashlib.sha256(data).hexdigest()
+
+
+def save_image_bytes(
+    data: bytes,
+    settings: Settings,
+    *,
+    extension: str | None = None,
+    digest: str | None = None,
+    source_filename: str | None = None,
+) -> StoredImage:
+    if extension is None or digest is None:
+        extension, digest = validate_image_bytes(data, settings)
+    ensure_upload_directory(settings)
     for _ in range(10):
         filename = f"{uuid4().hex}{extension}"
         destination = settings.upload_path / filename
@@ -107,7 +141,7 @@ async def save_one_upload(upload: UploadFile, settings: Settings) -> StoredImage
 
     destination.write_bytes(data)
     image_path = PurePosixPath("uploads", "images", filename).as_posix()
-    return StoredImage(image_path=image_path, filename=filename, digest=digest)
+    return StoredImage(image_path=image_path, filename=filename, digest=digest, source_filename=source_filename)
 
 
 def cleanup_images(image_paths: list[str], settings: Settings) -> None:

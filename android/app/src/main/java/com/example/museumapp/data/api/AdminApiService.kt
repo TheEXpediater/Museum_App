@@ -6,6 +6,9 @@ import com.example.museumapp.data.model.AiIndexResultResponse
 import com.example.museumapp.data.model.AiIndexStatusResponse
 import com.example.museumapp.data.model.AiWarmupResponse
 import com.example.museumapp.data.model.ArtifactDto
+import com.example.museumapp.data.model.ArtifactCategoryCreateRequest
+import com.example.museumapp.data.model.ArtifactCategoryDto
+import com.example.museumapp.data.model.ArtifactCategoryUpdateRequest
 import com.example.museumapp.data.model.ArtifactListResponse
 import com.example.museumapp.data.model.ArticleDto
 import com.example.museumapp.data.model.AnnouncementDto
@@ -124,8 +127,24 @@ interface AdminApiService {
         @Query("page_size") pageSize: Int,
         @Query("search") search: String?,
         @Query("category") category: String?,
-        @Query("sort") sort: String
+        @Query("sort") sort: String,
+        @Query("status") status: String? = null
     ): ArtifactListResponse
+
+    @GET("api/v1/artifact-categories")
+    suspend fun listArtifactCategories(): List<ArtifactCategoryDto>
+
+    @POST("api/v1/artifact-categories")
+    suspend fun createArtifactCategory(@Body request: ArtifactCategoryCreateRequest): ArtifactCategoryDto
+
+    @PATCH("api/v1/artifact-categories/{categoryId}")
+    suspend fun updateArtifactCategory(
+        @Path("categoryId") categoryId: String,
+        @Body request: ArtifactCategoryUpdateRequest
+    ): ArtifactCategoryDto
+
+    @DELETE("api/v1/artifact-categories/{categoryId}")
+    suspend fun deactivateArtifactCategory(@Path("categoryId") categoryId: String): ArtifactCategoryDto
 
     @GET("api/v1/artifacts/{artifactId}")
     suspend fun getArtifact(@Path("artifactId") artifactId: String): ArtifactDto

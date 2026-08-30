@@ -19,6 +19,7 @@ from app.schemas.public_content import (
     PublicHomeResponse,
 )
 from app.services.image_storage import image_url_for_path
+from app.services.artifact_validation import public_custom_fields
 from app.utils import to_object_id
 
 
@@ -36,15 +37,16 @@ def serialize_artifact(document: dict, request: Request) -> PublicArtifactRespon
     primary_image_path = document.get("primary_image_path")
     return PublicArtifactResponse(
         id=str(document["_id"]),
-        artifact_code=document["artifact_code"],
-        name=document["name"],
-        description=document["description"],
-        category=document["category"],
+        artifact_code=document.get("artifact_code", ""),
+        name=document.get("name", ""),
+        description=document.get("description") or "",
+        category=document.get("category") or "Uncategorized",
         origin=document.get("origin"),
         historical_period=document.get("historical_period"),
         material=document.get("material"),
         dimensions=document.get("dimensions"),
         condition=document.get("condition"),
+        custom_fields=public_custom_fields(document.get("custom_fields")),
         image_urls=[image_url_for_path(base_url, path) for path in image_paths],
         primary_image_url=image_url_for_path(base_url, primary_image_path),
     )
@@ -193,6 +195,7 @@ def visitor_artifacts(
         search=search.strip() if search else None,
         category=category.strip() if category else None,
         sort=sort,
+        status_filter="published",
     )
     return PublicArtifactListResponse(
         items=[serialize_artifact(item, request) for item in items],
@@ -208,7 +211,7 @@ def visitor_artifact_details(artifact_id: str, request: Request) -> PublicArtifa
     object_id = to_object_id(artifact_id)
     if object_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact was not found.")
-    artifact = artifact_repository.get_artifact(request.app.state.database, object_id)
+    artifact = artifact_repository.get_published_artifact(request.app.state.database, object_id)
     if artifact is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact was not found.")
     return serialize_artifact(artifact, request)

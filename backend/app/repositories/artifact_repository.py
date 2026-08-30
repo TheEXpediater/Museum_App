@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from bson import ObjectId
@@ -42,6 +43,28 @@ def find_by_code(database: Database, artifact_code: str) -> dict | None:
     return collection(database).find_one({"artifact_code": artifact_code})
 
 
+def find_by_import_source_hash(database: Database, import_source_hash: str) -> dict | None:
+    return collection(database).find_one({"import_source_hash": import_source_hash})
+
+
+def published_query() -> dict[str, Any]:
+    return {
+        "$or": [
+            {"status": "published"},
+            {"status": {"$exists": False}},
+            {"status": None},
+        ]
+    }
+
+
+def artifact_is_published(document: dict[str, Any]) -> bool:
+    return (document.get("status") or "published") == "published"
+
+
+def get_published_artifact(database: Database, artifact_id: ObjectId) -> dict | None:
+    return collection(database).find_one({"$and": [{"_id": artifact_id}, published_query()]})
+
+
 def list_artifacts(
     database: Database,
     *,
@@ -50,15 +73,28 @@ def list_artifacts(
     search: str | None,
     category: str | None,
     sort: str,
+    status_filter: str | None = None,
 ) -> tuple[list[dict], int]:
-    query: dict[str, Any] = {}
+    clauses: list[dict[str, Any]] = []
     if search:
-        query["$or"] = [
-            {"name": {"$regex": search, "$options": "i"}},
-            {"artifact_code": {"$regex": search, "$options": "i"}},
-        ]
+        clauses.append(
+            {
+                "$or": [
+                    {"name": {"$regex": search, "$options": "i"}},
+                    {"artifact_code": {"$regex": search, "$options": "i"}},
+                ]
+            }
+        )
     if category:
-        query["category"] = {"$regex": f"^{category}$", "$options": "i"}
+        clauses.append({"category": {"$regex": f"^{re.escape(category)}$", "$options": "i"}})
+
+    normalized_status = (status_filter or "").strip().lower()
+    if normalized_status == "published":
+        clauses.append(published_query())
+    elif normalized_status in {"draft", "drafts"}:
+        clauses.append({"status": "draft"})
+
+    query: dict[str, Any] = {"$and": clauses} if clauses else {}
 
     total = collection(database).count_documents(query)
     cursor = (
@@ -88,6 +124,10 @@ def list_all_artifacts(database: Database, artifact_id: ObjectId | None = None) 
 
 def list_recent_artifacts(database: Database, *, limit: int = 5) -> list[dict]:
     return list(collection(database).find({}).sort([("created_at", DESCENDING)]).limit(limit))
+
+
+def list_recent_published_artifacts(database: Database, *, limit: int = 5) -> list[dict]:
+    return list(collection(database).find(published_query()).sort([("created_at", DESCENDING)]).limit(limit))
 
 
 def list_artifacts_by_ai_status(database: Database, statuses: list[str]) -> list[dict]:
@@ -127,6 +167,9 @@ def count_total_images(database: Database) -> int:
 
 
 def count_categories(database: Database) -> int:
+    managed_count = database.artifact_categories.count_documents({"is_active": True})
+    if managed_count:
+        return managed_count
     return len([category for category in collection(database).distinct("category") if category])
 
 

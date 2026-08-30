@@ -38,6 +38,7 @@ data class DashboardRecentArtifactDto(
     @Json(name = "artifact_code") val artifactCode: String,
     val name: String,
     val category: String,
+    val status: String = "published",
     @Json(name = "primary_image_url") val primaryImageUrl: String?,
     @Json(name = "ai_index_status") val aiIndexStatus: String?,
     @Json(name = "created_at") val createdAt: String

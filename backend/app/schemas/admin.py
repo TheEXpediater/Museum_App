@@ -8,6 +8,7 @@ class DashboardRecentArtifact(BaseModel):
     artifact_code: str
     name: str
     category: str
+    status: str = "published"
     primary_image_url: str | None = None
     ai_index_status: str | None = None
     created_at: str

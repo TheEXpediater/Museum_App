@@ -40,8 +40,13 @@ def ensure_indexes(database: Database) -> None:
     database.artifacts.create_index([("artifact_code", ASCENDING)], unique=True, name="uniq_artifact_code")
     database.artifacts.create_index([("name", ASCENDING)], name="idx_artifact_name")
     database.artifacts.create_index([("category", ASCENDING)], name="idx_artifact_category")
+    database.artifacts.create_index([("status", ASCENDING)], name="idx_artifact_status")
+    database.artifacts.create_index([("import_source_hash", ASCENDING)], name="idx_artifact_import_source_hash")
     database.artifacts.create_index([("created_at", DESCENDING)], name="idx_artifact_created_at")
     database.artifacts.create_index([("ai_index_status", ASCENDING)], name="idx_artifact_ai_index_status")
+
+    database.artifact_categories.create_index([("normalized_name", ASCENDING)], unique=True, name="uniq_categories_normalized_name")
+    database.artifact_categories.create_index([("is_active", ASCENDING), ("name", ASCENDING)], name="idx_categories_active_name")
 
     database.students.create_index([("student_id_normalized", ASCENDING)], unique=True, name="uniq_students_student_id")
     database.students.create_index([("email_normalized", ASCENDING)], unique=True, name="uniq_students_email")

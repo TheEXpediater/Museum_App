@@ -20,6 +20,9 @@ build/
 # Uploads
 backend/uploads/images/*
 !backend/uploads/images/.gitkeep
+artifact_import_source/
+artifact_image_source/
+artifact_import_report.json
 
 # Android / Gradle
 .gradle/

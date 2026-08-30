@@ -221,6 +221,15 @@ private fun ArtifactDetailsContent(
                 }
             }
         }
+        if (artifact.customFields.any { it.value.hasMuseumContent() }) {
+            item {
+                DetailSection("Additional Information") {
+                    artifact.customFields.filter { it.value.hasMuseumContent() }.forEach { field ->
+                        InfoRow(field.label, listOf(field.value, field.unit).filter { !it.isNullOrBlank() }.joinToString(" "))
+                    }
+                }
+            }
+        }
         if (relatedArticles.isNotEmpty()) {
             item {
                 DetailSection("Related Articles") {

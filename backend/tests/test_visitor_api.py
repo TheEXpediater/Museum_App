@@ -113,24 +113,25 @@ def create_student(client: TestClient, **overrides) -> tuple[dict, dict[str, str
     return body, {"Authorization": f"Bearer {body['access_token']}"}
 
 
-def insert_artifact(database, *, code: str = "ART-V1") -> dict:
-    return artifact_repository.create_artifact(
-        database,
-        {
-            "artifact_code": code,
-            "name": "Wooden Plow",
-            "description": "A traditional farming tool.",
-            "category": "Farm Tools",
-            "origin": "Pampanga",
-            "historical_period": "Early 20th Century",
-            "material": "Wood",
-            "dimensions": "120 cm x 35 cm",
-            "condition": "Good",
-            "image_paths": [],
-            "primary_image_path": None,
-            "created_by": "admin",
-        },
-    )
+def insert_artifact(database, *, code: str = "ART-V1", status: str | None = None, custom_fields: list[dict] | None = None) -> dict:
+    data = {
+        "artifact_code": code,
+        "name": "Wooden Plow",
+        "description": "A traditional farming tool.",
+        "category": "Farm Tools",
+        "origin": "Pampanga",
+        "historical_period": "Early 20th Century",
+        "material": "Wood",
+        "dimensions": "120 cm x 35 cm",
+        "condition": "Good",
+        "custom_fields": custom_fields or [],
+        "image_paths": [],
+        "primary_image_path": None,
+        "created_by": "admin",
+    }
+    if status is not None:
+        data["status"] = status
+    return artifact_repository.create_artifact(database, data)
 
 
 def test_guest_session_creation_and_validation(test_context):
@@ -474,7 +475,13 @@ def test_empty_museum_information_uses_to_be_configured(test_context):
 
 def test_visitor_artifact_access_hides_admin_fields(test_context):
     client, database, _, _ = test_context
-    artifact = insert_artifact(database)
+    artifact = insert_artifact(
+        database,
+        custom_fields=[
+            {"id": "weight", "label": "Weight", "value": "3.5", "unit": "kg", "type": "number"},
+            {"id": "empty", "label": "Remarks", "value": "", "unit": None, "type": "text"},
+        ],
+    )
     _, headers = create_guest(client)
 
     list_response = client.get("/api/v1/visitor/artifacts", headers=headers)
@@ -488,3 +495,20 @@ def test_visitor_artifact_access_hides_admin_fields(test_context):
     assert details.status_code == 200
     assert details.json()["name"] == "Wooden Plow"
     assert "created_by" not in details.json()
+    assert details.json()["custom_fields"] == [{"label": "Weight", "value": "3.5", "unit": "kg", "type": "number"}]
+
+
+def test_visitor_artifacts_hide_drafts(test_context):
+    client, database, _, _ = test_context
+    published = insert_artifact(database, code="ART-PUBLISHED", status="published")
+    draft = insert_artifact(database, code="ART-DRAFT", status="draft")
+    _, headers = create_guest(client)
+
+    list_response = client.get("/api/v1/visitor/artifacts", headers=headers)
+    assert list_response.status_code == 200
+    codes = [item["artifact_code"] for item in list_response.json()["items"]]
+    assert "ART-PUBLISHED" in codes
+    assert "ART-DRAFT" not in codes
+
+    assert client.get(f"/api/v1/visitor/artifacts/{published['_id']}", headers=headers).status_code == 200
+    assert client.get(f"/api/v1/visitor/artifacts/{draft['_id']}", headers=headers).status_code == 404

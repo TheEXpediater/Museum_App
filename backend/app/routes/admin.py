@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Request
 from app.auth.dependencies import require_admin
 from app.ai import model_manager as openclip_models
 from app.repositories import artifact_repository
+from app.services.artifact_validation import persisted_status
 from app.schemas.admin import DashboardRecentArtifact, DashboardSummaryResponse
 from app.services.image_storage import image_url_for_path
 from app.vector import qdrant_manager as qdrant_vectors
@@ -69,9 +70,10 @@ def serialize_recent_artifact(document: dict, base_url: str) -> DashboardRecentA
     created_at = document.get("created_at")
     return DashboardRecentArtifact(
         id=str(document["_id"]),
-        artifact_code=document["artifact_code"],
-        name=document["name"],
-        category=document["category"],
+        artifact_code=document.get("artifact_code", ""),
+        name=document.get("name", ""),
+        category=document.get("category") or "Uncategorized",
+        status=persisted_status(document),
         primary_image_url=image_url_for_path(base_url, document.get("primary_image_path")),
         ai_index_status=document.get("ai_index_status"),
         created_at=created_at.isoformat() if isinstance(created_at, datetime) else str(created_at),

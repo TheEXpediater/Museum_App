@@ -21,6 +21,7 @@ data class ArtifactListUiState(
     val search: String = "",
     val category: String = "",
     val sort: String = "newest",
+    val statusFilter: String = "all",
     val page: Int = 1,
     val totalPages: Int = 0,
     val totalItems: Int = 0,
@@ -47,6 +48,11 @@ class ArtifactListViewModel(private val repository: AdminRepository) : ViewModel
 
     fun updateSort(value: String) {
         _uiState.update { it.copy(sort = value) }
+        loadArtifacts(reset = true)
+    }
+
+    fun updateStatusFilter(value: String) {
+        _uiState.update { it.copy(statusFilter = value) }
         loadArtifacts(reset = true)
     }
 
@@ -108,7 +114,7 @@ class ArtifactListViewModel(private val repository: AdminRepository) : ViewModel
                     errorMessage = null
                 )
             }
-            when (val result = repository.listArtifacts(nextPage, 20, state.search, state.category, state.sort)) {
+            when (val result = repository.listArtifacts(nextPage, 20, state.search, state.category, state.sort, state.statusFilter)) {
                 is RepositoryResult.Success -> _uiState.update {
                     it.copy(
                         artifacts = if (reset) result.data.items else it.artifacts + result.data.items,

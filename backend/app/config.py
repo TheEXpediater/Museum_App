@@ -124,9 +124,9 @@ class Settings(BaseSettings):
 
     @field_validator("max_image_size_mb")
     @classmethod
-    def image_size_must_be_positive(cls, value: int) -> int:
+    def positive_integer_setting(cls, value: int) -> int:
         if value <= 0:
-            raise ValueError("MAX_IMAGE_SIZE_MB must be greater than zero")
+            raise ValueError("numeric configuration values must be greater than zero")
         return value
 
     @field_validator("jwt_access_token_expire_minutes")

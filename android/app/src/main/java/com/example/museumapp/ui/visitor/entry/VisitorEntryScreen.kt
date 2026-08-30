@@ -421,7 +421,7 @@ private fun AdministratorLoginAction(
                 model = VisitorAssets.VisitorAdminIcon,
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(32.dp)
             )
             Spacer(modifier = Modifier.width(VisitorSpacing.Md))
             Text(

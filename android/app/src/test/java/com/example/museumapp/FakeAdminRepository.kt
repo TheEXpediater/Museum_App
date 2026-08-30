@@ -6,6 +6,8 @@ import com.example.museumapp.data.model.AiIndexAllResponse
 import com.example.museumapp.data.model.AiIndexResultResponse
 import com.example.museumapp.data.model.AiIndexStatusResponse
 import com.example.museumapp.data.model.AiWarmupResponse
+import com.example.museumapp.data.model.ArtifactCategoryDto
+import com.example.museumapp.data.model.ArtifactCustomFieldDto
 import com.example.museumapp.data.model.ArtifactDto
 import com.example.museumapp.data.model.ArtifactListResponse
 import com.example.museumapp.data.model.DashboardSummaryResponse
@@ -66,6 +68,10 @@ class FakeAdminRepository : AdminRepositoryContract {
     )
     var retryFailedResult: RepositoryResult<AiIndexAllResponse> = indexAllResult
     var rebuildResult: RepositoryResult<AiIndexAllResponse> = indexAllResult
+    var categoriesResult: RepositoryResult<List<ArtifactCategoryDto>> = RepositoryResult.Success(emptyList())
+    var artifactResult: RepositoryResult<ArtifactDto> = RepositoryResult.Success(sampleArtifact())
+    var createArtifactResult: RepositoryResult<ArtifactDto> = RepositoryResult.Success(sampleArtifact(status = "draft"))
+    var updateArtifactResult: RepositoryResult<ArtifactDto> = RepositoryResult.Success(sampleArtifact(status = "draft"))
     var indexStatusResult: RepositoryResult<AiIndexStatusResponse> = RepositoryResult.Success(
         AiIndexStatusResponse(
             totalArtifacts = 0,
@@ -90,6 +96,10 @@ class FakeAdminRepository : AdminRepositoryContract {
     var warmupCalls = 0
     var warmupStatusCalls = 0
     var rebuildCalls = 0
+    var createdForm: ArtifactFormData? = null
+    var updatedForm: ArtifactFormData? = null
+    var createdImages: List<Uri> = emptyList()
+    var updatedImages: List<Uri> = emptyList()
 
     override suspend fun checkHealth(): RepositoryResult<HealthResponse> = healthResult
     override suspend fun aiHealth(): RepositoryResult<AiHealthResponse> = aiHealthResult
@@ -107,10 +117,22 @@ class FakeAdminRepository : AdminRepositoryContract {
     }
     override suspend fun currentAdmin(): RepositoryResult<UserDto> = currentAdminResult
     override suspend fun dashboardSummary(): RepositoryResult<DashboardSummaryResponse> = dashboardResult
-    override suspend fun listArtifacts(page: Int, pageSize: Int, search: String?, category: String?, sort: String): RepositoryResult<ArtifactListResponse> = RepositoryResult.Error("unused")
-    override suspend fun getArtifact(artifactId: String): RepositoryResult<ArtifactDto> = RepositoryResult.Error("unused")
-    override suspend fun createArtifact(form: ArtifactFormData, images: List<Uri>): RepositoryResult<ArtifactDto> = RepositoryResult.Error("unused")
-    override suspend fun updateArtifact(artifactId: String, form: ArtifactFormData, images: List<Uri>): RepositoryResult<ArtifactDto> = RepositoryResult.Error("unused")
+    override suspend fun listArtifacts(page: Int, pageSize: Int, search: String?, category: String?, sort: String, status: String?): RepositoryResult<ArtifactListResponse> = RepositoryResult.Error("unused")
+    override suspend fun listCategories(): RepositoryResult<List<ArtifactCategoryDto>> = categoriesResult
+    override suspend fun createCategory(name: String): RepositoryResult<ArtifactCategoryDto> = RepositoryResult.Error("unused")
+    override suspend fun renameCategory(categoryId: String, name: String): RepositoryResult<ArtifactCategoryDto> = RepositoryResult.Error("unused")
+    override suspend fun deactivateCategory(categoryId: String): RepositoryResult<ArtifactCategoryDto> = RepositoryResult.Error("unused")
+    override suspend fun getArtifact(artifactId: String): RepositoryResult<ArtifactDto> = artifactResult
+    override suspend fun createArtifact(form: ArtifactFormData, images: List<Uri>): RepositoryResult<ArtifactDto> {
+        createdForm = form
+        createdImages = images
+        return createArtifactResult
+    }
+    override suspend fun updateArtifact(artifactId: String, form: ArtifactFormData, images: List<Uri>): RepositoryResult<ArtifactDto> {
+        updatedForm = form
+        updatedImages = images
+        return updateArtifactResult
+    }
     override suspend fun addImages(artifactId: String, images: List<Uri>): RepositoryResult<ArtifactDto> = RepositoryResult.Error("unused")
     override suspend fun removeImage(artifactId: String, imageName: String): RepositoryResult<ArtifactDto> = RepositoryResult.Error("unused")
     override suspend fun setPrimaryImage(artifactId: String, imagePath: String): RepositoryResult<ArtifactDto> = RepositoryResult.Error("unused")
@@ -131,4 +153,29 @@ class FakeAdminRepository : AdminRepositoryContract {
         return rebuildResult
     }
     override suspend fun indexStatus(): RepositoryResult<AiIndexStatusResponse> = indexStatusResult
+
+    companion object {
+        fun sampleArtifact(status: String = "published"): ArtifactDto = ArtifactDto(
+            id = "artifact-1",
+            artifactCode = "ART-1",
+            name = "Wooden Plow",
+            description = "A traditional farming tool.",
+            category = if (status == "published") "Farm Tools" else "Uncategorized",
+            status = status,
+            origin = null,
+            historicalPeriod = null,
+            material = null,
+            dimensions = null,
+            condition = null,
+            customFields = listOf(ArtifactCustomFieldDto("local", "Local Name", "Araro", null, "text")),
+            imagePaths = listOf("uploads/images/one.jpg"),
+            imageUrls = listOf("http://testserver/uploads/images/one.jpg"),
+            primaryImagePath = "uploads/images/one.jpg",
+            primaryImageUrl = "http://testserver/uploads/images/one.jpg",
+            primaryImageNeedsReview = false,
+            createdBy = "admin",
+            createdAt = "2026-08-03T11:00:00",
+            updatedAt = "2026-08-03T12:00:00"
+        )
+    }
 }

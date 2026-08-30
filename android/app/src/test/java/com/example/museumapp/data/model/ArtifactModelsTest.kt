@@ -22,15 +22,20 @@ class ArtifactModelsTest {
               "name": "Jar",
               "description": "Clay jar",
               "category": "Ceramics",
+              "status": "draft",
               "origin": null,
               "historical_period": null,
               "material": "Clay",
               "dimensions": null,
               "condition": "Good",
+              "custom_fields": [
+                {"id": "weight", "label": "Weight", "value": "3.5", "unit": "kg", "type": "number"}
+              ],
               "image_paths": [],
               "image_urls": [],
               "primary_image_path": null,
               "primary_image_url": null,
+              "primary_image_needs_review": true,
               "ai_index_status": "indexed",
               "ai_indexed_image_count": 2,
               "ai_indexed_at": "2026-08-03T12:00:00",
@@ -45,5 +50,8 @@ class ArtifactModelsTest {
         assertNotNull(parsed)
         assertEquals("indexed", parsed!!.aiIndexStatus)
         assertEquals(2, parsed.aiIndexedImageCount)
+        assertEquals("draft", parsed.status)
+        assertEquals(true, parsed.primaryImageNeedsReview)
+        assertEquals("Weight", parsed.customFields.single().label)
     }
 }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -30,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -124,8 +127,14 @@ private fun ArtifactDetailsContent(artifact: ArtifactDto, padding: PaddingValues
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(artifact.name, style = MaterialTheme.typography.headlineSmall)
                 Text(artifact.artifactCode, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-                Text(artifact.category, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    StatusBadge(artifact.status)
+                    Text(artifact.category, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
+        }
+        if (artifact.primaryImageNeedsReview) {
+            item { PrimaryReviewWarning() }
         }
         item {
             DetailSection("Description") {
@@ -145,11 +154,55 @@ private fun ArtifactDetailsContent(artifact: ArtifactDto, padding: PaddingValues
                 DetailRow("Condition", artifact.condition)
             }
         }
+        if (artifact.customFields.any { it.value.isNotBlank() }) {
+            item {
+                DetailSection("Additional Information") {
+                    artifact.customFields.filter { it.value.isNotBlank() }.forEach { field ->
+                        DetailRow(field.label, listOf(field.value, field.unit).filter { !it.isNullOrBlank() }.joinToString(" "))
+                    }
+                }
+            }
+        }
         item {
             AdditionalImagesSection(artifact)
         }
         item {
             AiIndexSection(artifact)
+        }
+    }
+}
+
+@Composable
+private fun StatusBadge(status: String) {
+    val draft = status.equals("draft", ignoreCase = true)
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (draft) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.primaryContainer,
+        contentColor = if (draft) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onPrimaryContainer
+    ) {
+        Text(
+            text = if (draft) "Draft" else "Published",
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+private fun PrimaryReviewWarning() {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Outlined.WarningAmber, contentDescription = null)
+            Text("Main image was selected automatically during bulk import. Review the image before publishing.")
         }
     }
 }

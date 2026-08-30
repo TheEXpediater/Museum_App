@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
@@ -30,7 +31,6 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Sort
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -40,6 +40,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -167,6 +169,7 @@ private fun ListHeader(uiState: ArtifactListUiState, onRefresh: () -> Unit) {
 private fun SearchAndFilterRow(uiState: ArtifactListUiState, viewModel: ArtifactListViewModel) {
     var menuExpanded by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatusFilterRow(uiState.statusFilter, viewModel::updateStatusFilter)
         OutlinedTextField(
             value = uiState.search,
             onValueChange = viewModel::updateSearch,
@@ -190,7 +193,7 @@ private fun SearchAndFilterRow(uiState: ArtifactListUiState, viewModel: Artifact
             )
             Box {
                 OutlinedButton(onClick = { menuExpanded = true }, modifier = Modifier.heightIn(min = 56.dp)) {
-                    Icon(Icons.Outlined.Sort, contentDescription = null)
+                    Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = null)
                     Text(sortLabel(uiState.sort))
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
@@ -205,6 +208,28 @@ private fun SearchAndFilterRow(uiState: ArtifactListUiState, viewModel: Artifact
             Text("Apply Filters")
         }
     }
+}
+
+@Composable
+private fun StatusFilterRow(selected: String, onSelected: (String) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        StatusFilterChip("All", "all", selected, onSelected)
+        StatusFilterChip("Published", "published", selected, onSelected)
+        StatusFilterChip("Drafts", "draft", selected, onSelected)
+    }
+}
+
+@Composable
+private fun StatusFilterChip(label: String, value: String, selected: String, onSelected: (String) -> Unit) {
+    FilterChip(
+        selected = selected == value,
+        onClick = { onSelected(value) },
+        label = { Text(label, maxLines = 1) },
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+        )
+    )
 }
 
 @Composable
@@ -293,6 +318,7 @@ private fun ArtifactCard(
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(artifact.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                ArtifactStatusBadges(artifact)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
@@ -343,6 +369,35 @@ private fun ArtifactCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ArtifactStatusBadges(artifact: ArtifactDto) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (artifact.status.equals("draft", ignoreCase = true)) {
+            SmallBadge("Draft", warning = true)
+        }
+        if (artifact.primaryImageNeedsReview) {
+            SmallBadge("Needs image review", warning = true)
+        }
+    }
+}
+
+@Composable
+private fun SmallBadge(label: String, warning: Boolean) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (warning) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (warning) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

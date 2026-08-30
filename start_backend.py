@@ -733,6 +733,21 @@ def run_ai_index(*, rebuild: bool) -> int:
     return run_backend_module("scripts.index_existing_artifacts", *module_args)
 
 
+def run_artifact_import(*, source: str | None, dry_run: bool, update_existing: bool, index_ai: bool) -> int:
+    ensure_environment_configuration()
+    ensure_mongodb_ready()
+    module_args: list[str] = []
+    if source:
+        module_args.extend(["--source", source])
+    if dry_run:
+        module_args.append("--dry-run")
+    if update_existing:
+        module_args.append("--update-existing")
+    if index_ai:
+        module_args.append("--index-ai")
+    return run_backend_module("scripts.import_artifact_zips", *module_args)
+
+
 def dependency_status(package: str, module_name: str | None = None) -> str:
     module = module_name or package
     code = f"import importlib.util; raise SystemExit(0 if importlib.util.find_spec({module!r}) else 1)"
@@ -816,7 +831,11 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument("--test-ai", action="store_true", help="Run the embedding script and AI-focused tests.")
     mode.add_argument("--status", action="store_true", help="Report backend, MongoDB, Qdrant, and AI status.")
     mode.add_argument("--index-ai", action="store_true", help="Index existing artifact images into Qdrant.")
+    mode.add_argument("--import-artifacts", action="store_true", help="Import artifact ZIP files as draft artifacts.")
     parser.add_argument("--rebuild", action="store_true", help="With --index-ai, rebuild the configured artifact vector collection first.")
+    parser.add_argument("--source", help="With --import-artifacts, override the artifact ZIP source folder.")
+    parser.add_argument("--dry-run", action="store_true", help="With --import-artifacts, report without modifying MongoDB or images.")
+    parser.add_argument("--update-existing", action="store_true", help="With --import-artifacts, update previously imported artifacts.")
     return parser.parse_args()
 
 
@@ -830,6 +849,8 @@ def main() -> int:
         create_virtual_environment()
         if args.rebuild and not args.index_ai:
             raise LauncherError("--rebuild can only be used with --index-ai.")
+        if (args.source or args.dry_run or args.update_existing) and not args.import_artifacts:
+            raise LauncherError("--source, --dry-run, and --update-existing can only be used with --import-artifacts.")
 
         if args.stop:
             return stop_mongodb()
@@ -852,6 +873,14 @@ def main() -> int:
 
         if args.index_ai:
             return run_ai_index(rebuild=args.rebuild)
+
+        if args.import_artifacts:
+            return run_artifact_import(
+                source=args.source,
+                dry_run=args.dry_run,
+                update_existing=args.update_existing,
+                index_ai=args.index_ai,
+            )
 
         if args.test:
             return run_tests()

@@ -11,6 +11,9 @@ import com.example.museumapp.data.model.AiIndexAllResponse
 import com.example.museumapp.data.model.AiIndexResultResponse
 import com.example.museumapp.data.model.AiIndexStatusResponse
 import com.example.museumapp.data.model.AiWarmupResponse
+import com.example.museumapp.data.model.ArtifactCategoryCreateRequest
+import com.example.museumapp.data.model.ArtifactCategoryDto
+import com.example.museumapp.data.model.ArtifactCategoryUpdateRequest
 import com.example.museumapp.data.model.ArtifactDto
 import com.example.museumapp.data.model.ArtifactListResponse
 import com.example.museumapp.data.model.DashboardSummaryResponse
@@ -27,11 +30,14 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import retrofit2.HttpException
 import java.io.File
 import java.io.IOException
 import java.util.UUID
+import okio.BufferedSink
+import okio.source
 
 interface RecognitionRepositoryContract {
     suspend fun aiHealth(): RepositoryResult<AiHealthResponse>
@@ -55,8 +61,13 @@ interface AdminRepositoryContract : RecognitionRepositoryContract {
         pageSize: Int,
         search: String?,
         category: String?,
-        sort: String
+        sort: String,
+        status: String?
     ): RepositoryResult<ArtifactListResponse>
+    suspend fun listCategories(): RepositoryResult<List<ArtifactCategoryDto>>
+    suspend fun createCategory(name: String): RepositoryResult<ArtifactCategoryDto>
+    suspend fun renameCategory(categoryId: String, name: String): RepositoryResult<ArtifactCategoryDto>
+    suspend fun deactivateCategory(categoryId: String): RepositoryResult<ArtifactCategoryDto>
     suspend fun getArtifact(artifactId: String): RepositoryResult<ArtifactDto>
     suspend fun createArtifact(form: ArtifactFormData, images: List<Uri>): RepositoryResult<ArtifactDto>
     suspend fun updateArtifact(artifactId: String, form: ArtifactFormData, images: List<Uri>): RepositoryResult<ArtifactDto>
@@ -121,9 +132,26 @@ class AdminRepository(
         pageSize: Int,
         search: String?,
         category: String?,
-        sort: String
+        sort: String,
+        status: String?
     ): RepositoryResult<ArtifactListResponse> = safeApiCall {
-        api.listArtifacts(page, pageSize, search?.takeIf { it.isNotBlank() }, category?.takeIf { it.isNotBlank() }, sort)
+        api.listArtifacts(page, pageSize, search?.takeIf { it.isNotBlank() }, category?.takeIf { it.isNotBlank() }, sort, status?.takeIf { it != "all" })
+    }
+
+    override suspend fun listCategories(): RepositoryResult<List<ArtifactCategoryDto>> = safeApiCall {
+        api.listArtifactCategories()
+    }
+
+    override suspend fun createCategory(name: String): RepositoryResult<ArtifactCategoryDto> = safeApiCall {
+        api.createArtifactCategory(ArtifactCategoryCreateRequest(name.trim()))
+    }
+
+    override suspend fun renameCategory(categoryId: String, name: String): RepositoryResult<ArtifactCategoryDto> = safeApiCall {
+        api.updateArtifactCategory(categoryId, ArtifactCategoryUpdateRequest(name = name.trim()))
+    }
+
+    override suspend fun deactivateCategory(categoryId: String): RepositoryResult<ArtifactCategoryDto> = safeApiCall {
+        api.deactivateArtifactCategory(categoryId)
     }
 
     override suspend fun getArtifact(artifactId: String): RepositoryResult<ArtifactDto> = safeApiCall {
@@ -233,11 +261,15 @@ class AdminRepository(
             put("name", name.asTextPart())
             put("description", description.asTextPart())
             put("category", category.asTextPart())
+            put("status", status.asTextPart())
+            put("custom_fields", customFieldsJson().asTextPart())
             putOptional("origin", origin)
             putOptional("historical_period", historicalPeriod)
             putOptional("material", material)
             putOptional("dimensions", dimensions)
             putOptional("condition", condition)
+            primaryImageIndex?.let { put("primary_image_index", it.toString().asTextPart()) }
+            primaryImagePath?.let { put("primary_image_path", it.asTextPart()) }
         }
     }
 
@@ -247,6 +279,8 @@ class AdminRepository(
             put("name", name.asTextPart())
             put("description", description.asTextPart())
             put("category", category.asTextPart())
+            put("status", status.asTextPart())
+            put("custom_fields", customFieldsJson().asTextPart())
             putOptional("origin", origin)
             putOptional("historical_period", historicalPeriod)
             putOptional("material", material)
@@ -257,7 +291,23 @@ class AdminRepository(
             }
             put("replace_images", replaceImages.toString().asTextPart())
             primaryImagePath?.let { put("primary_image_path", it.asTextPart()) }
+            primaryImageIndex?.let { put("primary_image_index", it.toString().asTextPart()) }
         }
+    }
+
+    private fun ArtifactFormData.customFieldsJson(): String {
+        val fields = JSONArray()
+        customFields.forEach { field ->
+            fields.put(
+                JSONObject()
+                    .put("id", field.id)
+                    .put("label", field.label)
+                    .put("value", field.value)
+                    .put("unit", field.unit)
+                    .put("type", field.type)
+            )
+        }
+        return fields.toString()
     }
 
     private fun MutableMap<String, RequestBody>.putOptional(key: String, value: String?) {
@@ -279,16 +329,14 @@ class AdminRepository(
             ?.use { cursor ->
                 val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
-            }
+        }
         val extension = when (mimeType) {
             "image/png" -> ".png"
             "image/webp" -> ".webp"
             else -> ".jpg"
         }
         val filename = displayName ?: "selected-${UUID.randomUUID()}$extension"
-        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw IllegalArgumentException("Could not read a selected image.")
-        val body = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
+        val body = ContentUriRequestBody(context, uri, mimeType)
         return MultipartBody.Part.createFormData(partName, filename, body)
     }
 
@@ -298,5 +346,29 @@ class AdminRepository(
         }
         val body = file.asRequestBody("image/jpeg".toMediaTypeOrNull())
         return MultipartBody.Part.createFormData(partName, file.name, body)
+    }
+}
+
+private class ContentUriRequestBody(
+    private val context: Context,
+    private val uri: Uri,
+    private val mimeType: String
+) : RequestBody() {
+    override fun contentType() = mimeType.toMediaTypeOrNull()
+
+    override fun contentLength(): Long {
+        val resolver = context.contentResolver
+        return resolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)
+            ?.use { cursor ->
+                val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (index >= 0 && cursor.moveToFirst()) cursor.getLong(index) else -1L
+            }
+            ?: -1L
+    }
+
+    override fun writeTo(sink: BufferedSink) {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            input.source().use { source -> sink.writeAll(source) }
+        } ?: throw IOException("Could not read a selected image.")
     }
 }
