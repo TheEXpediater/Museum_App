@@ -1,6 +1,9 @@
 package com.example.museumapp.ui.admin.artifactlist
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,12 +21,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FilterList
@@ -35,16 +44,19 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
@@ -52,6 +64,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -147,6 +160,7 @@ fun ArtifactListScreen(
                         uiState = uiState,
                         onEditArtifact = onEditArtifact,
                         onDeleteArtifact = viewModel::requestDelete,
+                        onFeedToAi = viewModel::feedArtifactToAiLibrary,
                         onLoadMore = viewModel::loadNextPage
                     )
                 }
@@ -213,44 +227,176 @@ private fun ListHeader(uiState: ArtifactListUiState, showRefresh: Boolean, onRef
 
 @Composable
 private fun SearchAndFilterRow(uiState: ArtifactListUiState, viewModel: ArtifactListViewModel) {
-    var menuExpanded by remember { mutableStateOf(false) }
+    var sortMenuExpanded by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(
-            value = uiState.search,
-            onValueChange = viewModel::updateSearch,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Search name or code") },
-            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { viewModel.applyFilters() })
-        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
-                value = uiState.category,
-                onValueChange = viewModel::updateCategory,
+                value = uiState.search,
+                onValueChange = viewModel::updateSearch,
                 modifier = Modifier.weight(1f),
-                label = { Text("Category") },
-                leadingIcon = { Icon(Icons.Outlined.FilterList, contentDescription = null) },
+                placeholder = { Text("Search name or code") },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { viewModel.applyFilters() })
+                shape = RoundedCornerShape(14.dp),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+            )
+            CategoryFilterButton(
+                activeCount = uiState.selectedCategories.size,
+                onClick = { viewModel.setFilterSheetOpen(true) }
             )
             Box {
-                OutlinedButton(onClick = { menuExpanded = true }, modifier = Modifier.heightIn(min = 56.dp)) {
-                    Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = null)
-                    Text(sortLabel(uiState.sort))
+                Surface(
+                    onClick = { sortMenuExpanded = true },
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    modifier = Modifier.heightIn(min = 56.dp)
+                ) {
+                    Box(modifier = Modifier.padding(16.dp), contentAlignment = Alignment.Center) {
+                        Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = "Sort: ${sortLabel(uiState.sort)}")
+                    }
                 }
-                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                    SortOption("Newest", "newest", uiState.sort, viewModel) { menuExpanded = false }
-                    SortOption("Oldest", "oldest", uiState.sort, viewModel) { menuExpanded = false }
-                    SortOption("Name A-Z", "name_asc", uiState.sort, viewModel) { menuExpanded = false }
-                    SortOption("Name Z-A", "name_desc", uiState.sort, viewModel) { menuExpanded = false }
+                DropdownMenu(expanded = sortMenuExpanded, onDismissRequest = { sortMenuExpanded = false }) {
+                    SortOption("Newest", "newest", uiState.sort, viewModel) { sortMenuExpanded = false }
+                    SortOption("Oldest", "oldest", uiState.sort, viewModel) { sortMenuExpanded = false }
+                    SortOption("Name A-Z", "name_asc", uiState.sort, viewModel) { sortMenuExpanded = false }
+                    SortOption("Name Z-A", "name_desc", uiState.sort, viewModel) { sortMenuExpanded = false }
                 }
             }
         }
-        Button(onClick = viewModel::applyFilters, modifier = Modifier.fillMaxWidth()) {
-            Text("Apply Filters")
+        if (uiState.selectedCategories.isNotEmpty()) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                uiState.selectedCategories.sorted().forEach { category ->
+                    RemovableCategoryChip(label = category, onRemove = { viewModel.toggleCategory(category) })
+                }
+            }
+        }
+    }
+    if (uiState.isFilterSheetOpen) {
+        CategoryFilterSheet(
+            categories = uiState.availableCategories,
+            selected = uiState.selectedCategories,
+            onToggle = viewModel::toggleCategory,
+            onClear = viewModel::clearCategories,
+            onDismiss = { viewModel.setFilterSheetOpen(false) }
+        )
+    }
+}
+
+@Composable
+private fun CategoryFilterButton(activeCount: Int, onClick: () -> Unit) {
+    Box {
+        Surface(
+            onClick = onClick,
+            shape = RoundedCornerShape(14.dp),
+            color = if (activeCount > 0) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+            border = if (activeCount > 0) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            modifier = Modifier.heightIn(min = 56.dp)
+        ) {
+            Box(modifier = Modifier.padding(16.dp), contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Outlined.FilterList,
+                    contentDescription = "Filter by category",
+                    tint = if (activeCount > 0) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (activeCount > 0) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.secondary,
+                contentColor = MaterialTheme.colorScheme.onSecondary,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(18.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(activeCount.toString(), style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemovableCategoryChip(label: String, onRemove: () -> Unit) {
+    FilterChip(
+        selected = true,
+        onClick = onRemove,
+        label = { Text(label, maxLines = 1) },
+        trailingIcon = { Icon(Icons.Outlined.Close, contentDescription = "Remove $label filter", modifier = Modifier.size(16.dp)) }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CategoryFilterSheet(
+    categories: List<String>,
+    selected: Set<String>,
+    onToggle: (String) -> Unit,
+    onClear: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Filter by Category", style = MaterialTheme.typography.titleLarge)
+                if (selected.isNotEmpty()) {
+                    TextButton(onClick = onClear) { Text("Clear all") }
+                }
+            }
+            if (categories.isEmpty()) {
+                Text(
+                    "Categories will appear here once they are created.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 12.dp)
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    categories.forEach { category ->
+                        val isSelected = category in selected
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(onClickLabel = category) { onToggle(category) }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Checkbox(checked = isSelected, onCheckedChange = { onToggle(category) })
+                            Text(category, style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            }
+            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    if (selected.isEmpty()) {
+                        "Show All Artifacts"
+                    } else {
+                        "Show ${selected.size} Selected ${if (selected.size == 1) "Category" else "Categories"}"
+                    }
+                )
+            }
         }
     }
 }
@@ -313,6 +459,7 @@ private fun ArtifactListContent(
     uiState: ArtifactListUiState,
     onEditArtifact: (String) -> Unit,
     onDeleteArtifact: (ArtifactDto) -> Unit,
+    onFeedToAi: (ArtifactDto) -> Unit,
     onLoadMore: () -> Unit
 ) {
     LazyColumn(
@@ -327,8 +474,10 @@ private fun ArtifactListContent(
             ArtifactCard(
                 artifact = artifact,
                 deleting = uiState.deletingId == artifact.id,
+                feeding = uiState.feedingArtifactId == artifact.id,
                 onEdit = { onEditArtifact(artifact.id) },
-                onDelete = { onDeleteArtifact(artifact) }
+                onDelete = { onDeleteArtifact(artifact) },
+                onFeedToAi = { onFeedToAi(artifact) }
             )
         }
         if (uiState.page < uiState.totalPages) {
@@ -348,10 +497,13 @@ private fun ArtifactListContent(
 private fun ArtifactCard(
     artifact: ArtifactDto,
     deleting: Boolean,
+    feeding: Boolean,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onFeedToAi: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val busy = deleting || feeding
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -389,8 +541,8 @@ private fun ArtifactCard(
                 ArtifactAiStatusChip(artifact.aiIndexStatus)
             }
             Box {
-                IconButton(onClick = { menuExpanded = true }, enabled = !deleting) {
-                    if (deleting) {
+                IconButton(onClick = { menuExpanded = true }, enabled = !busy) {
+                    if (busy) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                     } else {
                         Icon(Icons.Outlined.MoreVert, contentDescription = "Artifact actions")
@@ -403,6 +555,22 @@ private fun ArtifactCard(
                         onClick = {
                             menuExpanded = false
                             onEdit()
+                        }
+                    )
+                    val isIndexed = artifact.aiIndexStatus.equals("indexed", ignoreCase = true)
+                    DropdownMenuItem(
+                        text = { Text(if (isIndexed) "Already in AI Library" else "Feed to AI Library") },
+                        leadingIcon = {
+                            Icon(
+                                if (isIndexed) Icons.Outlined.CheckCircle else Icons.Outlined.AutoAwesome,
+                                contentDescription = null,
+                                tint = if (isIndexed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        enabled = !isIndexed,
+                        onClick = {
+                            menuExpanded = false
+                            onFeedToAi()
                         }
                     )
                     DropdownMenuItem(

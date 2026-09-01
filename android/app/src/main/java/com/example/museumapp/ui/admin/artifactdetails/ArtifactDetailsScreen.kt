@@ -19,14 +19,22 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -34,9 +42,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,6 +78,11 @@ fun ArtifactDetailsScreen(
         factory = ArtifactDetailsViewModel.factory(repository, artifactId)
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var menuExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(uiState.deleted) {
+        if (uiState.deleted) onBack()
+    }
 
     Scaffold(
         topBar = {
@@ -77,8 +95,48 @@ fun ArtifactDetailsScreen(
                 },
                 actions = {
                     uiState.artifact?.let { artifact ->
-                        IconButton(onClick = { onEditArtifact(artifact.id) }) {
-                            Icon(Icons.Outlined.Edit, contentDescription = "Edit artifact")
+                        Box {
+                            IconButton(onClick = { menuExpanded = true }, enabled = !uiState.feedingAi && !uiState.deleting) {
+                                if (uiState.feedingAi || uiState.deleting) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(Icons.Outlined.MoreVert, contentDescription = "Artifact actions")
+                                }
+                            }
+                            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Edit") },
+                                    leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onEditArtifact(artifact.id)
+                                    }
+                                )
+                                val isIndexed = artifact.aiIndexStatus.equals("indexed", ignoreCase = true)
+                                DropdownMenuItem(
+                                    text = { Text(if (isIndexed) "Already in AI Library" else "Feed to AI Library") },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (isIndexed) Icons.Outlined.CheckCircle else Icons.Outlined.AutoAwesome,
+                                            contentDescription = null,
+                                            tint = if (isIndexed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
+                                        )
+                                    },
+                                    enabled = !isIndexed,
+                                    onClick = {
+                                        menuExpanded = false
+                                        viewModel.feedToAiLibrary()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                                    leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        viewModel.requestDelete()
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -107,6 +165,53 @@ fun ArtifactDetailsScreen(
                 padding = padding
             )
         }
+    }
+
+    if (uiState.pendingDelete) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissDelete,
+            title = { Text("Delete artifact?") },
+            text = { Text("This will permanently remove this artifact record and its stored images. This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = viewModel::confirmDelete,
+                    enabled = !uiState.deleting,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Delete Artifact", maxLines = 1)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissDelete, enabled = !uiState.deleting) {
+                    Text("Cancel", maxLines = 1)
+                }
+            }
+        )
+    }
+
+    uiState.deleteError?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissDeleteError,
+            title = { Text("Delete Failed") },
+            text = { Text(message) },
+            confirmButton = {
+                Button(onClick = viewModel::dismissDeleteError) { Text("Done") }
+            }
+        )
+    }
+
+    uiState.feedError?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissFeedError,
+            title = { Text("AI Library Update Failed") },
+            text = { Text(message) },
+            confirmButton = {
+                Button(onClick = viewModel::dismissFeedError) { Text("Done") }
+            }
+        )
     }
 }
 

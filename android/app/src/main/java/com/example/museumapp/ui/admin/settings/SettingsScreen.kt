@@ -133,7 +133,7 @@ fun SettingsScreen(
                 SettingsRow(
                     icon = Icons.Outlined.Info,
                     title = "Museum Guide",
-                    summary = "Give 2"
+                    summary = "Museum artifact management and AI recognition platform"
                 )
                 SectionDivider()
                 SettingsRow(

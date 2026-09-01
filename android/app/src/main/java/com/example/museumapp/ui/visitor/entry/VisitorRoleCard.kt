@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronRight
@@ -196,25 +195,6 @@ private fun RoleIllustrationLayer(
                 .padding(VisitorSpacing.Sm)
                 .then(if (illustrationTestTag == null) Modifier else Modifier.testTag(illustrationTestTag))
         )
-        Surface(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(VisitorSpacing.Sm)
-                .size(40.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-            contentColor = MaterialTheme.colorScheme.tertiary,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.30f))
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                VisitorAssetImage(
-                    model = icon,
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-        }
     }
 }
 

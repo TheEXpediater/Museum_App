@@ -15,7 +15,13 @@ import kotlinx.coroutines.launch
 data class ArtifactDetailsUiState(
     val artifact: ArtifactDto? = null,
     val isLoading: Boolean = true,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val feedingAi: Boolean = false,
+    val feedError: String? = null,
+    val pendingDelete: Boolean = false,
+    val deleting: Boolean = false,
+    val deleteError: String? = null,
+    val deleted: Boolean = false
 )
 
 class ArtifactDetailsViewModel(
@@ -31,6 +37,55 @@ class ArtifactDetailsViewModel(
 
     fun retry() {
         loadArtifact()
+    }
+
+    fun feedToAiLibrary() {
+        val id = artifactId ?: return
+        if (_uiState.value.feedingAi) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(feedingAi = true, feedError = null) }
+            when (val result = repository.indexArtifact(id)) {
+                is RepositoryResult.Success -> {
+                    _uiState.update { it.copy(feedingAi = false) }
+                    loadArtifact()
+                }
+                is RepositoryResult.Error -> _uiState.update {
+                    it.copy(feedingAi = false, feedError = result.message)
+                }
+            }
+        }
+    }
+
+    fun dismissFeedError() {
+        _uiState.update { it.copy(feedError = null) }
+    }
+
+    fun requestDelete() {
+        _uiState.update { it.copy(pendingDelete = true) }
+    }
+
+    fun dismissDelete() {
+        _uiState.update { it.copy(pendingDelete = false) }
+    }
+
+    fun confirmDelete() {
+        val id = artifactId ?: return
+        if (_uiState.value.deleting) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(deleting = true, deleteError = null) }
+            when (val result = repository.deleteArtifact(id)) {
+                is RepositoryResult.Success -> _uiState.update {
+                    it.copy(deleting = false, pendingDelete = false, deleted = true)
+                }
+                is RepositoryResult.Error -> _uiState.update {
+                    it.copy(deleting = false, pendingDelete = false, deleteError = result.message)
+                }
+            }
+        }
+    }
+
+    fun dismissDeleteError() {
+        _uiState.update { it.copy(deleteError = null) }
     }
 
     private fun loadArtifact() {

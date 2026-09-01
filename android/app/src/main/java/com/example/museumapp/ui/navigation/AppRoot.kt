@@ -31,7 +31,10 @@ fun AppRoot(container: AppContainer) {
 
     if (destination == StartupDestination.Admin || adminLoginRequested) {
         MuseumAdminTheme {
-            AdminNavGraph(repository = container.adminRepository)
+            AdminNavGraph(
+                repository = container.adminRepository,
+                onBackToVisitor = { adminLoginRequested = false }
+            )
         }
     } else {
         VisitorTheme {

@@ -23,7 +23,9 @@ enum class VisitorArtifactsTab {
 data class VisitorArtifactsUiState(
     val selectedTab: VisitorArtifactsTab = VisitorArtifactsTab.Artifacts,
     val search: String = "",
-    val selectedCategory: String = "",
+    val selectedCategories: Set<String> = emptySet(),
+    val availableCategories: List<String> = emptyList(),
+    val isFilterSheetOpen: Boolean = false,
     val artifacts: List<PublicArtifactDto> = emptyList(),
     val totalArtifacts: Int = 0,
     val articles: List<ArticleDto> = emptyList(),
@@ -33,10 +35,7 @@ data class VisitorArtifactsUiState(
     val errorMessage: String? = null,
     val page: Int = 1,
     val totalPages: Int = 0
-) {
-    val categories: List<String>
-        get() = artifacts.map { it.category }.distinct().sorted()
-}
+)
 
 class VisitorArtifactsViewModel(private val repository: VisitorRepositoryContract) : ViewModel() {
     private val _uiState = MutableStateFlow(VisitorArtifactsUiState())
@@ -56,15 +55,32 @@ class VisitorArtifactsViewModel(private val repository: VisitorRepositoryContrac
         loadArticles()
     }
 
-    fun selectCategory(value: String) {
-        _uiState.update { it.copy(selectedCategory = value) }
+    fun toggleCategory(category: String) {
+        _uiState.update {
+            val updated = if (category in it.selectedCategories) {
+                it.selectedCategories - category
+            } else {
+                it.selectedCategories + category
+            }
+            it.copy(selectedCategories = updated)
+        }
         loadArtifacts(reset = true)
+    }
+
+    fun clearCategories() {
+        _uiState.update { it.copy(selectedCategories = emptySet()) }
+        loadArtifacts(reset = true)
+    }
+
+    fun setFilterSheetOpen(open: Boolean) {
+        _uiState.update { it.copy(isFilterSheetOpen = open) }
     }
 
     fun refreshAll() {
         loadArtifacts(reset = true)
         loadArticles()
         loadMuseumInformation()
+        loadAvailableCategories()
     }
 
     fun loadMore() {
@@ -84,12 +100,20 @@ class VisitorArtifactsViewModel(private val repository: VisitorRepositoryContrac
                 )
             }
             val state = _uiState.value
-            when (val result = repository.visitorArtifacts(nextPage, 20, state.search, state.selectedCategory, "newest")) {
+            // The backend only matches a single exact category per request, so a single
+            // selection is filtered server-side; multiple selections are filtered here instead.
+            val serverCategory = state.selectedCategories.singleOrNull()
+            when (val result = repository.visitorArtifacts(nextPage, 20, state.search, serverCategory, "newest")) {
                 is RepositoryResult.Success -> _uiState.update {
-                    val items = if (reset) result.data.items else it.artifacts + result.data.items
+                    val fetched = if (state.selectedCategories.size > 1) {
+                        result.data.items.filter { artifact -> artifact.category in state.selectedCategories }
+                    } else {
+                        result.data.items
+                    }
+                    val items = if (reset) fetched else it.artifacts + fetched
                     it.copy(
                         artifacts = items,
-                        totalArtifacts = result.data.totalItems,
+                        totalArtifacts = if (state.selectedCategories.size > 1) items.size else result.data.totalItems,
                         page = result.data.page,
                         totalPages = result.data.totalPages,
                         isLoading = false,
@@ -100,6 +124,23 @@ class VisitorArtifactsViewModel(private val repository: VisitorRepositoryContrac
                 is RepositoryResult.Error -> _uiState.update {
                     it.copy(isLoading = false, isLoadingMore = false, errorMessage = result.message)
                 }
+            }
+        }
+    }
+
+    private fun loadAvailableCategories() {
+        viewModelScope.launch {
+            when (val result = repository.visitorArtifacts(1, 100, null, null, "name_asc")) {
+                is RepositoryResult.Success -> _uiState.update {
+                    it.copy(
+                        availableCategories = result.data.items
+                            .map { artifact -> artifact.category }
+                            .filter { category -> category.isNotBlank() }
+                            .distinct()
+                            .sorted()
+                    )
+                }
+                is RepositoryResult.Error -> Unit
             }
         }
     }

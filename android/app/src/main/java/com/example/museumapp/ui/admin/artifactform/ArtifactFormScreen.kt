@@ -66,6 +66,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -191,6 +193,15 @@ fun ArtifactFormScreen(
         }
     }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(uiState.successMessage) {
+        val message = uiState.successMessage
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+            viewModel.consumeSuccessMessage()
+        }
+    }
+
     fun handleBack() {
         if (uiState.hasUnsavedChanges && !uiState.isSubmitting) {
             showDiscardDialog = true
@@ -216,7 +227,8 @@ fun ArtifactFormScreen(
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         if (uiState.isLoading) {
             Box(
@@ -376,9 +388,6 @@ fun ArtifactFormScreen(
                     )
                 }
             }
-            if (uiState.successMessage != null) {
-                item { SuccessCard(uiState.successMessage.orEmpty()) }
-            }
             if (uiState.errorMessage != null) {
                 item { Text(uiState.errorMessage.orEmpty(), color = MaterialTheme.colorScheme.error) }
             }
@@ -412,6 +421,29 @@ fun ArtifactFormScreen(
             dismissButton = {
                 TextButton(onClick = viewModel::cancelPublish, enabled = !uiState.isSubmitting) {
                     Text("Cancel", maxLines = 1)
+                }
+            }
+        )
+    }
+
+    if (uiState.showNoChangesModal) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissNoChangesModal,
+            title = { Text("No changes were made.") },
+            text = { Text("There is nothing to save on this artifact yet.") },
+            confirmButton = {
+                Button(onClick = viewModel::dismissNoChangesModal) {
+                    Text("Remain", maxLines = 1)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.dismissNoChangesModal()
+                        onViewArtifacts()
+                    }
+                ) {
+                    Text("Back to Artifact List", maxLines = 1)
                 }
             }
         )
@@ -1116,21 +1148,6 @@ private fun FormTextField(
             }
         }
     )
-}
-
-@Composable
-private fun SuccessCard(message: String) {
-    Card(
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-    ) {
-        Text(
-            text = message,
-            modifier = Modifier.padding(14.dp),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onPrimaryContainer
-        )
-    }
 }
 
 @Composable

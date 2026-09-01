@@ -77,7 +77,8 @@ data class ArtifactFormUiState(
     val savedAiIndexError: String? = null,
     val fieldErrors: Map<String, String> = emptyMap(),
     val hasUnsavedChanges: Boolean = false,
-    val shouldClose: Boolean = false
+    val shouldClose: Boolean = false,
+    val showNoChangesModal: Boolean = false
 )
 
 class ArtifactFormViewModel(
@@ -656,7 +657,10 @@ class ArtifactFormViewModel(
             publish()
             return
         }
-        if (!state.hasUnsavedChanges && state.successMessage != null && targetStatus == state.status) return
+        if (!state.hasUnsavedChanges && !state.isNewArtifact && targetStatus == state.status) {
+            _uiState.update { it.copy(showNoChangesModal = true) }
+            return
+        }
         val errors = validate(state, targetStatus)
         if (errors.isNotEmpty()) {
             val message = errors["primaryImage"] ?: errors["publish"] ?: "Please check the highlighted fields."
@@ -720,6 +724,14 @@ class ArtifactFormViewModel(
         _uiState.update { it.copy(shouldClose = false) }
     }
 
+    fun dismissNoChangesModal() {
+        _uiState.update { it.copy(showNoChangesModal = false) }
+    }
+
+    fun consumeSuccessMessage() {
+        _uiState.update { it.copy(successMessage = null) }
+    }
+
     fun dismissCreateSuccess() {
         _uiState.update { it.copy(showCreateSuccess = false) }
     }
@@ -753,7 +765,7 @@ class ArtifactFormViewModel(
                 successMessage = when {
                     wasNew -> null
                     publishingExistingDraft -> null
-                    else -> "Changes Saved"
+                    else -> "Updated!"
                 },
                 showCreateSuccess = wasNew,
                 showPublishSuccess = publishingExistingDraft,

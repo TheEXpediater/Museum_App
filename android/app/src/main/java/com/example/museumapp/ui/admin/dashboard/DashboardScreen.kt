@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
@@ -28,7 +30,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -75,6 +76,21 @@ fun DashboardScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    if (uiState.isLoading) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                CircularProgressIndicator()
+                Text("Loading Dashboard...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        return
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -89,9 +105,6 @@ fun DashboardScreen(
                 isRefreshing = uiState.isRefreshing,
                 onRefresh = viewModel::refresh
             )
-        }
-        if (uiState.isLoading) {
-            item { LoadingCard() }
         }
         uiState.errorMessage?.let { message ->
             item { ErrorCard(message = message, onRetry = viewModel::refresh) }
@@ -237,7 +250,7 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
+            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -254,7 +267,10 @@ private fun HealthSection(summary: DashboardSummaryResponse) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("System health", style = MaterialTheme.typography.titleLarge)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 HealthStatusChip(summary.aiStatus)
                 HealthStatusChip(summary.databaseStatus)
                 HealthStatusChip(summary.uploadsStatus)
@@ -380,16 +396,6 @@ private fun DashboardSummaryResponse.hasAiLibraryCounts(): Boolean {
         aiLibraryReadyArtifacts > 0 ||
         aiLibraryPendingArtifacts > 0 ||
         aiLibraryStaleArtifacts > 0
-}
-
-@Composable
-private fun LoadingCard() {
-    Card(shape = RoundedCornerShape(16.dp)) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            Text("Loading dashboard", style = MaterialTheme.typography.bodyMedium)
-        }
-    }
 }
 
 @Composable

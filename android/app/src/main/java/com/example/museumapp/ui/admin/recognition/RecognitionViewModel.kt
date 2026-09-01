@@ -7,12 +7,17 @@ import androidx.lifecycle.viewModelScope
 import com.example.museumapp.data.model.RecognitionResponseDto
 import com.example.museumapp.data.repository.RecognitionRepositoryContract
 import com.example.museumapp.data.repository.RepositoryResult
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
+
+private const val AI_READINESS_POLL_INTERVAL_MS = 2_500L
+private const val AI_READINESS_MAX_POLL_ATTEMPTS = 24 // ~60 seconds of polling while OpenCLIP warms up
 
 enum class RecognitionUiMode {
     CameraInitializing,
@@ -46,6 +51,8 @@ data class RecognitionUiState(
     val recognitionBlockedMessage: String?
         get() = when {
             !hasIndexedVectors -> "No indexed artifact images are available."
+            aiStatus.equals("loading", ignoreCase = true) -> "Preparing AI..."
+            aiStatus.equals("failed", ignoreCase = true) -> "AI unavailable. Open System Status to retry."
             !isAiModelReady -> "AI model is not ready."
             else -> null
         }
@@ -58,6 +65,7 @@ class RecognitionViewModel(private val repository: RecognitionRepositoryContract
     private val _uiState = MutableStateFlow(RecognitionUiState())
     val uiState: StateFlow<RecognitionUiState> = _uiState.asStateFlow()
     private var pendingCaptureFile: File? = null
+    private var aiReadinessPollJob: Job? = null
 
     init {
         refreshAiReadiness()
@@ -271,19 +279,31 @@ class RecognitionViewModel(private val repository: RecognitionRepositoryContract
     fun alternativeMatchArtifactId(index: Int): String? = _uiState.value.response?.otherMatches?.getOrNull(index)?.artifact?.id
 
     fun refreshAiReadiness() {
-        viewModelScope.launch {
-            when (val result = repository.aiHealth()) {
-                is RepositoryResult.Success -> _uiState.update {
-                    it.copy(indexedVectors = result.data.indexedVectors, aiStatus = result.data.openclip)
+        aiReadinessPollJob?.cancel()
+        aiReadinessPollJob = viewModelScope.launch {
+            var attempts = 0
+            while (true) {
+                when (val result = repository.aiHealth()) {
+                    is RepositoryResult.Success -> {
+                        _uiState.update {
+                            it.copy(indexedVectors = result.data.indexedVectors, aiStatus = result.data.openclip)
+                        }
+                        val stillLoading = result.data.openclip.equals("loading", ignoreCase = true)
+                        if (!stillLoading || attempts >= AI_READINESS_MAX_POLL_ATTEMPTS) return@launch
+                    }
+                    is RepositoryResult.Error -> {
+                        _uiState.update { it.copy(aiStatus = "unknown") }
+                        return@launch
+                    }
                 }
-                is RepositoryResult.Error -> _uiState.update {
-                    it.copy(aiStatus = "unknown")
-                }
+                attempts += 1
+                delay(AI_READINESS_POLL_INTERVAL_MS)
             }
         }
     }
 
     override fun onCleared() {
+        aiReadinessPollJob?.cancel()
         cleanupPendingCapture()
         super.onCleared()
     }

@@ -43,6 +43,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -440,7 +442,8 @@ private fun StudentAccessSheet(
     onStudentLogin: () -> Unit,
     onStudentRegister: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -449,29 +452,40 @@ private fun StudentAccessSheet(
         ) {
             Text("Student Access", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
             Text(
-                "Sign in or create your student account.",
+                "Create a student account to get started, or sign in if you already have one.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Spacer(modifier = Modifier.height(VisitorSpacing.Xs))
             Button(
-                onClick = onStudentLogin,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(VisitorEntryTestTags.StudentLogin)
-            ) {
-                Icon(Icons.AutoMirrored.Outlined.Login, contentDescription = null)
-                Spacer(modifier = Modifier.width(VisitorSpacing.Sm))
-                Text("Sign In")
-            }
-            OutlinedButton(
                 onClick = onStudentRegister,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 52.dp)
                     .testTag(VisitorEntryTestTags.StudentRegister)
             ) {
-                Icon(Icons.Outlined.PersonAdd, contentDescription = null)
+                Icon(Icons.Outlined.PersonAdd, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(VisitorSpacing.Sm))
-                Text("Create Student Account")
+                Text("Create Student Account", fontWeight = FontWeight.SemiBold)
+            }
+            OutlinedButton(
+                onClick = onStudentLogin,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp)
+                    .testTag(VisitorEntryTestTags.StudentLogin)
+            ) {
+                Icon(Icons.AutoMirrored.Outlined.Login, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(VisitorSpacing.Sm))
+                Text("Sign In")
+            }
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+            ) {
+                Text("Exit", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

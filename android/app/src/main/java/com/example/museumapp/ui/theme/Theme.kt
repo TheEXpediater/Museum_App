@@ -1,7 +1,9 @@
 package com.example.museumapp.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -9,27 +11,37 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/** Shared museum brand accents. Kept close to the Visitor palette so both experiences read as one product. */
+object AdminMuseumTokens {
+    val MuseumNavy = Color(0xFF132238)
+    val AntiqueGold = Color(0xFFC89B3C)
+    val SlateBlue = Color(0xFF3F5D74)
+}
+
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF14532D),
+    primary = AdminMuseumTokens.MuseumNavy,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFDDF3E2),
-    onPrimaryContainer = Color(0xFF0B3D24),
-    secondary = Color(0xFF2E7D32),
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFDDF3E2),
-    onSecondaryContainer = Color(0xFF0B3D24),
-    tertiary = Color(0xFF69A86B),
-    onTertiary = Color(0xFF17211A),
-    background = Color(0xFFF5F8F5),
-    onBackground = Color(0xFF17211A),
+    primaryContainer = Color(0xFFDCE3EF),
+    onPrimaryContainer = AdminMuseumTokens.MuseumNavy,
+    secondary = AdminMuseumTokens.AntiqueGold,
+    onSecondary = Color(0xFF2A2000),
+    secondaryContainer = Color(0xFFF1E3C2),
+    onSecondaryContainer = Color(0xFF332500),
+    tertiary = AdminMuseumTokens.SlateBlue,
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFDCE7EE),
+    onTertiaryContainer = Color(0xFF16323F),
+    background = Color(0xFFF3F5F8),
+    onBackground = Color(0xFF1B1F24),
     surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF17211A),
-    surfaceVariant = Color(0xFFE8EFE9),
-    onSurfaceVariant = Color(0xFF526158),
-    outline = Color(0xFFCCD8CE),
-    outlineVariant = Color(0xFFE8EFE9),
+    onSurface = Color(0xFF1B1F24),
+    surfaceVariant = Color(0xFFE7EAEE),
+    onSurfaceVariant = Color(0xFF565E68),
+    outline = Color(0xFFCBD2DA),
+    outlineVariant = Color(0xFFE3E7EC),
     error = Color(0xFFBA1A1A),
     onError = Color.White,
     errorContainer = Color(0xFFFFDAD6),
@@ -37,24 +49,26 @@ private val LightColors = lightColorScheme(
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFFA7DDB5),
-    onPrimary = Color(0xFF00210E),
-    primaryContainer = Color(0xFF0B3D24),
-    onPrimaryContainer = Color(0xFFDDF3E2),
-    secondary = Color(0xFFA7DDB5),
-    onSecondary = Color(0xFF05210E),
-    secondaryContainer = Color(0xFF245C2B),
-    onSecondaryContainer = Color(0xFFDDF3E2),
-    tertiary = Color(0xFFB8CCB9),
-    onTertiary = Color(0xFF233426),
-    background = Color(0xFF101511),
-    onBackground = Color(0xFFE0E6DE),
-    surface = Color(0xFF141A15),
-    onSurface = Color(0xFFE0E6DE),
-    surfaceVariant = Color(0xFF3F4941),
-    onSurfaceVariant = Color(0xFFC0CABF),
-    outline = Color(0xFF899389),
-    outlineVariant = Color(0xFF3F4941),
+    primary = Color(0xFFB4C4DD),
+    onPrimary = Color(0xFF16233A),
+    primaryContainer = Color(0xFF283A54),
+    onPrimaryContainer = Color(0xFFDCE3EF),
+    secondary = Color(0xFFE0BE7A),
+    onSecondary = Color(0xFF3A2E05),
+    secondaryContainer = Color(0xFF4F3E12),
+    onSecondaryContainer = Color(0xFFF1E3C2),
+    tertiary = Color(0xFFA7C3D7),
+    onTertiary = Color(0xFF102B3A),
+    tertiaryContainer = Color(0xFF244254),
+    onTertiaryContainer = Color(0xFFDCE7EE),
+    background = Color(0xFF121417),
+    onBackground = Color(0xFFE3E6E9),
+    surface = Color(0xFF191C20),
+    onSurface = Color(0xFFE3E6E9),
+    surfaceVariant = Color(0xFF3F454C),
+    onSurfaceVariant = Color(0xFFC1C7CE),
+    outline = Color(0xFF8B9199),
+    outlineVariant = Color(0xFF3F454C),
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005),
     errorContainer = Color(0xFF93000A),
@@ -62,8 +76,8 @@ private val DarkColors = darkColorScheme(
 )
 
 private val MuseumTypography = Typography(
-    displaySmall = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 32.sp, lineHeight = 40.sp),
-    headlineMedium = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 26.sp, lineHeight = 34.sp),
+    displaySmall = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 32.sp, lineHeight = 40.sp, letterSpacing = (-0.25).sp),
+    headlineMedium = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 26.sp, lineHeight = 34.sp, letterSpacing = (-0.15).sp),
     headlineSmall = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 22.sp, lineHeight = 30.sp),
     titleLarge = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 20.sp, lineHeight = 28.sp),
     titleMedium = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 24.sp),
@@ -76,11 +90,20 @@ private val MuseumTypography = Typography(
     labelSmall = TextStyle(fontWeight = FontWeight.Medium, fontSize = 11.sp, lineHeight = 16.sp)
 )
 
+private val MuseumShapes = Shapes(
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(14.dp),
+    large = RoundedCornerShape(18.dp),
+    extraLarge = RoundedCornerShape(24.dp)
+)
+
 @Composable
 fun MuseumAdminTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
         typography = MuseumTypography,
+        shapes = MuseumShapes,
         content = content
     )
 }

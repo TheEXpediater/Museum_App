@@ -17,7 +17,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,8 +43,16 @@ fun VisitorScanSheet(
 ) {
     val viewModel: VisitorScanViewModel = viewModel(factory = VisitorScanViewModel.factory(repository))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    // The underlying ViewModel can outlive this sheet (it is scoped to the visitor nav
+    // back-stack entry), so re-check readiness every time the sheet is actually opened
+    // instead of relying on a status snapshot taken the first time it was ever shown.
+    LaunchedEffect(Unit) {
+        viewModel.refresh()
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -66,13 +76,15 @@ fun VisitorScanSheet(
             if (uiState.isLoading) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    Text("Preparing scanner")
+                    Text("Checking scanner status")
+                }
+            } else if (uiState.isPreparingAi) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text("Preparing AI...")
                 }
             } else if (uiState.canOpenCamera) {
-                Text("Scanner ready.", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium)
-                uiState.indexedArtifacts?.let { count ->
-                    Text("$count museum image(s) available for recognition.", style = MaterialTheme.typography.bodyMedium)
-                }
+                Text("Scanner Ready.", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium)
                 ScanButton(onClick = onOpenCamera, modifier = Modifier.fillMaxWidth(), label = "Open Camera")
                 OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
                     Text("Cancel")

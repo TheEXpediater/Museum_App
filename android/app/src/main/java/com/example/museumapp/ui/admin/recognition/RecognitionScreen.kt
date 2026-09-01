@@ -95,6 +95,7 @@ import coil.compose.AsyncImage
 import com.example.museumapp.data.model.ArtifactMatchDto
 import com.example.museumapp.data.model.RecognitionResponseDto
 import com.example.museumapp.data.repository.AdminRepositoryContract
+import com.example.museumapp.ui.admin.components.HealthStatusChip
 import com.example.museumapp.ui.admin.components.MatchLevelChip
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -153,6 +154,7 @@ fun RecognitionScreen(
                     hasRequestedPermission -> CameraPermissionUiState.Denied
                     else -> CameraPermissionUiState.NotRequested
                 }
+                viewModel.refreshAiReadiness()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -383,18 +385,7 @@ private fun ReadinessCard(
             ) {
                 Text("Recognition readiness", style = MaterialTheme.typography.titleMedium)
                 if (uiState.recognitionBlockedMessage == null) {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    ) {
-                        Text(
-                            "Ready",
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
+                    HealthStatusChip("ready")
                 }
             }
             Text(
@@ -406,11 +397,10 @@ private fun ReadinessCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Text(
-                "OpenCLIP ${uiState.aiStatus.replace('_', ' ')}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("OpenCLIP", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                HealthStatusChip(uiState.aiStatus)
+            }
             uiState.recognitionBlockedMessage?.let { message ->
                 Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                 OutlinedButton(onClick = onOpenSystemStatus, modifier = Modifier.fillMaxWidth()) {

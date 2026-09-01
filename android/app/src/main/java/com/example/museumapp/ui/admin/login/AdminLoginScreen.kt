@@ -1,23 +1,31 @@
 package com.example.museumapp.ui.admin.login
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.CloudOff
@@ -30,10 +38,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,7 +61,8 @@ import com.example.museumapp.data.repository.AdminRepository
 @Composable
 fun AdminLoginScreen(
     repository: AdminRepository,
-    onLoginSuccess: () -> Unit
+    onLoginSuccess: () -> Unit,
+    onBackToVisitor: () -> Unit
 ) {
     val viewModel: LoginViewModel = viewModel(factory = LoginViewModel.factory(repository))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -69,6 +78,17 @@ fun AdminLoginScreen(
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
+        TextButton(
+            onClick = onBackToVisitor,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .heightIn(min = 48.dp)
+        ) {
+            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.size(6.dp))
+            Text("Back to Visitor", style = MaterialTheme.typography.labelLarge)
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -78,16 +98,17 @@ fun AdminLoginScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Surface(
-                modifier = Modifier.size(88.dp),
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.primaryContainer
+                modifier = Modifier.size(96.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary,
+                border = BorderStroke(2.dp, MaterialTheme.colorScheme.secondary)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Outlined.AccountBalance,
                         contentDescription = null,
-                        modifier = Modifier.size(44.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.onPrimary
                     )
                 }
             }
@@ -173,14 +194,16 @@ fun AdminLoginScreen(
                             Text("Log In")
                         }
                     }
-                    OutlinedButton(
-                        onClick = viewModel::testConnection,
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !uiState.isLoading && !uiState.isTestingConnection
-                    ) {
-                        if (uiState.isTestingConnection) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                        } else {
+                    if (BuildConfig.DEBUG) {
+                        TextButton(
+                            onClick = viewModel::testConnection,
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !uiState.isLoading && !uiState.isTestingConnection
+                        ) {
+                            if (uiState.isTestingConnection) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                            }
                             Text("Test Connection")
                         }
                     }

@@ -43,7 +43,7 @@ private object AdminSavedStateKeys {
 }
 
 @Composable
-fun AdminNavGraph(repository: AdminRepository) {
+fun AdminNavGraph(repository: AdminRepository, onBackToVisitor: () -> Unit) {
     val navController = rememberNavController()
     val session by repository.session.collectAsStateWithLifecycle(initialValue = AdminSession())
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -77,7 +77,8 @@ fun AdminNavGraph(repository: AdminRepository) {
                         popUpTo(AdminRoutes.Login) { inclusive = true }
                         launchSingleTop = true
                     }
-                }
+                },
+                onBackToVisitor = onBackToVisitor
             )
         }
         composable(AdminRoutes.Dashboard) {
