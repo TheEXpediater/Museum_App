@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import ipaddress
 import secrets
 import shutil
 import socket
@@ -10,6 +11,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import zipfile
 from pathlib import Path
 
 
@@ -22,14 +24,17 @@ AI_REQUIREMENTS_FILE = BACKEND_DIR / "requirements-ai.txt"
 ENV_EXAMPLE_FILE = BACKEND_DIR / ".env.example"
 ENV_FILE = BACKEND_DIR / ".env"
 COMPOSE_FILE = ROOT_DIR / "compose.yaml"
+ARTIFACT_IMAGE_SOURCE = ROOT_DIR / "artifact_image_source"
+IMAGE_ZIP_CANDIDATES = ("museum-images.zip", "image-assets.zip")
+FIREWALL_RULE_NAME = "Museum Backend 8000"
 
-MONGODB_PORT = 27017
+MONGODB_PORT = 27018  # compose.yaml publishes the mongodb container's 27017 on host port 27018
 QDRANT_REST_PORT = 6333
 QDRANT_GRPC_PORT = 6334
 FASTAPI_PORT = 8000
 MONGODB_SERVICE = "mongodb"
 QDRANT_SERVICE = "qdrant"
-LOCAL_MONGODB_URI = "mongodb://localhost:27017"
+LOCAL_MONGODB_URI = "mongodb://localhost:27018"
 DEFAULT_QDRANT_URL = "http://localhost:6333"
 AI_REQUIREMENTS = [
     "torch==2.13.0",
@@ -191,9 +196,9 @@ def local_mongodb_responds() -> bool:
 def raise_non_mongodb_port_error() -> None:
     pids = port_pids(MONGODB_PORT)
     lines = [
-        "Port 27017 is occupied, but the process is not responding as MongoDB.",
+        f"Port {MONGODB_PORT} is occupied, but the process is not responding as MongoDB.",
         "Diagnostic commands:",
-        "netstat -ano | findstr :27017",
+        f"netstat -ano | findstr :{MONGODB_PORT}",
     ]
     if pids:
         for pid in pids:
@@ -340,7 +345,7 @@ def start_docker_mongodb(compose_command: list[str]) -> None:
     if process.returncode != 0:
         print_process_output(process)
         if "port is already allocated" in (process.stderr or "").lower():
-            raise LauncherError("Port 27017 is already in use. Stop the existing MongoDB instance, then try again.")
+            raise LauncherError(f"Port {MONGODB_PORT} is already in use. Stop the existing MongoDB instance, then try again.")
         raise LauncherError("MongoDB startup failure. Docker Compose could not start the MongoDB service.")
 
     wait_for_compose_health(compose_command, MONGODB_SERVICE, ready_message="MongoDB started through Docker")
@@ -528,7 +533,7 @@ def ensure_environment_configuration() -> None:
     admin_password = prompt_admin_password()
     update_env_file(
         {
-            "MONGODB_URL": "mongodb://localhost:27017",
+            "MONGODB_URL": LOCAL_MONGODB_URI,
             "MONGODB_DATABASE": "museum_guide",
             "JWT_SECRET_KEY": secrets.token_urlsafe(48),
             "UPLOAD_DIRECTORY": "uploads/images",
@@ -581,10 +586,57 @@ def ensure_admin_account() -> None:
     ok("Admin account ready")
 
 
+def local_ipv4_addresses() -> list[str]:
+    addresses: set[str] = set()
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            addresses.add(info[4][0])
+    except OSError:
+        pass
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("8.8.8.8", 80))
+            addresses.add(probe.getsockname()[0])
+    except OSError:
+        pass
+
+    private_addresses = []
+    for address in addresses:
+        parsed = ipaddress.ip_address(address)
+        if parsed.version == 4 and parsed.is_private and not parsed.is_loopback:
+            private_addresses.append(address)
+    return sorted(private_addresses)
+
+
 def print_server_urls() -> None:
+    addresses = local_ipv4_addresses()
+    print("========================================", flush=True)
+    print(" MUSEUM BACKEND", flush=True)
+    print("========================================", flush=True)
+    print(flush=True)
+    print("Status: RUNNING", flush=True)
+    print(flush=True)
+    print("Local:", flush=True)
+    print(f"http://localhost:{FASTAPI_PORT}", flush=True)
+    print(flush=True)
+    if addresses:
+        print("Network:", flush=True)
+        for address in addresses:
+            print(f"http://{address}:{FASTAPI_PORT}", flush=True)
+        print(flush=True)
+        print("Android Backend Address:", flush=True)
+        print(f"{addresses[0]}:{FASTAPI_PORT}", flush=True)
+    else:
+        print("[WARN] No LAN IPv4 address was detected. Connect this laptop to Wi-Fi or a mobile hotspot,", flush=True)
+        print("       then restart run.bat so the phone can find this backend.", flush=True)
+    print(flush=True)
     print("Swagger UI: http://localhost:8000/docs", flush=True)
     print("Health check: http://localhost:8000/api/v1/health", flush=True)
     print("Android emulator URL: http://10.0.2.2:8000/", flush=True)
+    print(flush=True)
+    print("Keep this window running while using the APK.", flush=True)
+    print("========================================", flush=True)
 
 
 def start_fastapi() -> int:
@@ -748,6 +800,96 @@ def run_artifact_import(*, source: str | None, dry_run: bool, update_existing: b
     return run_backend_module("scripts.import_artifact_zips", *module_args)
 
 
+def extract_image_zip_if_present() -> None:
+    for name in IMAGE_ZIP_CANDIDATES:
+        zip_path = ROOT_DIR / name
+        if not zip_path.is_file():
+            continue
+        info(f"Found {name}; extracting into {ARTIFACT_IMAGE_SOURCE.name}")
+        ARTIFACT_IMAGE_SOURCE.mkdir(parents=True, exist_ok=True)
+        try:
+            with zipfile.ZipFile(zip_path) as archive:
+                archive.extractall(ARTIFACT_IMAGE_SOURCE)
+        except zipfile.BadZipFile:
+            error(f"{name} is not a valid ZIP file. Skipping extraction.")
+            return
+        ok(f"Extracted {name} into {ARTIFACT_IMAGE_SOURCE.name}")
+        return
+
+
+def ensure_firewall_rule() -> None:
+    check = run_process(
+        ["netsh", "advfirewall", "firewall", "show", "rule", f"name={FIREWALL_RULE_NAME}"],
+        capture=True,
+    )
+    if check.returncode == 0:
+        ok("Windows Firewall already allows the museum backend port")
+        return
+
+    add = run_process(
+        [
+            "netsh", "advfirewall", "firewall", "add", "rule",
+            f"name={FIREWALL_RULE_NAME}",
+            "dir=in",
+            "action=allow",
+            "protocol=TCP",
+            f"localport={FASTAPI_PORT}",
+        ],
+        capture=True,
+    )
+    if add.returncode == 0:
+        ok(f"Windows Firewall rule added for TCP port {FASTAPI_PORT}")
+    else:
+        info(f"Could not add a Windows Firewall rule automatically (this usually needs an Administrator prompt).")
+        info("If the phone cannot reach the backend, run this once in an Administrator PowerShell:")
+        info(
+            f'New-NetFirewallRule -DisplayName "{FIREWALL_RULE_NAME}" -Direction Inbound '
+            f"-Protocol TCP -LocalPort {FASTAPI_PORT} -Action Allow"
+        )
+
+
+def run_full_setup() -> int:
+    ensure_environment_configuration()
+    extract_image_zip_if_present()
+    ensure_mongodb_ready()
+    ensure_firewall_rule()
+
+    if ai_enabled_from_env():
+        ensure_ai_environment_configuration()
+        try:
+            verify_ai_python_compatibility()
+            install_ai_dependencies()
+        except LauncherError as exc:
+            error(str(exc))
+            info("Continuing setup without installing AI dependencies.")
+            info("Fix the Python version, then re-run: python start_backend.py --setup-ai")
+        ensure_qdrant_ready()
+        run_backend_module("scripts.check_ai_setup")
+    else:
+        info("AI is disabled; Qdrant and AI dependency installation are skipped")
+
+    ensure_admin_account()
+
+    if ARTIFACT_IMAGE_SOURCE.is_dir() and any(ARTIFACT_IMAGE_SOURCE.glob("*.zip")):
+        info(f"Importing artifact ZIP files from {ARTIFACT_IMAGE_SOURCE.name}")
+        run_artifact_import(source=str(ARTIFACT_IMAGE_SOURCE), dry_run=False, update_existing=False, index_ai=False)
+    else:
+        info(f"No artifact ZIP files found in {ARTIFACT_IMAGE_SOURCE.name}; skipping artifact import")
+
+    check_code, failures = run_setup_check()
+    if check_code != 0:
+        error(setup_failure_message(failures))
+        return check_code
+
+    ok("Setup complete.")
+    addresses = local_ipv4_addresses()
+    if addresses:
+        info("This computer's LAN address for the Android app: " + ", ".join(f"{a}:{FASTAPI_PORT}" for a in addresses))
+    else:
+        info("No LAN IPv4 address was detected yet. Connect to Wi-Fi/hotspot before running run.bat.")
+    return 0
+
+
 def dependency_status(package: str, module_name: str | None = None) -> str:
     module = module_name or package
     code = f"import importlib.util; raise SystemExit(0 if importlib.util.find_spec({module!r}) else 1)"
@@ -832,6 +974,14 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument("--status", action="store_true", help="Report backend, MongoDB, Qdrant, and AI status.")
     mode.add_argument("--index-ai", action="store_true", help="Index existing artifact images into Qdrant.")
     mode.add_argument("--import-artifacts", action="store_true", help="Import artifact ZIP files as draft artifacts.")
+    mode.add_argument(
+        "--setup",
+        action="store_true",
+        help=(
+            "Full idempotent first-time setup: environment, Docker MongoDB/Qdrant, AI dependencies, "
+            "admin account, and artifact ZIP import. Does not start the server."
+        ),
+    )
     parser.add_argument("--rebuild", action="store_true", help="With --index-ai, rebuild the configured artifact vector collection first.")
     parser.add_argument("--source", help="With --import-artifacts, override the artifact ZIP source folder.")
     parser.add_argument("--dry-run", action="store_true", help="With --import-artifacts, report without modifying MongoDB or images.")
@@ -861,6 +1011,9 @@ def main() -> int:
         if args.check:
             ensure_environment_configuration()
             return run_check()
+
+        if args.setup:
+            return run_full_setup()
 
         if args.setup_ai:
             return run_ai_setup()

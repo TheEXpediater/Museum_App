@@ -76,7 +76,7 @@ function Backup-MongoDb {
     Write-Info "Backing up MongoDB with mongodump"
     $envFile = Join-Path $RootDir "backend\.env"
     $mongoUrl = if ($env:MONGODB_URL) { $env:MONGODB_URL } else { Get-DotEnvValue $envFile "MONGODB_URL" }
-    if (-not $mongoUrl) { $mongoUrl = "mongodb://localhost:27017" }
+    if (-not $mongoUrl) { $mongoUrl = "mongodb://localhost:27018" }
     $mongoDb = if ($env:MONGODB_DATABASE) { $env:MONGODB_DATABASE } else { Get-DotEnvValue $envFile "MONGODB_DATABASE" }
     $mongoContainer = Get-MongoContainer
     $archive = Join-Path $MongoBackupDir "all-databases.archive.gz"

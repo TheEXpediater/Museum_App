@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  This app only ever talks to a museum backend on the same local Wi-Fi/hotspot network
+  (see BackendConnectionManager) — there is no public-internet or app-store distribution,
+  and the laptop backend has no TLS certificate. Cleartext HTTP must stay permitted for the
+  LAN connection to work in release builds, matching the debug network security config.
+-->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

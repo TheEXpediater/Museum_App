@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import com.example.museumapp.BuildConfig
 import com.example.museumapp.data.api.AdminApiService
 import com.example.museumapp.data.api.NetworkErrorMessages
+import com.example.museumapp.data.network.BackendConnectionManager
 import com.example.museumapp.data.model.AiHealthResponse
 import com.example.museumapp.data.model.AnnouncementDto
 import com.example.museumapp.data.model.ArticleDto
@@ -68,11 +69,14 @@ interface VisitorRepositoryContract : RecognitionRepositoryContract {
 class VisitorRepository(
     private val api: AdminApiService,
     private val sessionManager: SessionManager,
-    private val context: Context
+    private val context: Context,
+    private val backendConnectionManager: BackendConnectionManager
 ) : VisitorRepositoryContract {
     override val session: Flow<VisitorSession> = sessionManager.visitorSession
     override val onboardingCompleted: Flow<Boolean> = sessionManager.onboardingCompleted
-    override val backendBaseUrl: String = BuildConfig.API_BASE_URL
+    override val backendBaseUrl: String
+        get() = backendConnectionManager.activeHost?.let { host -> "http://$host:${backendConnectionManager.activePort}/" }
+            ?: BuildConfig.API_BASE_URL
 
     private var cachedHome: PublicHomeResponseDto? = null
     private var cachedArtifactList: PublicArtifactListResponseDto? = null

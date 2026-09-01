@@ -98,7 +98,7 @@ function Restore-MongoDb {
 
     $envFile = Join-Path $RootDir "backend\.env"
     $mongoUrl = if ($env:MONGODB_RESTORE_URI) { $env:MONGODB_RESTORE_URI } elseif ($env:MONGODB_URL) { $env:MONGODB_URL } else { Get-DotEnvValue $envFile "MONGODB_URL" }
-    if (-not $mongoUrl) { $mongoUrl = "mongodb://localhost:27017" }
+    if (-not $mongoUrl) { $mongoUrl = "mongodb://localhost:27018" }
 
     Write-Info "Restoring MongoDB archive with mongorestore"
     if (Test-Command mongorestore) {

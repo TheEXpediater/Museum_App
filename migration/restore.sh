@@ -95,7 +95,7 @@ restore_mongodb() {
 
   local mongo_url
   mongo_url="${MONGODB_RESTORE_URI:-${MONGODB_URL:-$(read_env_value "${ROOT_DIR}/backend/.env" "MONGODB_URL")}}"
-  mongo_url="${mongo_url:-mongodb://localhost:27017}"
+  mongo_url="${mongo_url:-mongodb://localhost:27018}"
 
   log "Restoring MongoDB archive with mongorestore"
   if command_exists mongorestore; then

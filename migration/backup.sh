@@ -76,7 +76,7 @@ backup_mongodb() {
   local env_file="${ROOT_DIR}/backend/.env"
   local mongo_url mongo_db mongo_container archive db_archive
   mongo_url="${MONGODB_URL:-$(read_env_value "${env_file}" "MONGODB_URL")}"
-  mongo_url="${mongo_url:-mongodb://localhost:27017}"
+  mongo_url="${mongo_url:-mongodb://localhost:27018}"
   mongo_db="${MONGODB_DATABASE:-$(read_env_value "${env_file}" "MONGODB_DATABASE")}"
   mongo_container="$(detect_mongo_container || true)"
   archive="${MONGODB_BACKUP_DIR}/all-databases.archive.gz"

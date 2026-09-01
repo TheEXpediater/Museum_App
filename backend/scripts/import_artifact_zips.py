@@ -25,7 +25,7 @@ from app.services.image_storage import cleanup_images, save_image_bytes, validat
 logger = logging.getLogger(__name__)
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-DEFAULT_SOURCE = ROOT_DIR / "artifact_import_source"
+DEFAULT_SOURCE = ROOT_DIR / "artifact_image_source"
 DEFAULT_REPORT = ROOT_DIR / "artifact_import_report.json"
 
 MAX_ZIP_ENTRIES = 1000

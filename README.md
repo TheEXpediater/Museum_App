@@ -6,6 +6,25 @@ Give 3 adds a separate guest and student visitor experience inside the same Andr
 
 Out of scope for this phase: continuous/video recognition, face recognition, registrar-backed Student ID verification, email verification, password reset, visitor analytics beyond guest session records, 3D artifacts, social comments, and admin authoring screens for news/articles.
 
+## Handoff Quick Start
+
+For a new computer receiving this project folder:
+
+```text
+1. Put an artifact image ZIP (see "Bulk Artifact Import") in the project root, named
+   museum-images.zip or image-assets.zip, if new artifact photos need to be imported.
+2. Double-click setup.bat. Wait for "SETUP COMPLETE".
+3. Double-click run.bat. Keep that window open.
+4. Note the "Android Backend Address" printed by run.bat (e.g. 192.168.1.20:8000).
+5. Install the APK on the phone, connect it to the same Wi-Fi/hotspot as the laptop.
+6. Open the app. It finds the backend automatically. If it cannot, enter the address
+   from step 4 on the "Backend Not Found" screen.
+```
+
+`setup.bat` and `run.bat` are thin wrappers around `start_backend.py` (see "Simplified Backend Startup"); both are safe to run more than once. If this project folder was copied from another computer that already had data (MongoDB, Qdrant, uploaded images), restore that data first with `migration\restore.ps1` (see [migration/README.md](migration/README.md)) before running `setup.bat` — `setup.bat` never overwrites or restores existing Docker volumes itself, by design, so real data is never silently replaced by a stale backup.
+
+The Android app never has a laptop IP compiled into it. See "Android Backend Connection" below.
+
 ## Visitor Application
 
 Startup routing uses DataStore state for onboarding completion and the active account type:
@@ -141,15 +160,12 @@ The seed content is clearly labeled demonstration content and should be replaced
 
 ## Simplified Backend Startup
 
-From the repository root, run:
+Double-click `setup.bat` once (or run `python start_backend.py --setup`), then double-click `run.bat` (or run `python start_backend.py`) every time you want to start the backend. `run.bat` prints the laptop's current LAN address and port to enter into the Android app if it is not detected automatically.
+
+Optional commands, from the repository root:
 
 ```powershell
-python start_backend.py
-```
-
-Optional commands:
-
-```powershell
+python start_backend.py --setup
 python start_backend.py --test
 python start_backend.py --check
 python start_backend.py --setup-ai
@@ -162,7 +178,9 @@ python start_backend.py --import-artifacts --dry-run
 python start_backend.py --stop
 ```
 
-The launcher starts MongoDB with Docker Compose, prepares `backend\.venv` when needed, creates `backend\.env` only if it is missing, checks the setup, creates the first admin account when needed, and starts FastAPI.
+`--setup` runs the full idempotent first-time setup: creates `backend\.env` from `backend\.env.example` if missing, extracts `museum-images.zip`/`image-assets.zip` from the project root into `artifact_image_source\` if present, starts MongoDB and Qdrant through Docker Compose, installs AI dependencies, imports any artifact ZIP files found in `artifact_image_source\`, and creates the first admin account. It never deletes or rebuilds existing MongoDB data, Qdrant collections, or vectors.
+
+Running the launcher with no flags starts MongoDB with Docker Compose, prepares `backend\.venv` when needed, creates `backend\.env` only if it is missing, checks the setup, creates the first admin account when needed, and starts FastAPI listening on `0.0.0.0:8000` (reachable from other devices on the same LAN).
 
 ## Backend Setup
 
@@ -357,25 +375,27 @@ The Android System Status screen labels this action `Index Artifact Images`. It 
 
 ## Bulk Artifact Import
 
-Place removable ZIP collections under the repository-root folder `artifact_import_source/`. This folder is ignored by Git and is only an import source; the app continues to store managed runtime images under `backend/uploads/images/`.
+Place removable ZIP collections under the repository-root folder `artifact_image_source/`. This folder is ignored by Git and is only an import source; the app continues to store managed runtime images under `backend/uploads/images/`.
 
-Example:
+For a handoff, the recipient does not need to create this folder by hand: put a single ZIP named `museum-images.zip` or `image-assets.zip` in the project root, containing the per-artifact ZIPs (and optional category subfolders) below. `setup.bat` (`python start_backend.py --setup`) extracts it into `artifact_image_source/` and imports it automatically.
+
+Example (either placed directly, or inside `museum-images.zip`):
 
 ```text
-artifact_import_source/
+artifact_image_source/
     Agricultural Tools/
         Wooden Plow.zip
         Hand Sickle.zip
     Rice Mortar.zip
 ```
 
-Each ZIP represents one artifact. The ZIP filename becomes the initial artifact name with only `.zip` removed, so `Wooden Plow.zip` becomes `Wooden Plow`. A direct parent folder becomes the initial category; ZIPs directly inside `artifact_import_source/` use `Uncategorized`. Imported records are created as Draft artifacts with generated temporary codes such as `DRAFT-WOODEN-PLOW-A13F72`. Administrators can rename the artifact, replace the temporary code with the official accession code, choose a managed category, add custom metadata fields, and publish later.
+Each ZIP represents one artifact. The ZIP filename becomes the initial artifact name with only `.zip` removed, so `Wooden Plow.zip` becomes `Wooden Plow`. A direct parent folder becomes the initial category; ZIPs directly inside `artifact_image_source/` use `Uncategorized`. Imported records are created as Draft artifacts with generated temporary codes such as `DRAFT-WOODEN-PLOW-A13F72`. Administrators can rename the artifact, replace the temporary code with the official accession code, choose a managed category, add custom metadata fields, and publish later.
 
 Run from `backend`:
 
 ```powershell
 python -m scripts.import_artifact_zips
-python -m scripts.import_artifact_zips --source ../artifact_import_source
+python -m scripts.import_artifact_zips --source ../artifact_image_source
 python -m scripts.import_artifact_zips --dry-run
 python -m scripts.import_artifact_zips --update-existing
 ```
@@ -385,6 +405,7 @@ Or from the repository root:
 ```powershell
 python start_backend.py --import-artifacts
 python start_backend.py --import-artifacts --dry-run
+python start_backend.py --setup
 ```
 
 The importer validates ZIP paths defensively, rejects path traversal and nested archives, ignores unrelated files, validates real JPEG/JPG/PNG/WEBP image contents, and imports every valid image in an accepted artifact ZIP. It keeps archive-level safety thresholds for suspicious entry counts and total uncompressed size, but there is no product-level maximum number of images per artifact. Source ZIPs are never deleted and are never required at runtime after import.
@@ -423,73 +444,36 @@ Passwords are hashed and verified with the direct `bcrypt` package. Existing `$2
 
 ## Android Setup
 
-Open the repository root in Android Studio and run the `android:app` configuration.
-
-`BuildConfig.API_BASE_URL` is compiled from these sources, in order:
-
-1. Gradle property `API_BASE_URL`, such as `-PAPI_BASE_URL=...`
-2. Environment variable `API_BASE_URL`
-3. Untracked project `local.properties`
-4. Fallback `http://10.0.2.2:8000/`
-
-For Android Studio, prefer the repository-root `local.properties` file because it is already ignored by Git:
-
-```properties
-API_BASE_URL=http://10.0.2.2:8000/
-DEBUG_ADMIN_EMAIL=
-DEBUG_ADMIN_PASSWORD=
-```
-
-For command-line builds, you can also pass the value directly:
-
-```powershell
-.\gradlew.bat :android:app:assembleDebug -PAPI_BASE_URL=http://192.168.100.12:8000/
-```
-
-The URL is normalized to end in `/`, and malformed URLs fail the Gradle build with a clear error. Rebuild the APK after changing `API_BASE_URL`; it is a compile-time value.
+Open the repository root in Android Studio and run the `android:app` configuration. No `API_BASE_URL` configuration is required to connect to a backend — see "Android Backend Connection" below. `local.properties`/`-PAPI_BASE_URL` still exist only to seed `BuildConfig.API_BASE_URL`, a legacy compile-time value that is no longer used to reach the backend (kept only so existing Gradle tooling and tests that reference it keep working). `DEBUG_ADMIN_EMAIL`/`DEBUG_ADMIN_PASSWORD` in `local.properties` still prefill the debug admin login form.
 
 Use [local.properties.example](local.properties.example) as the safe tracked template. Never commit real passwords. `local.properties` must remain ignored by Git.
 
-### Emulator Configuration
+## Android Backend Connection
 
-Use the emulator host alias:
+The Android app never has a laptop IP compiled into it. `BackendConnectionManager` (`android/app/src/main/java/com/example/museumapp/data/network/`) is the single source of truth for the backend address, for both Visitor and Admin flows:
 
-```properties
-API_BASE_URL=http://10.0.2.2:8000/
+```text
+App opens
+  |
+  v
+Try the saved backend address (DataStore) -> health check
+  |
+  +-- succeeds --> Connect, keep using it
+  |
+  +-- fails ------> Scan this device's current /24 Wi-Fi subnet for the health endpoint
+                       |
+                       +-- found -----> Connect and save the address
+                       |
+                       +-- not found -> Show "Backend Not Found" with manual IP:port entry
 ```
 
-`10.0.2.2` is only for an Android emulator. Do not use it for a physical phone build.
+No mDNS/NSD/Bonjour/cloud discovery is used. An address is only saved after its `/api/v1/health` response is verified. If the phone later moves to a different Wi-Fi/hotspot, the next app launch retries the saved address, fails fast, rescans the new subnet, and falls back to manual entry — it never gets stuck retrying a dead address. To force a reconnect without restarting the phone, close and reopen the app.
 
-### Physical-Device Configuration
+Requirements this depends on, both already satisfied by `run.bat`/Uvicorn:
 
-Find the active Windows IPv4 address:
-
-```powershell
-ipconfig
-```
-
-Use the Wi-Fi adapter IPv4 address in `local.properties` or `-PAPI_BASE_URL`:
-
-```properties
-API_BASE_URL=http://<WINDOWS_LAN_IP>:8000/
-```
-
-For the current Wi-Fi development machine:
-
-```properties
-API_BASE_URL=http://192.168.100.12:8000/
-DEBUG_ADMIN_EMAIL=<your local admin email>
-DEBUG_ADMIN_PASSWORD=<your local admin password>
-```
-
-Physical-device requirements:
-
-- Phone and computer must use the same Wi-Fi network.
-- Uvicorn must run with `--host 0.0.0.0`.
-- Guest Wi-Fi networks may block device-to-device communication.
-- VPNs may interfere with LAN routing.
-- Windows Firewall may block inbound TCP port `8000`.
-- The APK must be rebuilt after changing the compile-time base URL.
+- The backend must listen on `0.0.0.0` (not `127.0.0.1`), so it is reachable from other LAN devices.
+- The phone and the laptop must be on the same Wi-Fi network or the same mobile hotspot.
+- Windows Firewall must allow inbound TCP on the backend port (see below).
 
 Verify that port `8000` is listening:
 
@@ -497,13 +481,7 @@ Verify that port `8000` is listening:
 Get-NetTCPConnection -LocalPort 8000 -State Listen
 ```
 
-or:
-
-```powershell
-netstat -ano | findstr :8000
-```
-
-Optional Administrator PowerShell firewall rule:
+Optional Administrator PowerShell firewall rule, scoped to only the museum backend port:
 
 ```powershell
 New-NetFirewallRule `
@@ -514,27 +492,13 @@ New-NetFirewallRule `
   -Action Allow
 ```
 
-Optional USB testing with ADB reverse:
+Cleartext (plain HTTP) LAN traffic is permitted in both debug and release builds (`android/app/src/main/res/xml/network_security_config.xml`) because the backend has no TLS certificate and this app is never distributed outside the local museum network.
 
-```powershell
-adb devices
-adb reverse tcp:8000 tcp:8000
-adb reverse --list
-```
-
-When using ADB reverse on a physical device, compile the debug APK with:
-
-```properties
-API_BASE_URL=http://127.0.0.1:8000/
-```
-
-`127.0.0.1` is for a USB-connected physical phone only when `adb reverse tcp:8000 tcp:8000` is active. It is not the same as normal same-Wi-Fi LAN testing.
-
-Debug builds allow local cleartext HTTP through `android/app/src/debug/res/xml/network_security_config.xml`. Release builds keep unrestricted cleartext disabled through the main network security config.
+Artifact image URLs (`primary_image_url`, etc.) are generated by the backend from the incoming request's own host (`request.base_url`), so they automatically match whatever LAN address the phone used to reach the backend — no separate image-URL configuration is needed.
 
 ### Physical Phone LAN Verification
 
-Start FastAPI from Windows:
+Start the backend (`run.bat`, or manually):
 
 ```powershell
 cd C:\Capstone-client\Museum_App\backend
@@ -546,37 +510,15 @@ Check these URLs on the Windows computer:
 
 ```text
 http://localhost:8000/api/v1/health
-http://192.168.100.12:8000/api/v1/health
+http://<laptop LAN IP>:8000/api/v1/health
 ```
 
-Before opening the APK, check this URL in the physical phone browser:
-
-```text
-http://192.168.100.12:8000/api/v1/health
-```
-
-If the phone browser cannot open the health endpoint, the issue is outside the Android app. Check same Wi-Fi, temporarily disable mobile data, disable VPNs, avoid guest Wi-Fi/AP isolation, confirm the Windows network profile and Firewall, verify the active Wi-Fi IPv4 address, and confirm FastAPI is still running.
-
-When the phone calls the backend through `http://192.168.100.12:8000/`, artifact image URLs are generated from that request base URL and should begin with:
-
-```text
-http://192.168.100.12:8000/uploads/images/
-```
-
-Coil can load these local HTTP image URLs in debug builds because the debug network security override permits local cleartext traffic.
+Before opening the app, check the same LAN URL in the physical phone's browser. If the phone browser cannot open the health endpoint, the issue is outside the Android app: check same Wi-Fi, temporarily disable mobile data, disable VPNs, avoid guest Wi-Fi/AP isolation, confirm the Windows Firewall rule above, verify the laptop's current LAN IP (`run.bat` prints it), and confirm the backend is still running.
 
 Android checks:
 
 ```powershell
 .\gradlew.bat :android:app:testDebugUnitTest
-.\gradlew.bat :android:app:assembleDebug
-```
-
-After changing `local.properties`, clean, rebuild, and install the debug APK on the connected phone:
-
-```powershell
-cd C:\Capstone-client\Museum_App
-.\gradlew.bat clean
 .\gradlew.bat :android:app:assembleDebug
 adb install -r android\app\build\outputs\apk\debug\app-debug.apk
 ```
@@ -731,8 +673,12 @@ These commands cover the preserved Give 1/Give 2 admin behavior and the Give 3 v
 
 Public news, announcements, articles, museum information, and programs are read-only for Android visitors in this phase. Administrator content management screens are intentionally excluded until a separate approved phase. Museum information must be configured in MongoDB or seeded with clearly labeled demonstration data. Map actions are disabled until latitude and longitude are configured. Student ID verification against a PSAU registrar source, email verification, password reset, visitor analytics, and continuous recognition are not implemented in this phase.
 
+If the laptop switches to a different Wi-Fi/hotspot network while the Android app is already open, the app does not detect this mid-session; close and reopen the app to trigger a fresh backend search. The local-network backend scan only checks the phone's own `/24` subnet (matching how a Wi-Fi/hotspot network is normally addressed) and does not scan across VPNs, VLANs, or routed subnets.
+
 ## Troubleshooting
 
 If AI health is degraded, check `python start_backend.py --check-ai`, Qdrant at `http://localhost:6333`, and the OpenCLIP dependency installation. If recognition returns `no_match`, first confirm that artifacts have indexed vectors, then tune thresholds with real museum photos.
 
-If Android cannot connect, verify `API_BASE_URL`, rebuild the APK, and confirm the health endpoint opens from the emulator or phone browser. Debug builds allow local cleartext HTTP; release builds keep unrestricted cleartext disabled.
+If the Android app shows "Backend Not Found": confirm the phone and laptop are on the same Wi-Fi/hotspot, confirm `run.bat` is still running and shows `Status: RUNNING`, confirm the Windows Firewall rule for port `8000` exists, and try entering the "Android Backend Address" that `run.bat` printed directly into the app's manual-entry field. A wrong or stale address is never retried forever or silently kept — it is only saved after a real health check succeeds.
+
+If Docker is missing, install Docker Desktop and re-run `setup.bat`. If MongoDB or Qdrant will not start, check whether another process already holds port `27017`/`6333` (`netstat -ano | findstr :27017`). If moving this project from another computer and the database appears empty, restore from a backup with `migration\restore.ps1` (see [migration/README.md](migration/README.md)) rather than re-creating data by hand — never delete or recreate MongoDB/Qdrant volumes as a shortcut.

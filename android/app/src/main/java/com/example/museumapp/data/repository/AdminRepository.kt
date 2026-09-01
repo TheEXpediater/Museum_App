@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import com.example.museumapp.BuildConfig
 import com.example.museumapp.data.api.AdminApiService
 import com.example.museumapp.data.api.NetworkErrorMessages
+import com.example.museumapp.data.network.BackendConnectionManager
 import com.example.museumapp.data.model.AiHealthResponse
 import com.example.museumapp.data.model.AiIndexAllResponse
 import com.example.museumapp.data.model.AiIndexResultResponse
@@ -99,10 +100,13 @@ interface AdminRepositoryContract : RecognitionRepositoryContract {
 class AdminRepository(
     private val api: AdminApiService,
     private val sessionManager: SessionManager,
-    private val context: Context
+    private val context: Context,
+    private val backendConnectionManager: BackendConnectionManager
 ) : AdminRepositoryContract {
     override val session: Flow<AdminSession> = sessionManager.session
-    override val backendBaseUrl: String = BuildConfig.API_BASE_URL
+    override val backendBaseUrl: String
+        get() = backendConnectionManager.activeHost?.let { host -> "http://$host:${backendConnectionManager.activePort}/" }
+            ?: BuildConfig.API_BASE_URL
     private val _artifactMutations = MutableSharedFlow<ArtifactMutationEvent>(extraBufferCapacity = 16)
     override val artifactMutations: Flow<ArtifactMutationEvent> = _artifactMutations.asSharedFlow()
 
