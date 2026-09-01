@@ -4,6 +4,7 @@ import com.example.museumapp.data.model.AiHealthResponse
 import com.example.museumapp.data.model.AiIndexAllResponse
 import com.example.museumapp.data.model.AiIndexResultResponse
 import com.example.museumapp.data.model.AiIndexStatusResponse
+import com.example.museumapp.data.model.AiLibraryFeedResponse
 import com.example.museumapp.data.model.AiWarmupResponse
 import com.example.museumapp.data.model.ArtifactDto
 import com.example.museumapp.data.model.ArtifactCategoryCreateRequest
@@ -132,7 +133,9 @@ interface AdminApiService {
     ): ArtifactListResponse
 
     @GET("api/v1/artifact-categories")
-    suspend fun listArtifactCategories(): List<ArtifactCategoryDto>
+    suspend fun listArtifactCategories(
+        @Query("include_inactive") includeInactive: Boolean = false
+    ): List<ArtifactCategoryDto>
 
     @POST("api/v1/artifact-categories")
     suspend fun createArtifactCategory(@Body request: ArtifactCategoryCreateRequest): ArtifactCategoryDto
@@ -198,6 +201,9 @@ interface AdminApiService {
 
     @POST("api/v1/ai/index/all")
     suspend fun indexAllArtifacts(): AiIndexAllResponse
+
+    @POST("api/v1/ai/library/feed-pending")
+    suspend fun feedPendingAiLibrary(): AiLibraryFeedResponse
 
     @POST("api/v1/ai/index/failed")
     suspend fun retryFailedIndexes(): AiIndexAllResponse

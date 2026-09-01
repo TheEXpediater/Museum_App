@@ -134,6 +134,73 @@ def list_artifacts_by_ai_status(database: Database, statuses: list[str]) -> list
     return list(collection(database).find({"ai_index_status": {"$in": statuses}}).sort([("updated_at", DESCENDING)]))
 
 
+def ai_library_ready_query() -> dict[str, Any]:
+    return {
+        "$and": [
+            published_query(),
+            {"image_paths.0": {"$exists": True}},
+            {"ai_index_status": "indexed"},
+        ]
+    }
+
+
+def ai_library_pending_query(*, include_failed: bool = True, include_pending: bool = True) -> dict[str, Any]:
+    pending_statuses = ["not_indexed", "partial", "stale"]
+    if include_pending:
+        pending_statuses.append("pending")
+    if include_failed:
+        pending_statuses.append("failed")
+    return {
+        "$and": [
+            published_query(),
+            {"image_paths.0": {"$exists": True}},
+            {
+                "$or": [
+                    {"ai_index_status": {"$in": pending_statuses}},
+                    {"ai_index_status": {"$exists": False}},
+                    {"ai_index_status": None},
+                ]
+            },
+        ]
+    }
+
+
+def count_published_artifacts(database: Database) -> int:
+    return collection(database).count_documents(published_query())
+
+
+def count_draft_artifacts(database: Database) -> int:
+    return collection(database).count_documents({"status": "draft"})
+
+
+def count_ai_library_ready(database: Database) -> int:
+    return collection(database).count_documents(ai_library_ready_query())
+
+
+def count_ai_library_pending(database: Database, *, include_failed: bool = True) -> int:
+    return collection(database).count_documents(ai_library_pending_query(include_failed=include_failed, include_pending=True))
+
+
+def count_ai_library_stale(database: Database) -> int:
+    return collection(database).count_documents(
+        {
+            "$and": [
+                published_query(),
+                {"image_paths.0": {"$exists": True}},
+                {"ai_index_status": "stale"},
+            ]
+        }
+    )
+
+
+def list_ai_library_pending_artifacts(database: Database, *, include_failed: bool = True) -> list[dict]:
+    return list(
+        collection(database)
+        .find(ai_library_pending_query(include_failed=include_failed, include_pending=False))
+        .sort([("updated_at", DESCENDING)])
+    )
+
+
 def update_ai_index_state(
     database: Database,
     artifact_id: ObjectId,

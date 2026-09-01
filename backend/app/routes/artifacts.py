@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import logging
 from datetime import datetime
 from typing import Annotated
 
@@ -13,10 +14,14 @@ from app.repositories import artifact_repository, category_repository
 from app.schemas.artifact import ArtifactListResponse, ArtifactResponse, DeleteResponse, PrimaryImageRequest
 from app.services.artifact_validation import (
     clean_artifact_fields,
+    effective_visitor_gallery_paths,
     normalize_artifact_status,
     parse_custom_fields,
+    parse_image_path_list,
+    parse_metadata_sections,
     parse_remove_image_paths,
     persisted_status,
+    reconcile_visitor_gallery_paths,
     select_paths_by_name_or_path,
     validate_publishable,
 )
@@ -26,6 +31,7 @@ from app.utils import to_object_id
 
 
 router = APIRouter(prefix="/artifacts", tags=["Artifacts"], dependencies=[Depends(require_admin)])
+logger = logging.getLogger(__name__)
 
 
 def serialize_datetime(value) -> str:
@@ -38,6 +44,7 @@ def serialize_artifact(document: dict, request: Request) -> ArtifactResponse:
     base_url = str(request.base_url)
     image_paths = document.get("image_paths", [])
     primary_image_path = document.get("primary_image_path")
+    visitor_gallery_image_paths = effective_visitor_gallery_paths(document)
     return ArtifactResponse(
         id=str(document["_id"]),
         artifact_code=document.get("artifact_code", ""),
@@ -51,11 +58,15 @@ def serialize_artifact(document: dict, request: Request) -> ArtifactResponse:
         dimensions=document.get("dimensions"),
         condition=document.get("condition"),
         custom_fields=document.get("custom_fields") or [],
+        metadata_sections=document.get("metadata_sections") or [],
         image_paths=image_paths,
         image_urls=[image_url_for_path(base_url, path) for path in image_paths],
         primary_image_path=primary_image_path,
         primary_image_url=image_url_for_path(base_url, primary_image_path),
         primary_image_needs_review=bool(document.get("primary_image_needs_review", False)),
+        visitor_gallery_image_paths=visitor_gallery_image_paths,
+        visitor_gallery_image_urls=[image_url_for_path(base_url, path) for path in visitor_gallery_image_paths],
+        visitor_gallery_configured=bool(document.get("visitor_gallery_configured", False)),
         ai_index_status=document.get("ai_index_status"),
         ai_indexed_image_count=document.get("ai_indexed_image_count"),
         ai_indexed_at=serialize_datetime(document.get("ai_indexed_at")) if document.get("ai_indexed_at") else None,
@@ -110,6 +121,22 @@ def selected_upload_primary(
 def validate_primary_membership(primary_image_path: str | None, image_paths: list[str]) -> None:
     if primary_image_path and primary_image_path not in image_paths:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Primary image must belong to this artifact.")
+
+
+def parse_visitor_gallery_form(raw_value: str | None, *, partial: bool) -> list[str] | None:
+    return parse_image_path_list(raw_value, partial=partial, field_name="visitor_gallery_image_paths")
+
+
+def ai_relevant_change(previous: dict, current: dict) -> bool:
+    if set(previous.get("image_paths") or []) != set(current.get("image_paths") or []):
+        return True
+    return any(previous.get(key) != current.get(key) for key in ("artifact_code", "name", "category"))
+
+
+def stale_status_for_update(previous: dict, current: dict, updates: dict) -> None:
+    if previous.get("ai_index_status") == "indexed" and ai_relevant_change(previous, current):
+        updates["ai_index_status"] = "stale"
+        updates["ai_index_error"] = None
 
 
 def apply_category_default(fields: dict) -> None:
@@ -172,6 +199,9 @@ async def create_artifact(
     condition: Annotated[str | None, Form()] = None,
     artifact_status: Annotated[str | None, Form(alias="status")] = None,
     custom_fields: Annotated[str | None, Form()] = None,
+    metadata_sections: Annotated[str | None, Form()] = None,
+    visitor_gallery_image_paths: Annotated[str | None, Form()] = None,
+    visitor_gallery_configured: Annotated[bool | None, Form()] = None,
     primary_image_path: Annotated[str | None, Form()] = None,
     primary_image_index: Annotated[int | None, Form()] = None,
     primary_image_filename: Annotated[str | None, Form()] = None,
@@ -196,6 +226,7 @@ async def create_artifact(
     )
     apply_category_default(fields)
     parsed_custom_fields = parse_custom_fields(custom_fields, partial=False) or []
+    parsed_metadata_sections = parse_metadata_sections(metadata_sections, partial=False) or []
 
     stored_images = await save_uploads(images, settings)
     image_paths = [image.image_path for image in stored_images]
@@ -208,11 +239,20 @@ async def create_artifact(
         selected_primary = select_paths_by_name_or_path(image_paths, [primary_image_path])[0]
         primary_selected_explicitly = True
     validate_primary_membership(selected_primary, image_paths)
+    visitor_gallery_paths = reconcile_visitor_gallery_paths(
+        parse_visitor_gallery_form(visitor_gallery_image_paths, partial=False),
+        None,
+        image_paths,
+        selected_primary,
+        strict_membership=True,
+        configured=bool(visitor_gallery_configured),
+    )
 
     candidate_document = {
         **fields,
         "image_paths": image_paths,
         "primary_image_path": selected_primary,
+        "visitor_gallery_image_paths": visitor_gallery_paths,
         "status": target_status,
     }
     if target_status == "published":
@@ -226,9 +266,15 @@ async def create_artifact(
                 **fields,
                 "status": target_status,
                 "custom_fields": parsed_custom_fields,
+                "metadata_sections": parsed_metadata_sections,
                 "image_paths": image_paths,
                 "primary_image_path": selected_primary,
                 "primary_image_needs_review": False if primary_selected_explicitly or image_paths else False,
+                "visitor_gallery_image_paths": visitor_gallery_paths,
+                "visitor_gallery_configured": bool(visitor_gallery_configured),
+                "ai_index_status": "not_indexed",
+                "ai_indexed_image_count": 0,
+                "ai_index_error": None,
                 "created_by": current_admin["id"],
             },
         )
@@ -239,7 +285,6 @@ async def create_artifact(
         cleanup_images(image_paths, settings)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not create artifact.") from exc
 
-    artifact = ArtifactIndexingService.from_settings(settings).synchronize_after_create(request.app.state.database, artifact)
     return serialize_artifact(artifact, request)
 
 
@@ -258,6 +303,9 @@ async def update_artifact(
     condition: Annotated[str | None, Form()] = None,
     artifact_status: Annotated[str | None, Form(alias="status")] = None,
     custom_fields: Annotated[str | None, Form()] = None,
+    metadata_sections: Annotated[str | None, Form()] = None,
+    visitor_gallery_image_paths: Annotated[str | None, Form()] = None,
+    visitor_gallery_configured: Annotated[bool | None, Form()] = None,
     remove_image_paths: Annotated[list[str] | None, Form()] = None,
     replace_images: Annotated[bool, Form()] = False,
     primary_image_path: Annotated[str | None, Form()] = None,
@@ -286,6 +334,8 @@ async def update_artifact(
     if "category" in fields:
         apply_category_default(fields)
     parsed_custom_fields = parse_custom_fields(custom_fields, partial=True)
+    parsed_metadata_sections = parse_metadata_sections(metadata_sections, partial=True)
+    parsed_visitor_gallery_paths = parse_visitor_gallery_form(visitor_gallery_image_paths, partial=True)
     target_status = normalize_artifact_status(artifact_status, default=persisted_status(existing)) if artifact_status is not None else persisted_status(existing)
 
     existing_paths = list(existing.get("image_paths", []))
@@ -321,19 +371,33 @@ async def update_artifact(
                 detail="Choose a new main image before removing the current main image.",
             )
     validate_primary_membership(selected_primary, image_paths)
+    visitor_gallery_paths = reconcile_visitor_gallery_paths(
+        parsed_visitor_gallery_paths,
+        existing.get("visitor_gallery_image_paths"),
+        image_paths,
+        selected_primary,
+        strict_membership=parsed_visitor_gallery_paths is not None,
+        configured=bool(visitor_gallery_configured) if visitor_gallery_configured is not None else bool(existing.get("visitor_gallery_configured", False)),
+    )
+    next_visitor_gallery_configured = bool(visitor_gallery_configured) if visitor_gallery_configured is not None else bool(existing.get("visitor_gallery_configured", False))
 
     updates = {
         **fields,
         "image_paths": image_paths,
         "primary_image_path": selected_primary,
+        "visitor_gallery_image_paths": visitor_gallery_paths,
+        "visitor_gallery_configured": next_visitor_gallery_configured,
         "status": target_status,
     }
     if parsed_custom_fields is not None:
         updates["custom_fields"] = parsed_custom_fields
+    if parsed_metadata_sections is not None:
+        updates["metadata_sections"] = parsed_metadata_sections
     if primary_selected_explicitly:
         updates["primary_image_needs_review"] = False
 
     candidate_document = {**existing, **updates}
+    stale_status_for_update(existing, candidate_document, updates)
     should_validate_published = (
         target_status == "published"
         and (artifact_status is not None or bool(removed_paths) or replace_images or primary_selected_explicitly)
@@ -352,7 +416,6 @@ async def update_artifact(
 
     for removed_path in removed_paths:
         safe_delete_image(removed_path, settings)
-    updated = ArtifactIndexingService.from_settings(settings).synchronize_after_update(database, existing, updated)
     return serialize_artifact(updated, request)
 
 
@@ -364,7 +427,10 @@ def delete_artifact(artifact_id: str, request: Request) -> DeleteResponse:
     if deleted is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact was not found.")
     cleanup_images(list(deleted.get("image_paths", [])), request.app.state.settings)
-    ArtifactIndexingService.from_settings(request.app.state.settings).delete_artifact_vectors(artifact_id)
+    try:
+        ArtifactIndexingService.from_settings(request.app.state.settings).delete_artifact_vectors(artifact_id)
+    except Exception:
+        logger.exception("AI Library cleanup failed for deleted artifact %s", artifact_id)
     return DeleteResponse(message="Artifact deleted successfully.")
 
 
@@ -397,9 +463,22 @@ async def add_artifact_images(
         cleanup_images(new_paths, settings)
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Select a main image before saving.")
     try:
-        updates = {"image_paths": image_paths, "primary_image_path": primary}
+        updates = {
+            "image_paths": image_paths,
+            "primary_image_path": primary,
+            "visitor_gallery_image_paths": reconcile_visitor_gallery_paths(
+                None,
+                existing.get("visitor_gallery_image_paths"),
+                image_paths,
+                primary,
+                strict_membership=False,
+                configured=bool(existing.get("visitor_gallery_configured", False)),
+            ),
+            "visitor_gallery_configured": bool(existing.get("visitor_gallery_configured", False)),
+        }
         if primary_selected_explicitly:
             updates["primary_image_needs_review"] = False
+        stale_status_for_update(existing, {**existing, **updates}, updates)
         updated = artifact_repository.update_artifact(
             database,
             object_id,
@@ -408,7 +487,6 @@ async def add_artifact_images(
     except PyMongoError as exc:
         cleanup_images(new_paths, settings)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not add images.") from exc
-    updated = ArtifactIndexingService.from_settings(settings).synchronize_after_update(database, existing, updated)
     return serialize_artifact(updated, request)
 
 
@@ -441,9 +519,22 @@ def remove_artifact_image(
                     detail="Published artifacts must keep at least one primary image.",
                 )
             primary = None
-    updates = {"image_paths": image_paths, "primary_image_path": primary}
+    updates = {
+        "image_paths": image_paths,
+        "primary_image_path": primary,
+        "visitor_gallery_image_paths": reconcile_visitor_gallery_paths(
+            None,
+            existing.get("visitor_gallery_image_paths"),
+            image_paths,
+            primary,
+            strict_membership=False,
+            configured=bool(existing.get("visitor_gallery_configured", False)),
+        ),
+        "visitor_gallery_configured": bool(existing.get("visitor_gallery_configured", False)),
+    }
     if replacement_primary_image_path:
         updates["primary_image_needs_review"] = False
+    stale_status_for_update(existing, {**existing, **updates}, updates)
     updated = artifact_repository.update_artifact(
         database,
         object_id,
@@ -451,7 +542,6 @@ def remove_artifact_image(
     )
     for removed_path in removed_paths:
         safe_delete_image(removed_path, settings)
-    updated = ArtifactIndexingService.from_settings(settings).synchronize_after_update(database, existing, updated)
     return serialize_artifact(updated, request)
 
 
@@ -464,6 +554,18 @@ def set_primary_image(artifact_id: str, payload: PrimaryImageRequest, request: R
     updated = artifact_repository.update_artifact(
         database,
         object_id,
-        {"primary_image_path": selected, "primary_image_needs_review": False},
+        {
+            "primary_image_path": selected,
+            "primary_image_needs_review": False,
+            "visitor_gallery_image_paths": reconcile_visitor_gallery_paths(
+                None,
+                existing.get("visitor_gallery_image_paths"),
+                image_paths,
+                selected,
+                strict_membership=False,
+                configured=bool(existing.get("visitor_gallery_configured", False)),
+            ),
+            "visitor_gallery_configured": bool(existing.get("visitor_gallery_configured", False)),
+        },
     )
     return serialize_artifact(updated, request)

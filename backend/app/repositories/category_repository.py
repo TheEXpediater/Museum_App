@@ -8,6 +8,7 @@ from pymongo import ASCENDING
 from pymongo.collection import Collection
 from pymongo.database import Database
 
+from app.services.artifact_validation import CATEGORY_NAME_LIMIT
 from app.utils import utc_now
 
 
@@ -28,14 +29,29 @@ def clean_name(name: str) -> str:
         raise ValueError("Category name is required.")
     if any(ord(character) < 32 or ord(character) == 127 for character in cleaned):
         raise ValueError("Category name contains unsupported control characters.")
-    if len(cleaned) > 100:
-        raise ValueError("Category name must be 100 characters or fewer.")
+    if len(cleaned) > CATEGORY_NAME_LIMIT:
+        raise ValueError("Category name contains more text than the supported limit.")
     return cleaned
 
 
-def list_categories(database: Database, *, include_inactive: bool = False) -> list[dict]:
+def list_categories(database: Database, *, include_inactive: bool = False, include_counts: bool = False) -> list[dict]:
     query: dict[str, Any] = {} if include_inactive else {"is_active": True}
-    return list(collection(database).find(query).sort([("name", ASCENDING)]))
+    categories = list(collection(database).find(query).sort([("name", ASCENDING)]))
+    if not include_counts:
+        return categories
+
+    counts: dict[str, int] = {}
+    for artifact in database.artifacts.find({}, {"category": 1}):
+        category = artifact.get("category")
+        if not isinstance(category, str):
+            continue
+        normalized = normalize_name(category)
+        if normalized:
+            counts[normalized] = counts.get(normalized, 0) + 1
+
+    for category in categories:
+        category["artifact_count"] = counts.get(category.get("normalized_name"), 0)
+    return categories
 
 
 def find_by_name(database: Database, name: str) -> dict | None:

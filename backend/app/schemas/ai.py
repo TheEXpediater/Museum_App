@@ -5,13 +5,13 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-AI_INDEX_STATUSES = {"not_indexed", "pending", "indexed", "partial", "failed"}
+AI_INDEX_STATUSES = {"not_indexed", "pending", "indexed", "partial", "stale", "failed"}
 MATCH_LEVELS = {"strong", "possible", "weak", "no_match"}
 
 
 class AiIndexResultResponse(BaseModel):
     artifact_id: str | None = None
-    ai_index_status: str = Field(pattern="^(not_indexed|pending|indexed|partial|failed)$")
+    ai_index_status: str = Field(pattern="^(not_indexed|pending|indexed|partial|stale|failed)$")
     total_images: int = 0
     indexed_images: int = 0
     failed_images: int = 0
@@ -27,6 +27,14 @@ class AiIndexAllResponse(BaseModel):
     failed_images: int
     skipped_images: int
     duration: float
+    errors: list[str] = Field(default_factory=list)
+
+
+class AiLibraryFeedResponse(BaseModel):
+    artifacts_processed: int = 0
+    images_processed: int = 0
+    successful_artifacts: int = 0
+    failed_artifacts: int = 0
     errors: list[str] = Field(default_factory=list)
 
 

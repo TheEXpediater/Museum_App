@@ -42,6 +42,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.museumapp.data.model.ArticleDto
 import com.example.museumapp.data.model.PublicArtifactDto
+import com.example.museumapp.data.model.PublicArtifactMetadataFieldDto
+import com.example.museumapp.data.model.PublicArtifactMetadataSectionDto
 import com.example.museumapp.data.repository.VisitorRepositoryContract
 import com.example.museumapp.ui.visitor.components.ArtifactImage
 import com.example.museumapp.ui.visitor.components.InfoRow
@@ -137,13 +139,8 @@ private fun ArtifactDetailsContent(
         "Category" to artifact.category,
         "Origin" to artifact.origin
     )
-    val informationValues = listOf(
-        artifact.origin,
-        artifact.historicalPeriod,
-        artifact.material,
-        artifact.dimensions,
-        artifact.condition
-    )
+    val additionalImages = artifact.imageUrls.drop(1)
+    val metadataSections = visitorMetadataSections(artifact)
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -166,10 +163,10 @@ private fun ArtifactDetailsContent(
                     .aspectRatio(1.08f)
             )
         }
-        if (artifact.imageUrls.size > 1) {
+        if (additionalImages.isNotEmpty()) {
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(VisitorSpacing.Md)) {
-                    items(artifact.imageUrls, key = { it }) { image ->
+                    items(additionalImages, key = { it }) { image ->
                         Surface(
                             modifier = Modifier
                                 .fillParentMaxWidth(0.32f)
@@ -210,21 +207,10 @@ private fun ArtifactDetailsContent(
                 }
             }
         }
-        if (informationValues.any { it.hasMuseumContent() }) {
+        metadataSections.forEach { section ->
             item {
-                DetailSection("Artifact Information") {
-                    InfoRow("Origin", artifact.origin)
-                    InfoRow("Historical Period", artifact.historicalPeriod)
-                    InfoRow("Material", artifact.material)
-                    InfoRow("Dimensions", artifact.dimensions)
-                    InfoRow("Condition", artifact.condition)
-                }
-            }
-        }
-        if (artifact.customFields.any { it.value.hasMuseumContent() }) {
-            item {
-                DetailSection("Additional Information") {
-                    artifact.customFields.filter { it.value.hasMuseumContent() }.forEach { field ->
+                DetailSection(section.title) {
+                    section.fields.filter { it.value.hasMuseumContent() }.forEach { field ->
                         InfoRow(field.label, listOf(field.value, field.unit).filter { !it.isNullOrBlank() }.joinToString(" "))
                     }
                 }
@@ -245,6 +231,45 @@ private fun ArtifactDetailsContent(
             }
         }
     }
+}
+
+private fun visitorMetadataSections(artifact: PublicArtifactDto): List<PublicArtifactMetadataSectionDto> {
+    if (artifact.metadataSections.isNotEmpty()) {
+        return artifact.metadataSections.mapNotNull { section ->
+            val fields = section.fields.filter { it.label.hasMuseumContent() && it.value.hasMuseumContent() }
+            if (section.title.hasMuseumContent() && fields.isNotEmpty()) section.copy(fields = fields) else null
+        }
+    }
+
+    val sections = mutableListOf<PublicArtifactMetadataSectionDto>()
+    val historical = listOf(
+        publicMetadataField("Origin", artifact.origin),
+        publicMetadataField("Historical Period", artifact.historicalPeriod)
+    ).filter { it.value.hasMuseumContent() }
+    if (historical.isNotEmpty()) {
+        sections += PublicArtifactMetadataSectionDto("Historical Details", historical)
+    }
+
+    val physical = listOf(
+        publicMetadataField("Material", artifact.material),
+        publicMetadataField("Dimensions", artifact.dimensions),
+        publicMetadataField("Condition", artifact.condition)
+    ).filter { it.value.hasMuseumContent() }
+    if (physical.isNotEmpty()) {
+        sections += PublicArtifactMetadataSectionDto("Physical Details", physical)
+    }
+
+    val additional = artifact.customFields
+        .filter { it.value.hasMuseumContent() }
+        .map { PublicArtifactMetadataFieldDto(label = it.label, value = it.value, unit = it.unit, type = it.type) }
+    if (additional.isNotEmpty()) {
+        sections += PublicArtifactMetadataSectionDto("Additional Information", additional)
+    }
+    return sections
+}
+
+private fun publicMetadataField(label: String, value: String?): PublicArtifactMetadataFieldDto {
+    return PublicArtifactMetadataFieldDto(label = label, value = value.orEmpty(), unit = null, type = "text")
 }
 
 @Composable

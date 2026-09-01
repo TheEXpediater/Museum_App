@@ -134,6 +134,7 @@ class ArtifactIndexingService:
 
         if update_status and not dry_run:
             artifact = self.mark_pending(database, artifact)
+            self.delete_artifact_vectors(artifact_id)
 
         for image_path in paths:
             try:
@@ -182,27 +183,23 @@ class ArtifactIndexingService:
         return result
 
     def synchronize_after_create(self, database: Database, artifact: dict) -> dict:
-        result = self.index_artifact(database, artifact)
-        return self._latest_artifact(database, artifact) or artifact
+        return artifact
 
     def synchronize_after_update(self, database: Database, previous: dict, current: dict) -> dict:
-        artifact_id = str(current.get("_id", ""))
-        previous_paths = set(previous.get("image_paths", []))
-        current_paths = set(current.get("image_paths", []))
-        removed_paths = sorted(previous_paths - current_paths)
-        added_paths = sorted(current_paths - previous_paths)
-        metadata_changed = any(
+        artifact_id = self._object_id(current)
+        ai_relevant_changed = set(previous.get("image_paths") or []) != set(current.get("image_paths") or []) or any(
             previous.get(key) != current.get(key)
             for key in ("artifact_code", "name", "category")
         )
-
-        if removed_paths:
-            self.delete_image_vectors(artifact_id, removed_paths)
-
-        if removed_paths or added_paths or metadata_changed:
-            self.index_artifact(database, current)
-
-        return self._latest_artifact(database, current) or current
+        if artifact_id is not None and previous.get("ai_index_status") == "indexed" and ai_relevant_changed:
+            return artifact_repository.update_ai_index_state(
+                database,
+                artifact_id,
+                status="stale",
+                indexed_image_count=int(previous.get("ai_indexed_image_count") or 0),
+                error=None,
+            ) or current
+        return current
 
     def delete_image_vectors(self, artifact_id: str, image_paths: Iterable[str]) -> None:
         if not self.settings.ai_enabled:
@@ -237,6 +234,11 @@ class ArtifactIndexingService:
         artifacts = artifact_repository.list_artifacts_by_ai_status(database, statuses)
         return self._index_artifacts(database, artifacts, started=started, dry_run=dry_run)
 
+    def feed_pending_library(self, database: Database, *, dry_run: bool = False) -> dict:
+        started = time.perf_counter()
+        artifacts = artifact_repository.list_ai_library_pending_artifacts(database)
+        return self._index_artifacts(database, artifacts, started=started, dry_run=dry_run)
+
     def _index_artifacts(self, database: Database, artifacts: list[dict], *, started: float, dry_run: bool) -> dict:
         totals = {
             "total_artifacts": len(artifacts),
@@ -244,6 +246,10 @@ class ArtifactIndexingService:
             "indexed_images": 0,
             "failed_images": 0,
             "skipped_images": 0,
+            "artifacts_processed": len(artifacts),
+            "images_processed": 0,
+            "successful_artifacts": 0,
+            "failed_artifacts": 0,
             "duration": 0.0,
             "errors": [],
         }
@@ -255,10 +261,16 @@ class ArtifactIndexingService:
                 totals["indexed_images"] += result.indexed_images
                 totals["failed_images"] += result.failed_images
                 totals["skipped_images"] += result.skipped_images
+                totals["images_processed"] += result.total_images
+                if result.ai_index_status == "indexed":
+                    totals["successful_artifacts"] += 1
+                elif result.ai_index_status == "failed" or result.failed_images:
+                    totals["failed_artifacts"] += 1
                 errors.extend(f"{result.artifact_id}: {error}" for error in result.errors)
             except Exception:
                 artifact_label = str(artifact.get("_id", "unknown"))
                 logger.exception("Unexpected failure while indexing artifact %s", artifact_label)
+                totals["failed_artifacts"] += 1
                 errors.append(f"{artifact_label}: {SAFE_INDEXING_UNAVAILABLE}")
         totals["duration"] = self._elapsed(started)
         totals["errors"] = errors

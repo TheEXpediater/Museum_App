@@ -14,10 +14,11 @@ class StatusMappingsTest {
 
     @Test
     fun mapsArtifactAiStatusLabels() {
-        assertEquals("Indexed", artifactAiStatusLabel("indexed"))
-        assertEquals("Partial", artifactAiStatusLabel("partial"))
-        assertEquals("Failed", artifactAiStatusLabel("failed"))
-        assertEquals("Not indexed", artifactAiStatusLabel(null))
+        assertEquals("In AI Library", artifactAiStatusLabel("indexed"))
+        assertEquals("Needs AI Update", artifactAiStatusLabel("partial"))
+        assertEquals("Needs AI Update", artifactAiStatusLabel("stale"))
+        assertEquals("AI Library Failed", artifactAiStatusLabel("failed"))
+        assertEquals("Not in AI Library", artifactAiStatusLabel(null))
     }
 
     @Test

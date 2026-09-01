@@ -40,8 +40,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -49,10 +47,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,11 +66,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.museumapp.data.model.ArtifactDto
 import com.example.museumapp.data.repository.AdminRepository
+import com.example.museumapp.ui.admin.artifactcategories.ArtifactCategoriesScreen
 import com.example.museumapp.ui.admin.components.ArtifactAiStatusChip
 
 @Composable
@@ -77,19 +82,37 @@ fun ArtifactListScreen(
     repository: AdminRepository,
     padding: PaddingValues,
     onAddArtifact: () -> Unit,
-    onEditArtifact: (String) -> Unit
+    onEditArtifact: (String) -> Unit,
+    initialDestination: String = ArtifactListDestinations.All,
+    onCategoryCreated: (String) -> Unit = {}
 ) {
-    val viewModel: ArtifactListViewModel = viewModel(factory = ArtifactListViewModel.factory(repository))
+    val viewModel: ArtifactListViewModel = viewModel(
+        key = "artifact_list_$initialDestination",
+        factory = ArtifactListViewModel.factory(repository, initialDestination)
+    )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refresh()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Scaffold(
         modifier = Modifier.padding(padding),
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onAddArtifact,
-                icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
-                text = { Text("Add Artifact") }
-            )
+            if (uiState.selectedDestination != ArtifactListDestinations.Categories) {
+                ExtendedFloatingActionButton(
+                    onClick = onAddArtifact,
+                    icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
+                    text = { Text("Add Artifact", maxLines = 1) }
+                )
+            }
         }
     ) { innerPadding ->
         Column(
@@ -102,18 +125,31 @@ fun ArtifactListScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Spacer(Modifier.height(8.dp))
-            ListHeader(uiState, viewModel::refresh)
-            SearchAndFilterRow(uiState, viewModel)
-            when {
-                uiState.isLoading -> LoadingState()
-                uiState.errorMessage != null && uiState.artifacts.isEmpty() -> ErrorState(uiState.errorMessage.orEmpty(), viewModel::refresh)
-                uiState.artifacts.isEmpty() -> EmptyState()
-                else -> ArtifactListContent(
-                    uiState = uiState,
-                    onEditArtifact = onEditArtifact,
-                    onDeleteArtifact = viewModel::requestDelete,
-                    onLoadMore = viewModel::loadNextPage
+            ListHeader(
+                uiState = uiState,
+                showRefresh = uiState.selectedDestination != ArtifactListDestinations.Categories,
+                onRefresh = viewModel::refresh
+            )
+            ArtifactSectionTabs(uiState.selectedDestination, viewModel::selectDestination)
+            if (uiState.selectedDestination == ArtifactListDestinations.Categories) {
+                ArtifactCategoriesScreen(
+                    repository = repository,
+                    modifier = Modifier.weight(1f),
+                    onCategoryCreated = { onCategoryCreated(it.name) }
                 )
+            } else {
+                SearchAndFilterRow(uiState, viewModel)
+                when {
+                    uiState.isLoading -> LoadingState()
+                    uiState.errorMessage != null && uiState.artifacts.isEmpty() -> ErrorState(uiState.errorMessage.orEmpty(), viewModel::refresh)
+                    uiState.artifacts.isEmpty() -> EmptyState()
+                    else -> ArtifactListContent(
+                        uiState = uiState,
+                        onEditArtifact = onEditArtifact,
+                        onDeleteArtifact = viewModel::requestDelete,
+                        onLoadMore = viewModel::loadNextPage
+                    )
+                }
             }
         }
     }
@@ -121,19 +157,27 @@ fun ArtifactListScreen(
     uiState.pendingDelete?.let { artifact ->
         AlertDialog(
             onDismissRequest = viewModel::dismissDelete,
-            title = { Text("Delete artifact") },
-            text = { Text("Delete ${artifact.name}?") },
+            title = { Text("Delete artifact?") },
+            text = {
+                Text(
+                    "This will permanently remove this artifact record and its stored images.\n\nArtifact: ${artifact.name}\n\nThis action cannot be undone."
+                )
+            },
             confirmButton = {
                 Button(
                     onClick = viewModel::confirmDelete,
-                    enabled = uiState.deletingId == null
+                    enabled = uiState.deletingId == null,
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
                 ) {
-                    Text("Delete")
+                    Text("Delete Artifact", maxLines = 1)
                 }
             },
             dismissButton = {
                 TextButton(onClick = viewModel::dismissDelete, enabled = uiState.deletingId == null) {
-                    Text("Cancel")
+                    Text("Cancel", maxLines = 1)
                 }
             }
         )
@@ -141,7 +185,7 @@ fun ArtifactListScreen(
 }
 
 @Composable
-private fun ListHeader(uiState: ArtifactListUiState, onRefresh: () -> Unit) {
+private fun ListHeader(uiState: ArtifactListUiState, showRefresh: Boolean, onRefresh: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -155,11 +199,13 @@ private fun ListHeader(uiState: ArtifactListUiState, onRefresh: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        IconButton(onClick = onRefresh, enabled = !uiState.isRefreshing) {
-            if (uiState.isRefreshing) {
-                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-            } else {
-                Icon(Icons.Outlined.Refresh, contentDescription = "Refresh artifacts")
+        if (showRefresh) {
+            IconButton(onClick = onRefresh, enabled = !uiState.isRefreshing) {
+                if (uiState.isRefreshing) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Outlined.Refresh, contentDescription = "Refresh artifacts")
+                }
             }
         }
     }
@@ -169,7 +215,6 @@ private fun ListHeader(uiState: ArtifactListUiState, onRefresh: () -> Unit) {
 private fun SearchAndFilterRow(uiState: ArtifactListUiState, viewModel: ArtifactListViewModel) {
     var menuExpanded by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        StatusFilterRow(uiState.statusFilter, viewModel::updateStatusFilter)
         OutlinedTextField(
             value = uiState.search,
             onValueChange = viewModel::updateSearch,
@@ -211,25 +256,27 @@ private fun SearchAndFilterRow(uiState: ArtifactListUiState, viewModel: Artifact
 }
 
 @Composable
-private fun StatusFilterRow(selected: String, onSelected: (String) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        StatusFilterChip("All", "all", selected, onSelected)
-        StatusFilterChip("Published", "published", selected, onSelected)
-        StatusFilterChip("Drafts", "draft", selected, onSelected)
-    }
-}
-
-@Composable
-private fun StatusFilterChip(label: String, value: String, selected: String, onSelected: (String) -> Unit) {
-    FilterChip(
-        selected = selected == value,
-        onClick = { onSelected(value) },
-        label = { Text(label, maxLines = 1) },
-        colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-        )
+private fun ArtifactSectionTabs(selected: String, onSelected: (String) -> Unit) {
+    val destinations = listOf(
+        "All" to ArtifactListDestinations.All,
+        "Published" to ArtifactListDestinations.Published,
+        "Drafts" to ArtifactListDestinations.Drafts,
+        "Categories" to ArtifactListDestinations.Categories
     )
+    val selectedIndex = destinations.indexOfFirst { it.second == selected }.coerceAtLeast(0)
+    ScrollableTabRow(
+        selectedTabIndex = selectedIndex,
+        edgePadding = 0.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        destinations.forEachIndexed { index, destination ->
+            Tab(
+                selected = selectedIndex == index,
+                onClick = { onSelected(destination.second) },
+                text = { Text(destination.first, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            )
+        }
+    }
 }
 
 @Composable

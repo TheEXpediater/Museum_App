@@ -12,9 +12,11 @@ from app.schemas.ai import (
     AiIndexAllResponse,
     AiIndexResultResponse,
     AiIndexStatusResponse,
+    AiLibraryFeedResponse,
     AiWarmupResponse,
     RecognitionResponse,
 )
+from app.services.artifact_validation import persisted_status
 from app.services.artifact_indexing_service import ArtifactIndexingService
 from app.services.artifact_recognition_service import (
     AI_UNAVAILABLE_MESSAGE,
@@ -183,6 +185,11 @@ def index_artifact(artifact_id: str, request: Request) -> AiIndexResultResponse:
     artifact = artifact_repository.get_artifact(request.app.state.database, object_id)
     if artifact is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact was not found.")
+    if persisted_status(artifact) != "published":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Publish this artifact before feeding it to the AI Library.",
+        )
     result = ArtifactIndexingService.from_settings(request.app.state.settings).index_artifact(
         request.app.state.database,
         artifact,
@@ -205,11 +212,17 @@ def index_all_artifacts(request: Request) -> AiIndexAllResponse:
     return AiIndexAllResponse(**result)
 
 
+@router.post("/library/feed-pending", response_model=AiLibraryFeedResponse, dependencies=[Depends(require_admin)])
+def feed_pending_ai_library(request: Request) -> AiLibraryFeedResponse:
+    result = ArtifactIndexingService.from_settings(request.app.state.settings).feed_pending_library(request.app.state.database)
+    return AiLibraryFeedResponse(**result)
+
+
 @router.post("/index/failed", response_model=AiIndexAllResponse, dependencies=[Depends(require_admin)])
 def retry_failed_indexes(request: Request) -> AiIndexAllResponse:
     result = ArtifactIndexingService.from_settings(request.app.state.settings).index_by_status(
         request.app.state.database,
-        ["failed", "partial"],
+        ["failed", "partial", "stale"],
     )
     return AiIndexAllResponse(**result)
 
@@ -274,9 +287,9 @@ def build_index_status(request: Request) -> AiIndexStatusResponse:
         total_artifacts=artifact_repository.count_artifacts(database),
         total_images=artifact_repository.count_total_images(database),
         indexed_artifacts=artifact_repository.count_ai_status(database, ["indexed"]),
-        pending_artifacts=artifact_repository.count_ai_status(database, ["pending", "not_indexed"]),
+        pending_artifacts=artifact_repository.count_ai_status(database, ["pending", "not_indexed", "stale"]),
         failed_artifacts=artifact_repository.count_ai_status(database, ["failed"]),
-        partial_artifacts=artifact_repository.count_ai_status(database, ["partial"]),
+        partial_artifacts=artifact_repository.count_ai_status(database, ["partial", "stale"]),
         not_indexed_artifacts=artifact_repository.count_ai_status(database, ["not_indexed"]),
         indexed_vectors=indexed_vectors,
         ai_enabled=settings.ai_enabled,

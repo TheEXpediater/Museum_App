@@ -1,14 +1,60 @@
+name: museum_app
+
+x-backend-environment: &backend-environment
+  APP_NAME: ${APP_NAME:-Museum Guide System}
+  APP_ENV: ${APP_ENV:-development}
+  MONGODB_URL: ${MONGODB_URL:-mongodb://mongodb:27017}
+  MONGODB_DATABASE: ${MONGODB_DATABASE:-museum_guide}
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:-migration_local_dev_secret_change_me_please}
+  JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+  JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+  GUEST_SESSION_EXPIRE_HOURS: ${GUEST_SESSION_EXPIRE_HOURS:-24}
+  UPLOAD_DIRECTORY: ${UPLOAD_DIRECTORY:-/app/uploads/images}
+  MAX_IMAGE_SIZE_MB: ${MAX_IMAGE_SIZE_MB:-10}
+  ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+  ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-Museum Administrator}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:8080,http://10.0.2.2}
+  AI_ENABLED: ${AI_ENABLED:-true}
+  QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+  QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+  QDRANT_COLLECTION: ${QDRANT_COLLECTION:-artifact_images}
+  QDRANT_DISTANCE: ${QDRANT_DISTANCE:-cosine}
+  OPENCLIP_MODEL_NAME: ${OPENCLIP_MODEL_NAME:-ViT-B-32}
+  OPENCLIP_PRETRAINED: ${OPENCLIP_PRETRAINED:-laion2b_s34b_b79k}
+  OPENCLIP_DEVICE: ${OPENCLIP_DEVICE:-auto}
+  AI_MODEL_DOWNLOAD_ALLOWED: ${AI_MODEL_DOWNLOAD_ALLOWED:-true}
+  AI_WARMUP_ON_STARTUP: ${AI_WARMUP_ON_STARTUP:-false}
+  AI_RECOGNITION_STRONG_THRESHOLD: ${AI_RECOGNITION_STRONG_THRESHOLD:-0.45}
+  AI_RECOGNITION_POSSIBLE_THRESHOLD: ${AI_RECOGNITION_POSSIBLE_THRESHOLD:-0.32}
+  AI_RECOGNITION_MAX_RESULTS: ${AI_RECOGNITION_MAX_RESULTS:-5}
+  AI_RECOGNITION_VECTOR_CANDIDATES: ${AI_RECOGNITION_VECTOR_CANDIDATES:-25}
+  HF_HOME: ${HF_HOME:-/models/huggingface}
+  TORCH_HOME: ${TORCH_HOME:-/models/torch}
+  XDG_CACHE_HOME: ${XDG_CACHE_HOME:-/models/cache}
+
 services:
   mongodb:
     image: mongodb/mongodb-community-server:7.0-ubuntu2204
     container_name: museum-guide-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-museum_guide}
     ports:
-      - "27017:27017"
+      - "27018:27017"
     volumes:
       - museum_mongodb_data:/data/db
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      test:
+        - CMD-SHELL
+        - >
+          if [ -n "$${MONGO_INITDB_ROOT_USERNAME}" ]; then
+            mongosh --quiet -u "$${MONGO_INITDB_ROOT_USERNAME}" -p "$${MONGO_INITDB_ROOT_PASSWORD}" --authenticationDatabase admin --eval "db.adminCommand('ping').ok";
+          else
+            mongosh --quiet --eval "db.adminCommand('ping').ok";
+          fi
       interval: 5s
       timeout: 5s
       retries: 12
@@ -30,6 +76,83 @@ services:
       retries: 12
       start_period: 10s
 
+  backend:
+    build:
+      context: .
+      dockerfile: migration/Dockerfile.backend
+    container_name: museum-guide-backend
+    environment:
+      <<: *backend-environment
+    ports:
+      - "8000:8000"
+    volumes:
+      - museum_backend_uploads:/app/uploads
+      - museum_openclip_models:/models
+      - museum_openclip_embeddings:/embeddings
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=5).read()"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  openclip:
+    build:
+      context: .
+      dockerfile: migration/Dockerfile.backend
+    container_name: museum-guide-openclip
+    profiles:
+      - ai-tools
+    environment:
+      <<: *backend-environment
+    volumes:
+      - museum_backend_uploads:/app/uploads
+      - museum_openclip_models:/models
+      - museum_openclip_embeddings:/embeddings
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    command:
+      - sh
+      - -lc
+      - |
+        python -m scripts.check_ai_setup || true
+        echo "OpenCLIP utility container is ready. Use this service for AI checks and reindexing."
+        tail -f /dev/null
+
+  frontend:
+    build:
+      context: .
+      dockerfile: migration/Dockerfile.frontend
+    container_name: museum-guide-frontend
+    profiles:
+      - frontend
+    working_dir: /workspace
+    environment:
+      API_BASE_URL: ${ANDROID_API_BASE_URL:-http://localhost:8000/}
+      GRADLE_USER_HOME: /gradle-cache
+    volumes:
+      - ./:/workspace
+      - museum_frontend_gradle_cache:/gradle-cache
+    command:
+      - ./gradlew
+      - :android:app:assembleDebug
+      - --no-daemon
+
 volumes:
   museum_mongodb_data:
   museum_qdrant_data:
+  museum_backend_uploads:
+  museum_openclip_models:
+  museum_openclip_embeddings:
+  museum_frontend_gradle_cache:

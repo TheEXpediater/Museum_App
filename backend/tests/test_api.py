@@ -573,6 +573,125 @@ def test_draft_creation_allows_incomplete_metadata_and_custom_fields(test_contex
     assert body["custom_fields"][0]["label"] == "Weight"
 
 
+def test_multiline_metadata_and_legitimate_whitespace_are_allowed(test_context):
+    client, _, _, _ = test_context
+    description = "Paragraph one.\n\nParagraph two with more than one hundred characters so long museum descriptions keep working without falling back to old short limits."
+    material = "Woven bamboo.\n\nAdditional fibers are visible."
+    condition = "Surface wear is visible.\r\nMinor discoloration is present."
+    custom_note = "First paragraph.\n\nSecond paragraph with\ttabbed context."
+    metadata_sections = [
+        {
+            "id": "historical_details",
+            "title": "Historical Details",
+            "fields": [
+                {
+                    "id": "use-notes",
+                    "label": "Use Notes",
+                    "value": custom_note,
+                    "type": "long_text",
+                    "order": 0,
+                }
+            ],
+        }
+    ]
+
+    response = client.post(
+        "/api/v1/artifacts",
+        data={
+            "artifact_code": "MULTILINE-1",
+            "name": "Paragraph Artifact",
+            "status": "draft",
+            "description": description,
+            "material": material,
+            "condition": condition,
+            "custom_fields": json.dumps(
+                [
+                    {
+                        "id": "notes",
+                        "label": "Curatorial Notes",
+                        "value": custom_note,
+                        "type": "long_text",
+                    }
+                ]
+            ),
+            "metadata_sections": json.dumps(metadata_sections),
+        },
+        headers=auth_headers(client),
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["description"] == description
+    assert body["material"] == material
+    assert body["condition"] == condition
+    assert body["custom_fields"][0]["value"] == custom_note
+    assert body["metadata_sections"][0]["fields"][0]["value"] == custom_note
+
+
+def test_unsafe_control_characters_are_rejected(test_context):
+    client, _, _, _ = test_context
+    response = client.post(
+        "/api/v1/artifacts",
+        data={
+            "artifact_code": "CONTROL-1",
+            "name": "Bad Control Character",
+            "description": "Invalid\x00description",
+        },
+        headers=auth_headers(client),
+    )
+
+    assert response.status_code == 422
+    assert "unsupported control characters" in response.json()["detail"]
+
+
+def test_create_and_publish_do_not_auto_index(test_context, monkeypatch):
+    client, _, _, _ = test_context
+
+    def fail_if_called(_settings):
+        raise AssertionError("Artifact persistence should not automatically call AI indexing.")
+
+    monkeypatch.setattr("app.routes.artifacts.ArtifactIndexingService.from_settings", fail_if_called)
+    headers = auth_headers(client)
+
+    created = client.post(
+        "/api/v1/artifacts",
+        data={
+            "artifact_code": "NO-AUTO-AI",
+            "name": "Manual AI Artifact",
+            "category": "Farm Tools",
+            "status": "draft",
+        },
+        files=[("images", ("only.jpg", image_bytes(), "image/jpeg"))],
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["ai_index_status"] == "not_indexed"
+
+    created_published = client.post(
+        "/api/v1/artifacts",
+        data={
+            "artifact_code": "NO-AUTO-AI-PUBLISHED",
+            "name": "Manual AI Published Artifact",
+            "category": "Farm Tools",
+            "status": "published",
+        },
+        files=[("images", ("published.jpg", image_bytes(), "image/jpeg"))],
+        headers=headers,
+    )
+    assert created_published.status_code == 201, created_published.text
+    assert created_published.json()["status"] == "published"
+    assert created_published.json()["ai_index_status"] == "not_indexed"
+
+    published = client.patch(
+        f"/api/v1/artifacts/{created.json()['id']}",
+        data={"status": "published"},
+        headers=headers,
+    )
+    assert published.status_code == 200, published.text
+    assert published.json()["status"] == "published"
+    assert published.json()["ai_index_status"] == "not_indexed"
+
+
 def test_duplicate_custom_field_labels_are_rejected(test_context):
     client, _, _, _ = test_context
     response = client.post(
@@ -700,6 +819,10 @@ def test_category_management_endpoints(test_context):
     )
     assert update.status_code == 200
 
+    categories = client.get("/api/v1/artifact-categories", headers=headers)
+    assert categories.status_code == 200
+    assert categories.json()[0]["artifact_count"] == 1
+
     renamed = client.patch(
         f"/api/v1/artifact-categories/{category['id']}",
         json={"name": "Farm Implements"},
@@ -711,3 +834,22 @@ def test_category_management_endpoints(test_context):
     deactivated = client.delete(f"/api/v1/artifact-categories/{category['id']}", headers=headers)
     assert deactivated.status_code == 200
     assert deactivated.json()["is_active"] is False
+    assert database.artifacts.count_documents({}) == 1
+
+    active_only = client.get("/api/v1/artifact-categories", headers=headers)
+    assert active_only.status_code == 200
+    assert "Farm Implements" not in {item["name"] for item in active_only.json()}
+
+    include_inactive = client.get("/api/v1/artifact-categories", params={"include_inactive": "true"}, headers=headers)
+    assert include_inactive.status_code == 200
+    inactive = next(item for item in include_inactive.json() if item["id"] == category["id"])
+    assert inactive["is_active"] is False
+    assert inactive["artifact_count"] == 1
+
+    reactivated = client.patch(
+        f"/api/v1/artifact-categories/{category['id']}",
+        json={"is_active": True},
+        headers=headers,
+    )
+    assert reactivated.status_code == 200
+    assert reactivated.json()["is_active"] is True

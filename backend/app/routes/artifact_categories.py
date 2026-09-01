@@ -30,6 +30,7 @@ def serialize_category(document: dict) -> ArtifactCategoryResponse:
         name=document.get("name", ""),
         normalized_name=document.get("normalized_name", ""),
         is_active=bool(document.get("is_active", True)),
+        artifact_count=int(document.get("artifact_count") or 0),
         suggested_fields=document.get("suggested_fields", []),
         created_at=serialize_datetime(document.get("created_at")),
         updated_at=serialize_datetime(document.get("updated_at")),
@@ -43,6 +44,7 @@ def list_categories(request: Request, include_inactive: bool = False) -> list[Ar
         for category in category_repository.list_categories(
             request.app.state.database,
             include_inactive=include_inactive,
+            include_counts=True,
         )
     ]
 

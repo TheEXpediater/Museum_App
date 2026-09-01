@@ -217,7 +217,7 @@ def test_indexing_multiple_images(tmp_path):
     assert len(vector_repo.points) == 2
 
 
-def test_metadata_change_updates_vector_payload(tmp_path):
+def test_metadata_change_marks_indexed_artifact_stale_without_reindexing(tmp_path):
     settings = make_settings(tmp_path)
     database = mongomock.MongoClient()["museum_guide_test"]
     path = create_stored_image(settings, "one.jpg")
@@ -226,15 +226,16 @@ def test_metadata_change_updates_vector_payload(tmp_path):
     service = indexing_service(settings, vector_repo)
     service.index_artifact(database, artifact)
 
-    previous = dict(artifact)
+    previous = artifact_repository.get_artifact(database, artifact["_id"])
     current = artifact_repository.update_artifact(database, artifact["_id"], {"name": "Updated Name"})
-    service.synchronize_after_update(database, previous, current)
+    updated = service.synchronize_after_update(database, previous, current)
 
     point_id = point_id_for_image(str(artifact["_id"]), path)
-    assert vector_repo.points[point_id]["payload"]["artifact_name"] == "Updated Name"
+    assert vector_repo.points[point_id]["payload"]["artifact_name"] == "Wooden Plow"
+    assert updated["ai_index_status"] == "stale"
 
 
-def test_removed_image_vector_is_deleted(tmp_path):
+def test_relevant_image_change_marks_stale_until_explicit_feed(tmp_path):
     settings = make_settings(tmp_path)
     database = mongomock.MongoClient()["museum_guide_test"]
     first = create_stored_image(settings, "one.jpg")
@@ -244,10 +245,20 @@ def test_removed_image_vector_is_deleted(tmp_path):
     service = indexing_service(settings, vector_repo)
     service.index_artifact(database, artifact)
 
+    indexed_artifact = artifact_repository.get_artifact(database, artifact["_id"])
     current = artifact_repository.update_artifact(database, artifact["_id"], {"image_paths": [first], "primary_image_path": first})
-    service.synchronize_after_update(database, artifact, current)
+    stale = service.synchronize_after_update(database, indexed_artifact, current)
 
-    assert point_id_for_image(str(artifact["_id"]), second) in vector_repo.deleted_points
+    assert stale["ai_index_status"] == "stale"
+    assert point_id_for_image(str(artifact["_id"]), second) not in vector_repo.deleted_points
+
+    feed_result = service.index_artifact(database, stale)
+    stored = artifact_repository.get_artifact(database, artifact["_id"])
+
+    assert feed_result.ai_index_status == "indexed"
+    assert stored["ai_index_status"] == "indexed"
+    assert str(artifact["_id"]) in vector_repo.deleted_artifacts
+    assert point_id_for_image(str(artifact["_id"]), second) not in vector_repo.points
 
 
 def test_deleting_artifact_vectors_removes_all_points(tmp_path):
@@ -292,10 +303,53 @@ def test_partial_indexing_status(tmp_path):
     assert result.failed_images == 1
 
 
+def test_feed_pending_library_indexes_only_published_not_current_artifacts(tmp_path):
+    settings = make_settings(tmp_path)
+    database = mongomock.MongoClient()["museum_guide_test"]
+    published_path = create_stored_image(settings, "published.jpg")
+    draft_path = create_stored_image(settings, "draft.jpg")
+    indexed_path = create_stored_image(settings, "indexed.jpg")
+    stale_path = create_stored_image(settings, "stale.jpg")
+    published = insert_artifact(database, code="ART-FEED-1", image_paths=[published_path], status="published")
+    insert_artifact(database, code="ART-FEED-DRAFT", image_paths=[draft_path], status="draft")
+    indexed = insert_artifact(database, code="ART-FEED-INDEXED", image_paths=[indexed_path], status="published")
+    stale = insert_artifact(database, code="ART-FEED-STALE", image_paths=[stale_path], status="published")
+    artifact_repository.update_ai_index_state(database, indexed["_id"], status="indexed", indexed_image_count=1)
+    artifact_repository.update_ai_index_state(database, stale["_id"], status="stale", indexed_image_count=1)
+
+    vector_repo = FakeVectorRepository()
+    result = indexing_service(settings, vector_repo).feed_pending_library(database)
+
+    assert result["artifacts_processed"] == 2
+    assert result["images_processed"] == 2
+    assert result["successful_artifacts"] == 2
+    assert result["failed_artifacts"] == 0
+    indexed_paths = {point["payload"]["image_path"] for point in vector_repo.points.values()}
+    assert indexed_paths == {published_path, stale_path}
+    assert artifact_repository.get_artifact(database, published["_id"])["ai_index_status"] == "indexed"
+    assert artifact_repository.get_artifact(database, indexed["_id"])["ai_index_status"] == "indexed"
+
+
+def test_failed_feed_does_not_change_publication_state(tmp_path):
+    settings = make_settings(tmp_path)
+    database = mongomock.MongoClient()["museum_guide_test"]
+    path = create_stored_image(settings, "failing.jpg")
+    artifact = insert_artifact(database, code="ART-FEED-FAIL", image_paths=[path], status="published")
+
+    result = indexing_service(settings, fail_all=True).feed_pending_library(database)
+    stored = artifact_repository.get_artifact(database, artifact["_id"])
+
+    assert result["artifacts_processed"] == 1
+    assert result["failed_artifacts"] == 1
+    assert stored["status"] == "published"
+    assert stored["ai_index_status"] == "failed"
+
+
 def test_recognition_returns_one_strong_match(tmp_path):
     settings = make_settings(tmp_path)
     database = mongomock.MongoClient()["museum_guide_test"]
     artifact = insert_artifact(database, code="ART-R1", image_paths=["uploads/images/one.jpg"])
+    artifact_repository.update_ai_index_state(database, artifact["_id"], status="indexed", indexed_image_count=1)
     vector_repo = FakeVectorRepository(search_response=[make_hit(str(artifact["_id"]), 0.91)])
     service = ArtifactRecognitionService(
         settings,
@@ -315,6 +369,7 @@ def test_recognition_groups_multiple_image_hits_into_one_artifact(tmp_path):
     settings = make_settings(tmp_path)
     database = mongomock.MongoClient()["museum_guide_test"]
     artifact = insert_artifact(database, code="ART-R2", image_paths=["uploads/images/one.jpg", "uploads/images/two.jpg"])
+    artifact_repository.update_ai_index_state(database, artifact["_id"], status="indexed", indexed_image_count=2)
     vector_repo = FakeVectorRepository(
         search_response=[
             make_hit(str(artifact["_id"]), 0.72, "uploads/images/one.jpg"),
@@ -335,6 +390,8 @@ def test_recognition_ranks_unique_artifacts(tmp_path):
     database = mongomock.MongoClient()["museum_guide_test"]
     lower = insert_artifact(database, code="ART-R3A", image_paths=["uploads/images/one.jpg"], name="Lower")
     higher = insert_artifact(database, code="ART-R3B", image_paths=["uploads/images/two.jpg"], name="Higher")
+    artifact_repository.update_ai_index_state(database, lower["_id"], status="indexed", indexed_image_count=1)
+    artifact_repository.update_ai_index_state(database, higher["_id"], status="indexed", indexed_image_count=1)
     vector_repo = FakeVectorRepository(
         search_response=[
             make_hit(str(lower["_id"]), 0.62, "uploads/images/one.jpg"),
@@ -353,6 +410,7 @@ def test_recognition_below_threshold_returns_no_match(tmp_path):
     settings = make_settings(tmp_path)
     database = mongomock.MongoClient()["museum_guide_test"]
     artifact = insert_artifact(database, code="ART-R4", image_paths=["uploads/images/one.jpg"])
+    artifact_repository.update_ai_index_state(database, artifact["_id"], status="indexed", indexed_image_count=1)
     vector_repo = FakeVectorRepository(search_response=[make_hit(str(artifact["_id"]), 0.49)])
     service = ArtifactRecognitionService(settings, embedding_service=FakeEmbeddingService(), qdrant_manager=FakeQdrantManager(count=1), vector_repository=vector_repo)
 
@@ -380,6 +438,21 @@ def test_stale_vector_is_dropped_from_recognition(tmp_path):
     stale_id = "64b79e7a03d7692666d42b01"
     point_id = point_id_for_image(stale_id, "uploads/images/stale.jpg")
     vector_repo = FakeVectorRepository(search_response=[make_hit(stale_id, 0.95, "uploads/images/stale.jpg", point_id)])
+    service = ArtifactRecognitionService(settings, embedding_service=FakeEmbeddingService(), qdrant_manager=FakeQdrantManager(count=1), vector_repository=vector_repo)
+
+    response = service.recognize(database, image_bytes=image_bytes(), content_type="image/jpeg", base_url="http://testserver/")
+
+    assert response.matched is False
+    assert point_id in vector_repo.deleted_points
+
+
+def test_stale_ai_library_artifact_is_not_returned_as_match(tmp_path):
+    settings = make_settings(tmp_path)
+    database = mongomock.MongoClient()["museum_guide_test"]
+    artifact = insert_artifact(database, code="ART-STALE-STATUS", image_paths=["uploads/images/stale-status.jpg"], status="published")
+    artifact_repository.update_ai_index_state(database, artifact["_id"], status="stale", indexed_image_count=1)
+    point_id = point_id_for_image(str(artifact["_id"]), "uploads/images/stale-status.jpg")
+    vector_repo = FakeVectorRepository(search_response=[make_hit(str(artifact["_id"]), 0.95, "uploads/images/stale-status.jpg", point_id)])
     service = ArtifactRecognitionService(settings, embedding_service=FakeEmbeddingService(), qdrant_manager=FakeQdrantManager(count=1), vector_repository=vector_repo)
 
     response = service.recognize(database, image_bytes=image_bytes(), content_type="image/jpeg", base_url="http://testserver/")
@@ -504,16 +577,64 @@ def test_dashboard_counts_use_real_artifact_data(route_context):
     client, database, _ = route_context
     insert_artifact(database, code="ART-D1", image_paths=["uploads/images/one.jpg"])
     indexed = insert_artifact(database, code="ART-D2", image_paths=["uploads/images/two.jpg", "uploads/images/three.jpg"])
+    insert_artifact(database, code="ART-DRAFT", image_paths=["uploads/images/draft.jpg"], status="draft")
     artifact_repository.update_ai_index_state(database, indexed["_id"], status="indexed", indexed_image_count=2)
 
     response = client.get("/api/v1/admin/dashboard", headers=auth_headers(client))
 
     assert response.status_code == 200
     body = response.json()
-    assert body["total_artifacts"] == 2
-    assert body["total_images"] == 3
+    assert body["total_artifacts"] == 3
+    assert body["total_images"] == 4
+    assert body["published_artifacts"] == 2
+    assert body["draft_artifacts"] == 1
+    assert body["ai_library_ready_artifacts"] == 1
+    assert body["ai_library_pending_artifacts"] == 1
     assert body["indexed_artifacts"] == 1
     assert body["recent_artifacts"]
+
+
+def test_feed_pending_ai_library_route_returns_typed_summary(route_context, monkeypatch):
+    client, database, _ = route_context
+
+    class FakeFeedService:
+        def feed_pending_library(self, db):
+            assert db is database
+            return {
+                "artifacts_processed": 2,
+                "images_processed": 5,
+                "successful_artifacts": 1,
+                "failed_artifacts": 1,
+                "errors": ["artifact: AI indexing is temporarily unavailable."],
+            }
+
+    monkeypatch.setattr("app.routes.ai.ArtifactIndexingService.from_settings", lambda _settings: FakeFeedService())
+
+    response = client.post("/api/v1/ai/library/feed-pending", headers=auth_headers(client))
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "artifacts_processed": 2,
+        "images_processed": 5,
+        "successful_artifacts": 1,
+        "failed_artifacts": 1,
+        "errors": ["artifact: AI indexing is temporarily unavailable."],
+    }
+
+
+def test_individual_ai_feed_requires_published_artifact(route_context, monkeypatch):
+    client, database, _ = route_context
+    draft = insert_artifact(database, code="ART-FEED-DRAFT-ROUTE", image_paths=["uploads/images/draft.jpg"], status="draft")
+
+    def fail_if_called(_settings):
+        raise AssertionError("Draft artifacts should not be fed to the AI Library.")
+
+    monkeypatch.setattr("app.routes.ai.ArtifactIndexingService.from_settings", fail_if_called)
+
+    response = client.post(f"/api/v1/ai/index/artifacts/{draft['_id']}", headers=auth_headers(client))
+
+    assert response.status_code == 422
+    assert "Publish this artifact" in response.json()["detail"]
 
 
 def test_backfill_script_dry_run(monkeypatch, tmp_path):

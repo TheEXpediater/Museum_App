@@ -3,6 +3,7 @@ package com.example.museumapp.ui.admin.dashboard
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.museumapp.data.model.AiLibraryFeedResponse
 import com.example.museumapp.data.model.DashboardSummaryResponse
 import com.example.museumapp.data.repository.AdminRepositoryContract
 import com.example.museumapp.data.repository.RepositoryResult
@@ -17,9 +18,11 @@ data class DashboardUiState(
     val summary: DashboardSummaryResponse? = null,
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
-    val isIndexing: Boolean = false,
-    val errorMessage: String? = null,
-    val actionMessage: String? = null
+    val feedingAiLibrary: Boolean = false,
+    val feedConfirmationVisible: Boolean = false,
+    val feedResult: AiLibraryFeedResponse? = null,
+    val feedError: String? = null,
+    val errorMessage: String? = null
 )
 
 class DashboardViewModel(private val repository: AdminRepositoryContract) : ViewModel() {
@@ -32,6 +35,11 @@ class DashboardViewModel(private val repository: AdminRepositoryContract) : View
                 _uiState.update { it.copy(adminName = session.adminName.ifBlank { session.adminEmail }) }
             }
         }
+        viewModelScope.launch {
+            repository.artifactMutations.collect {
+                load(refreshing = true)
+            }
+        }
         load(refreshing = false)
     }
 
@@ -39,22 +47,45 @@ class DashboardViewModel(private val repository: AdminRepositoryContract) : View
         load(refreshing = true)
     }
 
-    fun reindexAll() {
-        if (_uiState.value.isIndexing) return
+    fun requestFeedAiLibrary() {
+        _uiState.update { it.copy(feedConfirmationVisible = true, feedError = null) }
+    }
+
+    fun cancelFeedAiLibrary() {
+        _uiState.update { it.copy(feedConfirmationVisible = false) }
+    }
+
+    fun dismissFeedResult() {
+        _uiState.update { it.copy(feedResult = null, feedError = null) }
+    }
+
+    fun retryFailedFeed() {
+        _uiState.update { it.copy(feedResult = null, feedError = null) }
+        requestFeedAiLibrary()
+    }
+
+    fun confirmFeedAiLibrary() {
+        if (_uiState.value.feedingAiLibrary) return
         viewModelScope.launch {
-            _uiState.update { it.copy(isIndexing = true, errorMessage = null, actionMessage = null) }
-            when (val result = repository.indexAllArtifacts()) {
+            _uiState.update {
+                it.copy(
+                    feedConfirmationVisible = false,
+                    feedingAiLibrary = true,
+                    feedError = null
+                )
+            }
+            when (val result = repository.feedPendingAiLibrary()) {
                 is RepositoryResult.Success -> {
                     _uiState.update {
                         it.copy(
-                            isIndexing = false,
-                            actionMessage = "Indexed ${result.data.indexedImages} image(s); ${result.data.failedImages} failed."
+                            feedingAiLibrary = false,
+                            feedResult = result.data
                         )
                     }
                     load(refreshing = true)
                 }
                 is RepositoryResult.Error -> _uiState.update {
-                    it.copy(isIndexing = false, errorMessage = result.message)
+                    it.copy(feedingAiLibrary = false, feedError = result.message)
                 }
             }
         }

@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.museumapp.data.model.ArtifactDto
-import com.example.museumapp.data.repository.AdminRepository
+import com.example.museumapp.data.repository.AdminRepositoryContract
 import com.example.museumapp.data.repository.RepositoryResult
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +22,7 @@ data class ArtifactListUiState(
     val category: String = "",
     val sort: String = "newest",
     val statusFilter: String = "all",
+    val selectedDestination: String = ArtifactListDestinations.All,
     val page: Int = 1,
     val totalPages: Int = 0,
     val totalItems: Int = 0,
@@ -29,13 +30,38 @@ data class ArtifactListUiState(
     val pendingDelete: ArtifactDto? = null
 )
 
-class ArtifactListViewModel(private val repository: AdminRepository) : ViewModel() {
-    private val _uiState = MutableStateFlow(ArtifactListUiState())
+object ArtifactListDestinations {
+    const val All = "all"
+    const val Published = "published"
+    const val Drafts = "draft"
+    const val Categories = "categories"
+}
+
+class ArtifactListViewModel(
+    private val repository: AdminRepositoryContract,
+    initialDestination: String = ArtifactListDestinations.All
+) : ViewModel() {
+    private val _uiState = MutableStateFlow(
+        ArtifactListUiState(
+            isLoading = initialDestination != ArtifactListDestinations.Categories,
+            statusFilter = statusForDestination(initialDestination),
+            selectedDestination = normalizedDestination(initialDestination)
+        )
+    )
     val uiState: StateFlow<ArtifactListUiState> = _uiState.asStateFlow()
     private var loadJob: Job? = null
 
     init {
-        loadArtifacts(reset = true)
+        viewModelScope.launch {
+            repository.artifactMutations.collect {
+                if (_uiState.value.selectedDestination != ArtifactListDestinations.Categories) {
+                    loadArtifacts(reset = true, refreshing = true)
+                }
+            }
+        }
+        if (_uiState.value.selectedDestination != ArtifactListDestinations.Categories) {
+            loadArtifacts(reset = true)
+        }
     }
 
     fun updateSearch(value: String) {
@@ -53,6 +79,35 @@ class ArtifactListViewModel(private val repository: AdminRepository) : ViewModel
 
     fun updateStatusFilter(value: String) {
         _uiState.update { it.copy(statusFilter = value) }
+        loadArtifacts(reset = true)
+    }
+
+    fun selectDestination(value: String) {
+        val destination = normalizedDestination(value)
+        if (destination == _uiState.value.selectedDestination) return
+        loadJob?.cancel()
+        if (destination == ArtifactListDestinations.Categories) {
+            _uiState.update {
+                it.copy(
+                    selectedDestination = destination,
+                    statusFilter = ArtifactListDestinations.All,
+                    isLoading = false,
+                    isRefreshing = false,
+                    errorMessage = null
+                )
+            }
+            return
+        }
+        _uiState.update {
+            it.copy(
+                selectedDestination = destination,
+                statusFilter = statusForDestination(destination),
+                page = 1,
+                totalPages = 0,
+                totalItems = 0,
+                artifacts = emptyList()
+            )
+        }
         loadArtifacts(reset = true)
     }
 
@@ -104,6 +159,7 @@ class ArtifactListViewModel(private val repository: AdminRepository) : ViewModel
 
     private fun loadArtifacts(reset: Boolean, refreshing: Boolean = false) {
         loadJob?.cancel()
+        if (_uiState.value.selectedDestination == ArtifactListDestinations.Categories) return
         loadJob = viewModelScope.launch {
             val state = _uiState.value
             val nextPage = if (reset) 1 else state.page + 1
@@ -133,9 +189,26 @@ class ArtifactListViewModel(private val repository: AdminRepository) : ViewModel
     }
 
     companion object {
-        fun factory(repository: AdminRepository): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+        private fun normalizedDestination(value: String): String {
+            return when (value) {
+                ArtifactListDestinations.Published -> ArtifactListDestinations.Published
+                ArtifactListDestinations.Drafts, "drafts" -> ArtifactListDestinations.Drafts
+                ArtifactListDestinations.Categories -> ArtifactListDestinations.Categories
+                else -> ArtifactListDestinations.All
+            }
+        }
+
+        private fun statusForDestination(value: String): String {
+            return when (normalizedDestination(value)) {
+                ArtifactListDestinations.Published -> ArtifactListDestinations.Published
+                ArtifactListDestinations.Drafts -> ArtifactListDestinations.Drafts
+                else -> ArtifactListDestinations.All
+            }
+        }
+
+        fun factory(repository: AdminRepositoryContract, initialDestination: String = ArtifactListDestinations.All): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T = ArtifactListViewModel(repository) as T
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = ArtifactListViewModel(repository, initialDestination) as T
         }
     }
 }

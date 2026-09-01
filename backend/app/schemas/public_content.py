@@ -12,6 +12,18 @@ class PublicArtifactCustomField(BaseModel):
     type: str
 
 
+class PublicArtifactMetadataField(BaseModel):
+    label: str
+    value: str
+    unit: str | None = None
+    type: str = "text"
+
+
+class PublicArtifactMetadataSection(BaseModel):
+    title: str
+    fields: list[PublicArtifactMetadataField] = Field(default_factory=list)
+
+
 class PublicArtifactResponse(BaseModel):
     id: str
     artifact_code: str
@@ -24,6 +36,7 @@ class PublicArtifactResponse(BaseModel):
     dimensions: str | None = None
     condition: str | None = None
     custom_fields: list[PublicArtifactCustomField] = Field(default_factory=list)
+    metadata_sections: list[PublicArtifactMetadataSection] = Field(default_factory=list)
     image_urls: list[str] = Field(default_factory=list)
     primary_image_url: str | None = None
 

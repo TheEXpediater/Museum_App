@@ -2,7 +2,6 @@ package com.example.museumapp.ui.admin.dashboard
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,9 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -30,9 +30,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,7 +42,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.museumapp.data.model.DashboardRecentArtifactDto
@@ -59,6 +63,17 @@ fun DashboardScreen(
 ) {
     val viewModel: DashboardViewModel = viewModel(factory = DashboardViewModel.factory(repository))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refresh()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -84,24 +99,20 @@ fun DashboardScreen(
         uiState.summary?.let { summary ->
             item { MetricsSection(summary) }
             item {
+                AiLibrarySection(
+                    summary = summary,
+                    isFeeding = uiState.feedingAiLibrary,
+                    onFeed = viewModel::requestFeedAiLibrary
+                )
+            }
+            item {
                 HealthSection(summary)
             }
             item {
                 QuickActions(
-                    isIndexing = uiState.isIndexing,
                     onAddArtifact = onAddArtifact,
-                    onTestRecognition = onTestRecognition,
-                    onReindex = viewModel::reindexAll
+                    onTestRecognition = onTestRecognition
                 )
-            }
-            uiState.actionMessage?.let { message ->
-                item {
-                    Text(
-                        text = message,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
             if (summary.recentArtifacts.isNotEmpty()) {
                 item {
@@ -112,6 +123,66 @@ fun DashboardScreen(
                 }
             }
         }
+    }
+
+    if (uiState.feedConfirmationVisible) {
+        AlertDialog(
+            onDismissRequest = viewModel::cancelFeedAiLibrary,
+            title = { Text("Feed artifacts to AI Library?") },
+            text = {
+                Text(
+                    "This will process all published artifacts that have not yet been added to the AI recognition library.\n\nArtifact recognition may take several minutes while images are processed."
+                )
+            },
+            confirmButton = {
+                Button(onClick = viewModel::confirmFeedAiLibrary, enabled = !uiState.feedingAiLibrary) {
+                    Text("Feed Now", maxLines = 1)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::cancelFeedAiLibrary, enabled = !uiState.feedingAiLibrary) {
+                    Text("Cancel", maxLines = 1)
+                }
+            }
+        )
+    }
+
+    uiState.feedResult?.let { result ->
+        val hasFailures = result.failedArtifacts > 0
+        AlertDialog(
+            onDismissRequest = viewModel::dismissFeedResult,
+            title = { Text(if (hasFailures) "AI Library Update Completed" else "AI Library Updated") },
+            text = {
+                Text(
+                    "Artifacts processed: ${result.artifactsProcessed}\nImages processed: ${result.imagesProcessed}\nSuccessful: ${result.successfulArtifacts}\nFailed: ${result.failedArtifacts}"
+                )
+            },
+            confirmButton = {
+                Button(onClick = viewModel::dismissFeedResult) {
+                    Text("Done", maxLines = 1)
+                }
+            },
+            dismissButton = {
+                if (hasFailures) {
+                    TextButton(onClick = viewModel::retryFailedFeed) {
+                        Text("Retry Failed", maxLines = 1)
+                    }
+                }
+            }
+        )
+    }
+
+    uiState.feedError?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissFeedResult,
+            title = { Text("AI Library Update Failed") },
+            text = { Text(message) },
+            confirmButton = {
+                Button(onClick = viewModel::dismissFeedResult) {
+                    Text("Done", maxLines = 1)
+                }
+            }
+        )
     }
 }
 
@@ -142,26 +213,14 @@ private fun DashboardHeader(adminName: String, isRefreshing: Boolean, onRefresh:
 
 @Composable
 private fun MetricsSection(summary: DashboardSummaryResponse) {
-    BoxWithConstraints {
-        val horizontal = maxWidth >= 560.dp
-        if (horizontal) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetricCard("Total Artifacts", summary.totalArtifacts.toString(), Modifier.weight(1f))
-                MetricCard("Total Images", summary.totalImages.toString(), Modifier.weight(1f))
-                MetricCard("Indexed", summary.indexedArtifacts.toString(), Modifier.weight(1f))
-                MetricCard("Needs AI Review", (summary.pendingArtifacts + summary.failedArtifacts).toString(), Modifier.weight(1f))
-            }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    MetricCard("Total Artifacts", summary.totalArtifacts.toString(), Modifier.weight(1f))
-                    MetricCard("Total Images", summary.totalImages.toString(), Modifier.weight(1f))
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    MetricCard("Indexed", summary.indexedArtifacts.toString(), Modifier.weight(1f))
-                    MetricCard("Needs AI Review", (summary.pendingArtifacts + summary.failedArtifacts).toString(), Modifier.weight(1f))
-                }
-            }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            MetricCard("Total Artifacts", summary.totalArtifacts.toString(), Modifier.weight(1f))
+            MetricCard("Total Images", summary.totalImages.toString(), Modifier.weight(1f))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            MetricCard("In AI Library", summary.aiLibraryReadyCount().toString(), Modifier.weight(1f))
+            MetricCard("Not in AI Library", summary.aiLibraryPendingCount().toString(), Modifier.weight(1f))
         }
     }
 }
@@ -186,6 +245,7 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
 @Composable
 private fun HealthSection(summary: DashboardSummaryResponse) {
     Card(
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
@@ -199,41 +259,71 @@ private fun HealthSection(summary: DashboardSummaryResponse) {
                 HealthStatusChip(summary.databaseStatus)
                 HealthStatusChip(summary.uploadsStatus)
             }
-            Text(
-                text = "${summary.indexedVectors} indexed vector(s)",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        }
+    }
+}
+
+@Composable
+private fun AiLibrarySection(
+    summary: DashboardSummaryResponse,
+    isFeeding: Boolean,
+    onFeed: () -> Unit
+) {
+    val pending = summary.aiLibraryPendingCount()
+    val stale = summary.aiLibraryStaleArtifacts
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
+                Text("AI Library", style = MaterialTheme.typography.titleLarge)
+            }
+            if (pending > 0) {
+                Text(
+                    text = if (stale > 0) {
+                        "$pending published artifact(s) need AI Library attention, including $stale update(s)."
+                    } else {
+                        "$pending published artifact(s) have not been added to the AI recognition library."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Button(onClick = onFeed, enabled = !isFeeding, modifier = Modifier.fillMaxWidth()) {
+                    if (isFeeding) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
+                    }
+                    Text(if (isFeeding) "Feeding to AI Library" else "Feed to AI Library", maxLines = 1)
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text("All published artifacts are available for artifact recognition.", style = MaterialTheme.typography.bodyMedium)
+                }
+                Text("Up to date", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            }
         }
     }
 }
 
 @Composable
 private fun QuickActions(
-    isIndexing: Boolean,
     onAddArtifact: () -> Unit,
-    onTestRecognition: () -> Unit,
-    onReindex: () -> Unit
+    onTestRecognition: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Quick actions", style = MaterialTheme.typography.titleLarge)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = onAddArtifact, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Outlined.Add, contentDescription = null)
-                Text("Add")
-            }
-            FilledTonalButton(onClick = onTestRecognition, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
-                Text("Test")
-            }
+        Button(onClick = onAddArtifact, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Outlined.Add, contentDescription = null)
+            Text("Add Artifact", maxLines = 1)
         }
-        OutlinedButton(onClick = onReindex, enabled = !isIndexing, modifier = Modifier.fillMaxWidth()) {
-            if (isIndexing) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-            } else {
-                Icon(Icons.Outlined.Sync, contentDescription = null)
-            }
-            Text("Reindex Artifacts")
+        FilledTonalButton(onClick = onTestRecognition, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
+            Text("Test Recognition", maxLines = 1)
         }
     }
 }
@@ -274,6 +364,22 @@ private fun RecentArtifactRow(artifact: DashboardRecentArtifactDto) {
             ArtifactAiStatusChip(artifact.aiIndexStatus)
         }
     }
+}
+
+private fun DashboardSummaryResponse.aiLibraryReadyCount(): Int {
+    return if (hasAiLibraryCounts()) aiLibraryReadyArtifacts else indexedArtifacts
+}
+
+private fun DashboardSummaryResponse.aiLibraryPendingCount(): Int {
+    return if (hasAiLibraryCounts()) aiLibraryPendingArtifacts else pendingArtifacts + failedArtifacts
+}
+
+private fun DashboardSummaryResponse.hasAiLibraryCounts(): Boolean {
+    return publishedArtifacts > 0 ||
+        draftArtifacts > 0 ||
+        aiLibraryReadyArtifacts > 0 ||
+        aiLibraryPendingArtifacts > 0 ||
+        aiLibraryStaleArtifacts > 0
 }
 
 @Composable

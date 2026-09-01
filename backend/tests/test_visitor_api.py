@@ -113,7 +113,18 @@ def create_student(client: TestClient, **overrides) -> tuple[dict, dict[str, str
     return body, {"Authorization": f"Bearer {body['access_token']}"}
 
 
-def insert_artifact(database, *, code: str = "ART-V1", status: str | None = None, custom_fields: list[dict] | None = None) -> dict:
+def insert_artifact(
+    database,
+    *,
+    code: str = "ART-V1",
+    status: str | None = None,
+    custom_fields: list[dict] | None = None,
+    image_paths: list[str] | None = None,
+    primary_image_path: str | None = None,
+    visitor_gallery_image_paths: list[str] | None = None,
+    visitor_gallery_configured: bool | None = None,
+) -> dict:
+    paths = image_paths or []
     data = {
         "artifact_code": code,
         "name": "Wooden Plow",
@@ -125,12 +136,16 @@ def insert_artifact(database, *, code: str = "ART-V1", status: str | None = None
         "dimensions": "120 cm x 35 cm",
         "condition": "Good",
         "custom_fields": custom_fields or [],
-        "image_paths": [],
-        "primary_image_path": None,
+        "image_paths": paths,
+        "primary_image_path": primary_image_path if primary_image_path is not None else (paths[0] if paths else None),
         "created_by": "admin",
     }
     if status is not None:
         data["status"] = status
+    if visitor_gallery_image_paths is not None:
+        data["visitor_gallery_image_paths"] = visitor_gallery_image_paths
+    if visitor_gallery_configured is not None:
+        data["visitor_gallery_configured"] = visitor_gallery_configured
     return artifact_repository.create_artifact(database, data)
 
 
@@ -496,6 +511,67 @@ def test_visitor_artifact_access_hides_admin_fields(test_context):
     assert details.json()["name"] == "Wooden Plow"
     assert "created_by" not in details.json()
     assert details.json()["custom_fields"] == [{"label": "Weight", "value": "3.5", "unit": "kg", "type": "number"}]
+
+
+def test_visitor_gallery_defaults_to_main_plus_first_five_non_main(test_context):
+    client, database, _, _ = test_context
+    paths = [f"uploads/images/gallery-{index}.jpg" for index in range(1, 12)]
+    main_path = paths[2]
+    artifact = insert_artifact(
+        database,
+        code="ART-GALLERY-DEFAULT",
+        status="published",
+        image_paths=paths,
+        primary_image_path=main_path,
+        visitor_gallery_image_paths=[],
+        visitor_gallery_configured=False,
+    )
+    _, visitor_headers = create_guest(client)
+
+    details = client.get(f"/api/v1/visitor/artifacts/{artifact['_id']}", headers=visitor_headers)
+
+    assert details.status_code == 200
+    expected_paths = [main_path, paths[0], paths[1], paths[3], paths[4], paths[5]]
+    assert details.json()["image_urls"] == [f"http://testserver/{path}" for path in expected_paths]
+
+    admin_details = client.get(f"/api/v1/artifacts/{artifact['_id']}", headers=admin_headers(client))
+    assert admin_details.status_code == 200
+    assert admin_details.json()["visitor_gallery_image_paths"] == expected_paths[1:]
+    assert admin_details.json()["visitor_gallery_configured"] is False
+
+
+def test_visitor_gallery_intentional_zero_selection_persists(test_context):
+    client, database, _, _ = test_context
+    paths = [f"uploads/images/zero-{index}.jpg" for index in range(1, 8)]
+    main_path = paths[0]
+    artifact = insert_artifact(
+        database,
+        code="ART-GALLERY-ZERO",
+        status="published",
+        image_paths=paths,
+        primary_image_path=main_path,
+        visitor_gallery_image_paths=[],
+        visitor_gallery_configured=False,
+    )
+    headers = admin_headers(client)
+
+    update = client.patch(
+        f"/api/v1/artifacts/{artifact['_id']}",
+        data={
+            "visitor_gallery_image_paths": "[]",
+            "visitor_gallery_configured": "true",
+        },
+        headers=headers,
+    )
+    assert update.status_code == 200, update.text
+    assert update.json()["visitor_gallery_configured"] is True
+    assert update.json()["visitor_gallery_image_paths"] == []
+
+    _, visitor_headers = create_guest(client)
+    details = client.get(f"/api/v1/visitor/artifacts/{artifact['_id']}", headers=visitor_headers)
+
+    assert details.status_code == 200
+    assert details.json()["image_urls"] == [f"http://testserver/{main_path}"]
 
 
 def test_visitor_artifacts_hide_drafts(test_context):

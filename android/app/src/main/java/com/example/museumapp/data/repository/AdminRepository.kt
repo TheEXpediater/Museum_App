@@ -10,6 +10,7 @@ import com.example.museumapp.data.model.AiHealthResponse
 import com.example.museumapp.data.model.AiIndexAllResponse
 import com.example.museumapp.data.model.AiIndexResultResponse
 import com.example.museumapp.data.model.AiIndexStatusResponse
+import com.example.museumapp.data.model.AiLibraryFeedResponse
 import com.example.museumapp.data.model.AiWarmupResponse
 import com.example.museumapp.data.model.ArtifactCategoryCreateRequest
 import com.example.museumapp.data.model.ArtifactCategoryDto
@@ -25,6 +26,8 @@ import com.example.museumapp.data.model.UserDto
 import com.example.museumapp.data.session.AdminSession
 import com.example.museumapp.data.session.SessionManager
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
@@ -45,9 +48,18 @@ interface RecognitionRepositoryContract {
     suspend fun recognizeArtifactFile(image: File, limit: Int? = null): RepositoryResult<RecognitionResponseDto>
 }
 
+sealed class ArtifactMutationEvent {
+    data class Created(val artifactId: String, val status: String) : ArtifactMutationEvent()
+    data class Updated(val artifactId: String, val status: String) : ArtifactMutationEvent()
+    data class Published(val artifactId: String) : ArtifactMutationEvent()
+    data class Deleted(val artifactId: String) : ArtifactMutationEvent()
+    object AiLibraryUpdated : ArtifactMutationEvent()
+}
+
 interface AdminRepositoryContract : RecognitionRepositoryContract {
     val session: Flow<AdminSession>
     val backendBaseUrl: String
+    val artifactMutations: Flow<ArtifactMutationEvent>
 
     suspend fun checkHealth(): RepositoryResult<HealthResponse>
     suspend fun warmupAi(): RepositoryResult<AiWarmupResponse>
@@ -64,9 +76,10 @@ interface AdminRepositoryContract : RecognitionRepositoryContract {
         sort: String,
         status: String?
     ): RepositoryResult<ArtifactListResponse>
-    suspend fun listCategories(): RepositoryResult<List<ArtifactCategoryDto>>
+    suspend fun listCategories(includeInactive: Boolean = false): RepositoryResult<List<ArtifactCategoryDto>>
     suspend fun createCategory(name: String): RepositoryResult<ArtifactCategoryDto>
     suspend fun renameCategory(categoryId: String, name: String): RepositoryResult<ArtifactCategoryDto>
+    suspend fun activateCategory(categoryId: String): RepositoryResult<ArtifactCategoryDto>
     suspend fun deactivateCategory(categoryId: String): RepositoryResult<ArtifactCategoryDto>
     suspend fun getArtifact(artifactId: String): RepositoryResult<ArtifactDto>
     suspend fun createArtifact(form: ArtifactFormData, images: List<Uri>): RepositoryResult<ArtifactDto>
@@ -76,6 +89,7 @@ interface AdminRepositoryContract : RecognitionRepositoryContract {
     suspend fun setPrimaryImage(artifactId: String, imagePath: String): RepositoryResult<ArtifactDto>
     suspend fun deleteArtifact(artifactId: String): RepositoryResult<String>
     suspend fun indexArtifact(artifactId: String): RepositoryResult<AiIndexResultResponse>
+    suspend fun feedPendingAiLibrary(): RepositoryResult<AiLibraryFeedResponse>
     suspend fun indexAllArtifacts(): RepositoryResult<AiIndexAllResponse>
     suspend fun retryFailedIndexes(): RepositoryResult<AiIndexAllResponse>
     suspend fun rebuildArtifactIndex(): RepositoryResult<AiIndexAllResponse>
@@ -89,6 +103,8 @@ class AdminRepository(
 ) : AdminRepositoryContract {
     override val session: Flow<AdminSession> = sessionManager.session
     override val backendBaseUrl: String = BuildConfig.API_BASE_URL
+    private val _artifactMutations = MutableSharedFlow<ArtifactMutationEvent>(extraBufferCapacity = 16)
+    override val artifactMutations: Flow<ArtifactMutationEvent> = _artifactMutations.asSharedFlow()
 
     override suspend fun checkHealth(): RepositoryResult<HealthResponse> = safeApiCall(clearSessionOnUnauthorized = false) {
         api.health()
@@ -138,8 +154,8 @@ class AdminRepository(
         api.listArtifacts(page, pageSize, search?.takeIf { it.isNotBlank() }, category?.takeIf { it.isNotBlank() }, sort, status?.takeIf { it != "all" })
     }
 
-    override suspend fun listCategories(): RepositoryResult<List<ArtifactCategoryDto>> = safeApiCall {
-        api.listArtifactCategories()
+    override suspend fun listCategories(includeInactive: Boolean): RepositoryResult<List<ArtifactCategoryDto>> = safeApiCall {
+        api.listArtifactCategories(includeInactive)
     }
 
     override suspend fun createCategory(name: String): RepositoryResult<ArtifactCategoryDto> = safeApiCall {
@@ -150,6 +166,10 @@ class AdminRepository(
         api.updateArtifactCategory(categoryId, ArtifactCategoryUpdateRequest(name = name.trim()))
     }
 
+    override suspend fun activateCategory(categoryId: String): RepositoryResult<ArtifactCategoryDto> = safeApiCall {
+        api.updateArtifactCategory(categoryId, ArtifactCategoryUpdateRequest(isActive = true))
+    }
+
     override suspend fun deactivateCategory(categoryId: String): RepositoryResult<ArtifactCategoryDto> = safeApiCall {
         api.deactivateArtifactCategory(categoryId)
     }
@@ -158,32 +178,72 @@ class AdminRepository(
         api.getArtifact(artifactId)
     }
 
-    override suspend fun createArtifact(form: ArtifactFormData, images: List<Uri>): RepositoryResult<ArtifactDto> = safeApiCall {
-        api.createArtifact(form.toCreateParts(), imageParts(images))
+    override suspend fun createArtifact(form: ArtifactFormData, images: List<Uri>): RepositoryResult<ArtifactDto> {
+        val result = safeApiCall {
+            api.createArtifact(form.toCreateParts(), imageParts(images))
+        }
+        if (result is RepositoryResult.Success) {
+            notifyArtifactMutation(ArtifactMutationEvent.Created(result.data.id, result.data.status))
+        }
+        return result
     }
 
     override suspend fun updateArtifact(
         artifactId: String,
         form: ArtifactFormData,
         images: List<Uri>
-    ): RepositoryResult<ArtifactDto> = safeApiCall {
-        api.updateArtifact(artifactId, form.toUpdateParts(), imageParts(images))
+    ): RepositoryResult<ArtifactDto> {
+        val result = safeApiCall {
+            api.updateArtifact(artifactId, form.toUpdateParts(), imageParts(images))
+        }
+        if (result is RepositoryResult.Success) {
+            if (form.status == "published" && result.data.status == "published") {
+                notifyArtifactMutation(ArtifactMutationEvent.Published(artifactId))
+            } else {
+                notifyArtifactMutation(ArtifactMutationEvent.Updated(artifactId, result.data.status))
+            }
+        }
+        return result
     }
 
-    override suspend fun addImages(artifactId: String, images: List<Uri>): RepositoryResult<ArtifactDto> = safeApiCall {
-        api.addImages(artifactId, imageParts(images))
+    override suspend fun addImages(artifactId: String, images: List<Uri>): RepositoryResult<ArtifactDto> {
+        val result = safeApiCall {
+            api.addImages(artifactId, imageParts(images))
+        }
+        if (result is RepositoryResult.Success) {
+            notifyArtifactMutation(ArtifactMutationEvent.Updated(artifactId, result.data.status))
+        }
+        return result
     }
 
-    override suspend fun removeImage(artifactId: String, imageName: String): RepositoryResult<ArtifactDto> = safeApiCall {
-        api.removeImage(artifactId, imageName)
+    override suspend fun removeImage(artifactId: String, imageName: String): RepositoryResult<ArtifactDto> {
+        val result = safeApiCall {
+            api.removeImage(artifactId, imageName)
+        }
+        if (result is RepositoryResult.Success) {
+            notifyArtifactMutation(ArtifactMutationEvent.Updated(artifactId, result.data.status))
+        }
+        return result
     }
 
-    override suspend fun setPrimaryImage(artifactId: String, imagePath: String): RepositoryResult<ArtifactDto> = safeApiCall {
-        api.setPrimaryImage(artifactId, PrimaryImageRequest(imagePath))
+    override suspend fun setPrimaryImage(artifactId: String, imagePath: String): RepositoryResult<ArtifactDto> {
+        val result = safeApiCall {
+            api.setPrimaryImage(artifactId, PrimaryImageRequest(imagePath))
+        }
+        if (result is RepositoryResult.Success) {
+            notifyArtifactMutation(ArtifactMutationEvent.Updated(artifactId, result.data.status))
+        }
+        return result
     }
 
-    override suspend fun deleteArtifact(artifactId: String): RepositoryResult<String> = safeApiCall {
-        api.deleteArtifact(artifactId).message
+    override suspend fun deleteArtifact(artifactId: String): RepositoryResult<String> {
+        val result = safeApiCall {
+            api.deleteArtifact(artifactId).message
+        }
+        if (result is RepositoryResult.Success) {
+            notifyArtifactMutation(ArtifactMutationEvent.Deleted(artifactId))
+        }
+        return result
     }
 
     override suspend fun recognizeArtifact(image: Uri, limit: Int?): RepositoryResult<RecognitionResponseDto> = safeApiCall {
@@ -194,20 +254,54 @@ class AdminRepository(
         api.recognizeArtifact(fileImagePart("image", image), limit)
     }
 
-    override suspend fun indexArtifact(artifactId: String): RepositoryResult<AiIndexResultResponse> = safeApiCall {
-        api.indexArtifact(artifactId)
+    override suspend fun indexArtifact(artifactId: String): RepositoryResult<AiIndexResultResponse> {
+        val result = safeApiCall {
+            api.indexArtifact(artifactId)
+        }
+        if (result is RepositoryResult.Success) {
+            notifyArtifactMutation(ArtifactMutationEvent.AiLibraryUpdated)
+        }
+        return result
     }
 
-    override suspend fun indexAllArtifacts(): RepositoryResult<AiIndexAllResponse> = safeApiCall {
-        api.indexAllArtifacts()
+    override suspend fun feedPendingAiLibrary(): RepositoryResult<AiLibraryFeedResponse> {
+        val result = safeApiCall {
+            api.feedPendingAiLibrary()
+        }
+        if (result is RepositoryResult.Success) {
+            notifyArtifactMutation(ArtifactMutationEvent.AiLibraryUpdated)
+        }
+        return result
     }
 
-    override suspend fun retryFailedIndexes(): RepositoryResult<AiIndexAllResponse> = safeApiCall {
-        api.retryFailedIndexes()
+    override suspend fun indexAllArtifacts(): RepositoryResult<AiIndexAllResponse> {
+        val result = safeApiCall {
+            api.indexAllArtifacts()
+        }
+        if (result is RepositoryResult.Success) {
+            notifyArtifactMutation(ArtifactMutationEvent.AiLibraryUpdated)
+        }
+        return result
     }
 
-    override suspend fun rebuildArtifactIndex(): RepositoryResult<AiIndexAllResponse> = safeApiCall {
-        api.rebuildArtifactIndex()
+    override suspend fun retryFailedIndexes(): RepositoryResult<AiIndexAllResponse> {
+        val result = safeApiCall {
+            api.retryFailedIndexes()
+        }
+        if (result is RepositoryResult.Success) {
+            notifyArtifactMutation(ArtifactMutationEvent.AiLibraryUpdated)
+        }
+        return result
+    }
+
+    override suspend fun rebuildArtifactIndex(): RepositoryResult<AiIndexAllResponse> {
+        val result = safeApiCall {
+            api.rebuildArtifactIndex()
+        }
+        if (result is RepositoryResult.Success) {
+            notifyArtifactMutation(ArtifactMutationEvent.AiLibraryUpdated)
+        }
+        return result
     }
 
     override suspend fun indexStatus(): RepositoryResult<AiIndexStatusResponse> = safeApiCall {
@@ -251,8 +345,61 @@ class AdminRepository(
 
         val body = response()?.errorBody()?.string().orEmpty()
         return runCatching {
-            JSONObject(body).optString("detail").takeIf { it.isNotBlank() }
+            validationMessageFromDetail(JSONObject(body).opt("detail"))
         }.getOrNull() ?: fallback
+    }
+
+    private fun validationMessageFromDetail(detail: Any?): String? {
+        return when (detail) {
+            is String -> friendlyValidationMessage(detail)
+            is JSONArray -> {
+                (0 until detail.length()).asSequence()
+                    .mapNotNull { detail.optJSONObject(it) }
+                    .mapNotNull { validationObjectMessage(it) }
+                    .firstOrNull()
+            }
+            else -> null
+        }
+    }
+
+    private fun validationObjectMessage(item: JSONObject): String? {
+        val message = item.optString("msg").takeIf { it.isNotBlank() } ?: return null
+        val field = item.optJSONArray("loc")?.let { loc ->
+            (loc.length() - 1 downTo 0)
+                .asSequence()
+                .map { loc.optString(it) }
+                .firstOrNull { it.isNotBlank() }
+        }
+        if (message.contains("at most", ignoreCase = true) || message.contains("characters", ignoreCase = true)) {
+            return "${fieldDisplayName(field)} contains more text than the supported limit."
+        }
+        return friendlyValidationMessage(message)
+    }
+
+    private fun friendlyValidationMessage(message: String): String? {
+        val cleaned = message.trim().takeIf { it.isNotBlank() } ?: return null
+        val firstWord = cleaned.substringBefore(" ")
+        if (cleaned.contains("characters or fewer", ignoreCase = true)) {
+            return "${fieldDisplayName(firstWord)} contains more text than the supported limit."
+        }
+        return cleaned
+    }
+
+    private fun fieldDisplayName(raw: String?): String {
+        return when (raw) {
+            "artifact_code" -> "Artifact code"
+            "name" -> "Artifact name"
+            "description" -> "Description"
+            "category" -> "Category"
+            "origin" -> "Origin"
+            "historical_period" -> "Historical period"
+            "material" -> "Material"
+            "dimensions" -> "Dimensions"
+            "condition" -> "Condition"
+            "metadata_sections" -> "Metadata sections"
+            "visitor_gallery_image_paths" -> "Visitor gallery images"
+            else -> raw.orEmpty().replace("_", " ").replaceFirstChar { it.uppercase() }.ifBlank { "This field" }
+        }
     }
 
     private fun ArtifactFormData.toCreateParts(): Map<String, RequestBody> {
@@ -263,6 +410,9 @@ class AdminRepository(
             put("category", category.asTextPart())
             put("status", status.asTextPart())
             put("custom_fields", customFieldsJson().asTextPart())
+            put("metadata_sections", metadataSectionsJson().asTextPart())
+            put("visitor_gallery_image_paths", visitorGalleryImagePathsJson().asTextPart())
+            put("visitor_gallery_configured", visitorGalleryConfigured.toString().asTextPart())
             putOptional("origin", origin)
             putOptional("historical_period", historicalPeriod)
             putOptional("material", material)
@@ -281,11 +431,14 @@ class AdminRepository(
             put("category", category.asTextPart())
             put("status", status.asTextPart())
             put("custom_fields", customFieldsJson().asTextPart())
-            putOptional("origin", origin)
-            putOptional("historical_period", historicalPeriod)
-            putOptional("material", material)
-            putOptional("dimensions", dimensions)
-            putOptional("condition", condition)
+            put("metadata_sections", metadataSectionsJson().asTextPart())
+            put("visitor_gallery_image_paths", visitorGalleryImagePathsJson().asTextPart())
+            put("visitor_gallery_configured", visitorGalleryConfigured.toString().asTextPart())
+            putNullable("origin", origin)
+            putNullable("historical_period", historicalPeriod)
+            putNullable("material", material)
+            putNullable("dimensions", dimensions)
+            putNullable("condition", condition)
             if (removeImagePaths.isNotEmpty()) {
                 put("remove_image_paths", removeImagePaths.joinToString(",").asTextPart())
             }
@@ -310,13 +463,53 @@ class AdminRepository(
         return fields.toString()
     }
 
+    private fun ArtifactFormData.metadataSectionsJson(): String {
+        val sections = JSONArray()
+        metadataSections.forEach { section ->
+            val fields = JSONArray()
+            section.fields.forEach { field ->
+                fields.put(
+                    JSONObject()
+                        .put("id", field.id)
+                        .put("label", field.label)
+                        .put("value", field.value)
+                        .put("type", field.type)
+                        .put("unit", field.unit)
+                        .put("order", field.order)
+                )
+            }
+            sections.put(
+                JSONObject()
+                    .put("id", section.id)
+                    .put("title", section.title)
+                    .put("order", section.order)
+                    .put("fields", fields)
+            )
+        }
+        return sections.toString()
+    }
+
+    private fun ArtifactFormData.visitorGalleryImagePathsJson(): String {
+        val paths = JSONArray()
+        visitorGalleryImagePaths.forEach { path -> paths.put(path) }
+        return paths.toString()
+    }
+
     private fun MutableMap<String, RequestBody>.putOptional(key: String, value: String?) {
         if (!value.isNullOrBlank()) {
             put(key, value.asTextPart())
         }
     }
 
+    private fun MutableMap<String, RequestBody>.putNullable(key: String, value: String?) {
+        put(key, value.orEmpty().asTextPart())
+    }
+
     private fun String.asTextPart(): RequestBody = toRequestBody("text/plain".toMediaTypeOrNull())
+
+    private fun notifyArtifactMutation(event: ArtifactMutationEvent) {
+        _artifactMutations.tryEmit(event)
+    }
 
     private fun imageParts(uris: List<Uri>): List<MultipartBody.Part> {
         return uris.map { uri -> singleImagePart("images", uri) }

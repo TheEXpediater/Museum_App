@@ -18,6 +18,11 @@ class DashboardSummaryResponse(BaseModel):
     total_artifacts: int
     total_images: int
     total_categories: int
+    published_artifacts: int = 0
+    draft_artifacts: int = 0
+    ai_library_ready_artifacts: int = 0
+    ai_library_pending_artifacts: int = 0
+    ai_library_stale_artifacts: int = 0
     indexed_artifacts: int
     pending_artifacts: int
     failed_artifacts: int

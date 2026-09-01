@@ -14,6 +14,7 @@ data class PublicArtifactDto(
     val dimensions: String? = null,
     val condition: String? = null,
     @Json(name = "custom_fields") val customFields: List<PublicArtifactCustomFieldDto> = emptyList(),
+    @Json(name = "metadata_sections") val metadataSections: List<PublicArtifactMetadataSectionDto> = emptyList(),
     @Json(name = "image_urls") val imageUrls: List<String> = emptyList(),
     @Json(name = "primary_image_url") val primaryImageUrl: String? = null
 )
@@ -23,6 +24,18 @@ data class PublicArtifactCustomFieldDto(
     val value: String,
     val unit: String? = null,
     val type: String
+)
+
+data class PublicArtifactMetadataSectionDto(
+    val title: String,
+    val fields: List<PublicArtifactMetadataFieldDto> = emptyList()
+)
+
+data class PublicArtifactMetadataFieldDto(
+    val label: String,
+    val value: String,
+    val unit: String? = null,
+    val type: String = "text"
 )
 
 data class PublicArtifactListResponseDto(

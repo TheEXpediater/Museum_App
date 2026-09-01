@@ -160,6 +160,9 @@ class ArtifactRecognitionService:
                 continue
             if not artifact_repository.artifact_is_published(artifact):
                 continue
+            if artifact.get("ai_index_status") != "indexed":
+                self._drop_stale_hits(group)
+                continue
             matches.append(self._match_response(artifact, group, base_url))
         return matches
 

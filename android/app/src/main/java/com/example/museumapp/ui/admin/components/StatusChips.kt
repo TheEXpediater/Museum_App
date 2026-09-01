@@ -37,12 +37,12 @@ enum class StatusTone {
 fun artifactAiStatusLabel(status: String?): String {
     val normalized = status.orEmpty().lowercase()
     return when (normalized) {
-        "indexed" -> "Indexed"
-        "partial" -> "Partial"
-        "failed" -> "Failed"
-        "pending" -> "Pending"
-        "not_indexed", "" -> "Not indexed"
-        else -> normalized.replace('_', ' ').ifBlank { "Not indexed" }
+        "indexed" -> "In AI Library"
+        "stale", "partial" -> "Needs AI Update"
+        "failed" -> "AI Library Failed"
+        "pending" -> "Feeding to AI Library"
+        "not_indexed", "" -> "Not in AI Library"
+        else -> normalized.replace('_', ' ').ifBlank { "Not in AI Library" }
     }
 }
 
@@ -118,13 +118,14 @@ fun ArtifactAiStatusChip(status: String?, modifier: Modifier = Modifier) {
     val label = artifactAiStatusLabel(status)
     val tone = when (normalized) {
         "indexed" -> StatusTone.Good
-        "partial", "pending" -> StatusTone.Warning
+        "pending" -> StatusTone.Progress
+        "partial", "stale" -> StatusTone.Warning
         "failed" -> StatusTone.Error
         else -> StatusTone.Neutral
     }
     val icon = when (normalized) {
         "indexed" -> Icons.Outlined.CheckCircle
-        "partial" -> Icons.Outlined.Sync
+        "partial", "stale" -> Icons.Outlined.Sync
         "failed" -> Icons.Outlined.ErrorOutline
         "pending" -> Icons.Outlined.HourglassEmpty
         else -> Icons.Outlined.HelpOutline

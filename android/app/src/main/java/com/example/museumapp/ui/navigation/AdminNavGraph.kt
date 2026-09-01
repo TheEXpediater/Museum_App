@@ -26,6 +26,7 @@ object AdminRoutes {
     const val Login = "admin_login"
     const val Dashboard = "admin_dashboard"
     const val ArtifactList = "admin_artifact_list"
+    const val ArtifactCategories = "admin_artifact_categories"
     const val AiRecognition = "admin_ai_recognition"
     const val Settings = "admin_settings"
     const val SystemStatus = "admin_system_status"
@@ -35,6 +36,10 @@ object AdminRoutes {
 
     fun editArtifact(artifactId: String): String = "admin_artifact_edit/$artifactId"
     fun artifactDetails(artifactId: String): String = "admin_artifact_details/$artifactId"
+}
+
+private object AdminSavedStateKeys {
+    const val CreatedCategoryName = "created_category_name"
 }
 
 @Composable
@@ -101,6 +106,25 @@ fun AdminNavGraph(repository: AdminRepository) {
                 )
             }
         }
+        composable(AdminRoutes.ArtifactCategories) {
+            AdminShell(
+                currentRoute = AdminRoutes.ArtifactList,
+                onNavigate = { route -> navController.navigateTopLevel(route) }
+            ) { padding ->
+                ArtifactListScreen(
+                    repository = repository,
+                    padding = padding,
+                    onAddArtifact = { navController.navigate(AdminRoutes.ArtifactCreate) },
+                    onEditArtifact = { navController.navigate(AdminRoutes.editArtifact(it)) },
+                    initialDestination = "categories",
+                    onCategoryCreated = { categoryName ->
+                        navController.previousBackStackEntry
+                            ?.savedStateHandle
+                            ?.set(AdminSavedStateKeys.CreatedCategoryName, categoryName)
+                    }
+                )
+            }
+        }
         composable(AdminRoutes.AiRecognition) {
             AdminShell(
                 currentRoute = currentRoute,
@@ -149,21 +173,39 @@ fun AdminNavGraph(repository: AdminRepository) {
                 }
             )
         }
-        composable(AdminRoutes.ArtifactCreate) {
+        composable(AdminRoutes.ArtifactCreate) { backStackEntry ->
+            val createdCategoryName by backStackEntry.savedStateHandle
+                .getStateFlow<String?>(AdminSavedStateKeys.CreatedCategoryName, null)
+                .collectAsStateWithLifecycle()
             ArtifactFormScreen(
                 repository = repository,
                 artifactId = null,
-                onClose = { navController.popBackStack() }
+                onClose = { navController.popBackStack() },
+                onViewArtifacts = { navController.navigateTopLevel(AdminRoutes.ArtifactList) },
+                onManageCategories = { navController.navigate(AdminRoutes.ArtifactCategories) { launchSingleTop = true } },
+                categoryResultName = createdCategoryName,
+                onCategoryResultConsumed = {
+                    backStackEntry.savedStateHandle.remove<String>(AdminSavedStateKeys.CreatedCategoryName)
+                }
             )
         }
         composable(
             route = AdminRoutes.ArtifactEdit,
             arguments = listOf(navArgument("artifactId") { type = NavType.StringType })
         ) { backStackEntry ->
+            val createdCategoryName by backStackEntry.savedStateHandle
+                .getStateFlow<String?>(AdminSavedStateKeys.CreatedCategoryName, null)
+                .collectAsStateWithLifecycle()
             ArtifactFormScreen(
                 repository = repository,
                 artifactId = backStackEntry.arguments?.getString("artifactId"),
-                onClose = { navController.popBackStack() }
+                onClose = { navController.popBackStack() },
+                onViewArtifacts = { navController.navigateTopLevel(AdminRoutes.ArtifactList) },
+                onManageCategories = { navController.navigate(AdminRoutes.ArtifactCategories) { launchSingleTop = true } },
+                categoryResultName = createdCategoryName,
+                onCategoryResultConsumed = {
+                    backStackEntry.savedStateHandle.remove<String>(AdminSavedStateKeys.CreatedCategoryName)
+                }
             )
         }
     }

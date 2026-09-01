@@ -19,7 +19,7 @@ from app.schemas.public_content import (
     PublicHomeResponse,
 )
 from app.services.image_storage import image_url_for_path
-from app.services.artifact_validation import public_custom_fields
+from app.services.artifact_validation import effective_visitor_gallery_paths, public_custom_fields, public_metadata_sections
 from app.utils import to_object_id
 
 
@@ -33,8 +33,8 @@ visitor_artifact_router = APIRouter(
 
 def serialize_artifact(document: dict, request: Request) -> PublicArtifactResponse:
     base_url = str(request.base_url)
-    image_paths = document.get("image_paths", [])
     primary_image_path = document.get("primary_image_path")
+    gallery_paths = visitor_gallery_paths(document)
     return PublicArtifactResponse(
         id=str(document["_id"]),
         artifact_code=document.get("artifact_code", ""),
@@ -47,9 +47,26 @@ def serialize_artifact(document: dict, request: Request) -> PublicArtifactRespon
         dimensions=document.get("dimensions"),
         condition=document.get("condition"),
         custom_fields=public_custom_fields(document.get("custom_fields")),
-        image_urls=[image_url_for_path(base_url, path) for path in image_paths],
+        metadata_sections=public_metadata_sections(document),
+        image_urls=[image_url_for_path(base_url, path) for path in gallery_paths],
         primary_image_url=image_url_for_path(base_url, primary_image_path),
     )
+
+
+def visitor_gallery_paths(document: dict) -> list[str]:
+    image_paths = list(document.get("image_paths") or [])
+    available = set(image_paths)
+    primary_image_path = document.get("primary_image_path")
+    gallery: list[str] = []
+    if primary_image_path in available:
+        gallery.append(primary_image_path)
+
+    for path in effective_visitor_gallery_paths(document):
+        if path in available and path != primary_image_path and path not in gallery:
+            gallery.append(path)
+        if len(gallery) >= 6:
+            break
+    return gallery
 
 
 def serialize_news(document: dict) -> NewsResponse:

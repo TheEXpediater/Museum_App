@@ -1,0 +1,43 @@
+.git
+.gradle
+.idea
+.kotlin
+**/build
+**/__pycache__
+**/.pytest_cache
+**/.venv
+**/venv
+**/env
+
+# Local environment and secrets
+.env
+backend/.env
+local.properties
+
+# Runtime/generated data should be restored into volumes, not baked into images.
+backend/uploads/images/*
+!backend/uploads/images/.gitkeep
+artifact_image_source/
+artifact_import_source/
+artifact_import_report.json
+
+# Migration backup payloads can be large and may contain secrets.
+migration/docker-volume-backup/*
+!migration/docker-volume-backup/.gitkeep
+migration/mongodb-backup/*
+!migration/mongodb-backup/.gitkeep
+migration/openclip-backup/*
+!migration/openclip-backup/.gitkeep
+migration/uploads/*
+!migration/uploads/.gitkeep
+
+# Common local noise
+node_modules/
+dist/
+*.apk
+*.aab
+*.dex
+*.class
+*.log
+*.tmp
+*.temp

@@ -36,6 +36,9 @@ class ArtifactModelsTest {
               "primary_image_path": null,
               "primary_image_url": null,
               "primary_image_needs_review": true,
+              "visitor_gallery_image_paths": [],
+              "visitor_gallery_image_urls": [],
+              "visitor_gallery_configured": true,
               "ai_index_status": "indexed",
               "ai_indexed_image_count": 2,
               "ai_indexed_at": "2026-08-03T12:00:00",
@@ -52,6 +55,7 @@ class ArtifactModelsTest {
         assertEquals(2, parsed.aiIndexedImageCount)
         assertEquals("draft", parsed.status)
         assertEquals(true, parsed.primaryImageNeedsReview)
+        assertEquals(true, parsed.visitorGalleryConfigured)
         assertEquals("Weight", parsed.customFields.single().label)
     }
 }

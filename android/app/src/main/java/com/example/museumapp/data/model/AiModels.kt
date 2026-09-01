@@ -23,6 +23,11 @@ data class DashboardSummaryResponse(
     @Json(name = "total_artifacts") val totalArtifacts: Int,
     @Json(name = "total_images") val totalImages: Int,
     @Json(name = "total_categories") val totalCategories: Int,
+    @Json(name = "published_artifacts") val publishedArtifacts: Int = 0,
+    @Json(name = "draft_artifacts") val draftArtifacts: Int = 0,
+    @Json(name = "ai_library_ready_artifacts") val aiLibraryReadyArtifacts: Int = 0,
+    @Json(name = "ai_library_pending_artifacts") val aiLibraryPendingArtifacts: Int = 0,
+    @Json(name = "ai_library_stale_artifacts") val aiLibraryStaleArtifacts: Int = 0,
     @Json(name = "indexed_artifacts") val indexedArtifacts: Int,
     @Json(name = "pending_artifacts") val pendingArtifacts: Int,
     @Json(name = "failed_artifacts") val failedArtifacts: Int,
@@ -62,6 +67,14 @@ data class AiIndexAllResponse(
     @Json(name = "failed_images") val failedImages: Int,
     @Json(name = "skipped_images") val skippedImages: Int,
     val duration: Double,
+    val errors: List<String> = emptyList()
+)
+
+data class AiLibraryFeedResponse(
+    @Json(name = "artifacts_processed") val artifactsProcessed: Int,
+    @Json(name = "images_processed") val imagesProcessed: Int,
+    @Json(name = "successful_artifacts") val successfulArtifacts: Int,
+    @Json(name = "failed_artifacts") val failedArtifacts: Int,
     val errors: List<String> = emptyList()
 )
 

@@ -2,282 +2,450 @@
 
 # Museum_App Claude Code Instructions
 
-## 1. CURRENT MIGRATION STATUS
+
+## 1. PROJECT ROLE
+
+Museum_App is a professional museum artifact management and AI recognition platform.
+
+Primary platforms:
+
+* Android mobile application
+* FastAPI backend
+* MongoDB
+* Qdrant
+* OpenCLIP
+
+Main application areas:
+
+### Visitor
+
+* Artifact catalogue
+* Search
+* Category filtering
+* Artifact details
+* AI recognition
+* Museum information
+
+### Admin
+
+* Dashboard
+* Artifact management
+* Artifact creation/editing
+* Image management
+* AI Library
+* Settings
+* User/administrator management
+
+---
+
+# 2. CURRENT SYSTEM STATE
 
 IMPORTANT:
 
-This project is currently undergoing migration from an old computer.
+The application is currently functional.
 
-Completed:
+The Android application can connect to the backend and run on a physical phone.
 
-- Source code migration completed.
-- Artifact image backup completed.
-- images.zip extracted to:
+MongoDB is being moved/used through Docker.
 
-backend/uploads/images/
+Qdrant is ALREADY migrated and contains existing vector data.
 
-- MongoDB backup completed using mongodump.
-- BSON backup files created for restore.
-- MongoDB migration tools available:
+OpenCLIP/vector data already exists.
 
-  - mongodump.exe
-  - mongorestore.exe
-  - bsondump.exe
+Therefore:
 
-
-Not completed:
-
-- Docker environment setup.
-- MongoDB Docker container setup.
-- MongoDB BSON restore.
-- Qdrant vector restore.
-- OpenCLIP production verification.
-
-
-IMPORTANT:
-
-Do NOT assume missing database data is an application bug.
-
-Do NOT rebuild AI vectors.
-
-Do NOT modify AI indexing logic.
-
-Do NOT modify Qdrant workflow until migration verification is complete.
-
-
-Before AI-related changes:
-
-1. MongoDB restore must be completed.
-2. Artifact records must be verified.
-3. Qdrant storage must be checked.
-4. OpenCLIP status must be verified.
-
-
-Missing collections, empty vectors, or AI errors may be caused by incomplete migration.
-
+**The existing AI/vector system is NOT a migration task anymore.**
 
 ---
 
-# 2. DEVELOPMENT RULES
+# 3. DATA PRESERVATION — ABSOLUTE RULE
 
-Before coding:
+The following are production/source-of-truth data:
 
-Always:
+* MongoDB application data
+* Qdrant collections
+* Existing Qdrant vectors
+* OpenCLIP-generated embeddings
+* Artifact records
+* Artifact images
 
-1. Identify exact files involved.
-2. Explain current behavior.
-3. Explain proposed changes.
-4. Provide implementation plan.
+NEVER destroy, reset, or regenerate them as a troubleshooting shortcut.
 
-Do not modify code immediately.
+DO NOT:
 
-Wait for approval before large changes.
+* Delete MongoDB databases
+* Drop MongoDB collections
+* Delete Docker database volumes
+* Delete Qdrant volumes
+* Delete Qdrant collections
+* Recreate existing Qdrant collections unnecessarily
+* Rebuild the vector database
+* Re-index all artifacts
+* Regenerate OpenCLIP embeddings
+* Run destructive Docker cleanup
+* Run `docker compose down -v`
+* Run `docker volume rm`
+* Run `docker system prune`
+* Run `docker volume prune`
 
+If a database, collection, or vector appears missing:
 
-Rules:
+**Investigate first. Do not rebuild.**
 
-- Make the smallest possible changes.
-- Preserve existing functionality.
-- Reuse existing architecture.
-
-Do not:
-
-- Rewrite working modules.
-- Change API contracts unnecessarily.
-- Refactor unrelated code.
-- Create unnecessary abstractions.
-
-
----
-
-# 3. TOKEN OPTIMIZATION RULES
-
-DO NOT scan the entire repository unless explicitly requested.
-
-Always start with targeted inspection.
-
-
-For UI tasks inspect only:
-
-- Pages
-- Components
-- Styling
-- Frontend state management
-- Related API calls
-
-
-For backend tasks inspect only:
-
-- Routes
-- Services
-- Repositories
-- Models
-- Related configuration
-
-
-Never scan:
-
-- node_modules/
-- .venv/
-- venv/
-- uploads/images/
-- image files
-- build folders
-- generated files
-- logs
-- migration backups
-- MongoDB BSON files
-- ZIP archives
-
+If a migration/configuration issue is suspected, report the evidence before making destructive or structural changes.
 
 ---
 
-# 4. PROJECT OVERVIEW
+# 4. QDRANT / OPENCLIP RULES
 
-Museum_App is a museum artifact management and AI recognition platform.
+Qdrant already contains the application's vector data.
 
+The existing collection is expected to be:
 
-## Visitor Application
+`artifact_images`
 
-Functions:
+The AI system should use the existing vectors.
 
-- Browse artifacts
-- Search artifacts
-- View artifact details
-- AI recognition
+Do not modify the indexing architecture during UI work.
 
+Do not change embedding generation.
 
-## Admin Application
+Do not change vector dimensions.
 
-Functions:
+Do not change collection names.
 
-- Manage artifacts
-- Upload images
-- Manage categories
-- Manage AI library
-- Manage users
+Do not rebuild vectors.
 
+Do not create a new collection merely because a request returns 404.
 
-## Backend
+If Qdrant reports:
 
-Technology:
+* collection not found
+* vector cleanup failure
+* AI index unavailable
+* vector status unavailable
 
-- FastAPI
-- MongoDB
-- Qdrant
-- OpenCLIP
+first inspect:
 
+1. Actual Qdrant collections
+2. Actual collection name
+3. Backend configuration
+4. Environment variables
+5. URL encoding/escaping
+6. Repository configuration
+7. Docker networking
+8. Qdrant client configuration
 
-## AI System
+Only fix the configuration/reference causing the problem.
 
-Technology:
+Example:
 
-- OpenCLIP embeddings
-- Vector similarity search
+If the backend requests an incorrectly escaped collection name while the actual collection is `artifact_images`, correct the reference/configuration.
 
-Vector database:
-
-Qdrant
-
-Collection:
-
-artifact_images
-
+Do NOT rebuild the collection.
 
 ---
 
 # 5. CURRENT DEVELOPMENT PRIORITY
 
-Current priority:
+The priority is now:
 
-Complete migration verification first.
+1. Correct application loading/state behavior
+2. Professional Android UI/UX redesign
+3. Visitor experience
+4. Admin experience
+5. Reliable AI status display
+6. Reliable AI Library interaction
+7. Backend/data stability
+8. Deployment readiness
 
-Order:
+Do not perform unrelated refactoring.
 
-1. Docker environment
-2. MongoDB restore verification
-3. Qdrant restore verification
-4. Backend connection verification
-5. AI verification
-6. Frontend redesign
-7. Admin improvements
-
-Do not start frontend redesign until migration verification is complete.
+Do not redesign the backend architecture.
 
 ---
 
-# 6. UI DESIGN OBJECTIVE
+# 6. SENIOR KOTLIN ENGINEERING STANDARD
 
-Goal:
+Act as a senior Android/Kotlin engineer.
 
-Create a professional museum digital platform.
+Prioritize:
 
+* Clear architecture
+* Reusable components
+* Strong state management
+* Lifecycle awareness
+* Configuration-driven behavior
+* Material Design principles
+* Responsive layouts
+* Accessibility
+* Proper loading/error/success states
+* Coroutine correctness
+* ViewModel responsibility
+* Separation of UI and business logic
+* Minimal recomposition/re-rendering
+* Maintainability
+* Small, focused changes
 
-Design:
+Prefer existing architecture over introducing new frameworks.
 
-- Modern
-- Clean
-- Minimal
-- Professional
-- Responsive
-- Fast
+Do not introduce a new architecture pattern merely for cosmetic reasons.
 
+Do not rewrite working screens when targeted improvements are sufficient.
+
+---
+
+# 7. TOKEN / REPOSITORY EFFICIENCY
+
+DO NOT scan the entire repository.
+
+Do not inspect unrelated files.
+
+Do not read generated files.
+
+Do not inspect:
+
+* node_modules
+* `.venv`
+* `venv`
+* build directories
+* Gradle caches
+* image binaries
+* APKs
+* generated files
+* database dumps
+* migration backups
+* Docker runtime data
+* BSON files
+* ZIP files
+* logs unless directly relevant
+
+For a UI task, inspect only:
+
+* relevant Activity
+* relevant Fragment
+* relevant Composable
+* ViewModel
+* UI state
+* navigation
+* theme/design system
+* relevant API/service calls
+
+For a backend issue, inspect only:
+
+* affected route
+* service
+* repository
+* relevant model/configuration
+* relevant environment/configuration
+
+Do not read entire files if only a small section is relevant.
+
+Use targeted searches first.
+
+---
+
+# 8. CHANGE MANAGEMENT
+
+For normal UI/UX changes:
+
+You may inspect and implement directly when the requested behavior is unambiguous and low-risk.
+
+Before making architectural, database, networking, or AI changes:
+
+STOP and explain:
+
+* What is wrong
+* Evidence
+* Root cause
+* Files involved
+* Proposed fix
+* Risk
+
+Never make a destructive or architectural change silently.
+
+---
+
+# 9. UI/UX PRINCIPLES
+
+The application must feel like a professional museum product.
+
+Visual direction:
+
+* Modern
+* Elegant
+* Clean
+* Premium
+* Minimal
+* Museum-oriented
+* Easy to navigate
+* Mobile-first
+* Professional
+* Consistent
+
+Prioritize content over decoration.
 
 Avoid:
 
-- Large unnecessary headers
-- Excessive filters
-- Crowded cards
-- Repeated information
-- Unnecessary labels
+* Huge headers
+* Excessive empty space
+* Oversized filter sections
+* Tiny icons
+* Tiny action buttons
+* Excessive rounded cards
+* Excessive shadows
+* Inconsistent spacing
+* Random colors
+* Redundant labels
+* Cluttered controls
+* Prototype-looking dialogs
 
-
-Prefer:
-
-- Compact layouts
-- Floating actions
-- Modal workflows
-- Toast notifications
-- Skeleton loading
-- Clear states
-
+Reuse a consistent visual system.
 
 ---
 
-# 7. VISITOR UI REQUIREMENTS
+# 10. LOADING STATE STANDARD
 
+Never reveal a partially initialized screen.
 
-## Artifact Catalogue
+When a screen requires API/data/model initialization:
 
-Problem:
+Show a proper loading state first.
 
-Header and filters consume too much space.
+Example:
 
+`Loading Dashboard...`
 
-Improve:
+`Loading Artifacts...`
 
-- Smaller heading area
-- Compact search
-- Floating filter button
-- Dropdown filter panel
+`Loading AI System...`
 
+`Loading Settings...`
 
-Artifact cards should become the main focus.
+Only reveal the main content after the required state is ready.
 
+Avoid showing the dashboard briefly and then replacing it with loading content.
+
+Use:
+
+* Skeleton loading
+* Progress indicators
+* Proper placeholder content
+* ViewModel state
+* Lifecycle-aware loading
+
+The UI should transition:
+
+Loading → Success
+
+or
+
+Loading → Error
+
+without flashing incorrect/incomplete content.
 
 ---
 
-## Category Filtering
+# 11. SUCCESS / ERROR / EMPTY STATES
 
-Current:
+Every important operation should have a clear state.
 
-Typing categories.
+Examples:
 
+Save:
 
-Change:
+Success:
+`Updated!`
 
-Selectable category list.
+No changes:
 
+Show a modal:
+
+`No changes were made.`
+
+Actions:
+
+`Remain`
+
+`Back to Artifact List`
+
+Errors:
+
+Explain what actually failed.
+
+Do not display contradictory messages.
+
+---
+
+# 12. ARTIFACT EDITING
+
+When editing an artifact:
+
+Track the original values.
+
+Track the current values.
+
+Determine whether changes actually exist.
+
+If changes exist:
+
+Save normally.
+
+After successful save:
+
+Show:
+
+`Updated!`
+
+If no changes exist:
+
+Do not make an unnecessary API request.
+
+Show a modal:
+
+`No changes were made.`
+
+Actions:
+
+* Remain
+* Back to Artifact List
+
+---
+
+# 13. ARTIFACT CATALOGUE
+
+The artifact list should receive most of the visual emphasis.
+
+Do not allow the header/filter area to consume approximately half of the screen.
+
+Use:
+
+* Compact heading
+* Compact search
+* Floating filter control
+* Dropdown/modal filter panel
+
+The catalogue should remain visible and usable while filters are opened.
+
+---
+
+# 14. SEARCH
+
+Search should be compact.
+
+Do not keep a large permanent search section.
+
+Allow the user to reveal search through the appropriate compact UI control.
+
+Maintain fast access.
+
+---
+
+# 15. CATEGORY FILTERING
+
+Category selection must NOT require typing.
+
+Show available categories as selectable options.
 
 Example:
 
@@ -289,384 +457,364 @@ Example:
 
 ☐ Cultural Artifact
 
+Multiple categories must be supported.
 
-Support multiple categories.
+Example selected value:
 
-
-Example:
-
-Selected:
-
-Agricultural Tool
-
-Farm Equipment
-
+`Agricultural Tool, Farm Equipment`
 
 Behavior:
 
-Click checkbox:
-Add category
+* Tap unchecked category → add category
+* Tap checked category → remove category
 
+Display selected categories as removable chips where appropriate.
 
-Click again:
-Remove category
+Filtering should support multiple selected categories.
 
-
-Display selected categories as removable chips.
-
+Do not replace this with a free-text category field.
 
 ---
 
-## Artifact Information
+# 16. ARTIFACT INFORMATION LABELS
 
-Remove unnecessary labels.
+Do not automatically display an unnecessary "Label" section.
 
-Default:
+Artifact information should remain clean.
 
-Show information only.
+Provide an optional:
 
+`Add Label`
 
-Add optional:
+action.
 
-"Add Label"
-
-
-Only create labels when requested.
-
+Only display/create a label when the user explicitly chooses to add one.
 
 ---
 
-# 8. LOADING EXPERIENCE
+# 17. ARTIFACT ACTION MENU
 
+Each artifact in the catalogue should have an overflow menu.
 
-Never display incomplete pages.
+Expected actions:
 
+* Edit
+* Feed to AI Library
+* Delete
 
-Show loading state before content.
+`Feed to AI Library` should ONLY appear when the artifact is not already indexed.
 
-
-Examples:
-
-- Loading Dashboard...
-- Loading Artifacts...
-- Loading AI System...
-
-
-Use:
-
-- Skeleton loaders
-- Progress indicators
-- Proper API loading states
-
-
-Apply to:
-
-- Dashboard
-- Artifact list
-- AI Recognition
-- Settings
-
-
----
-
-# 9. SAVE EXPERIENCE
-
-
-When updating artifacts:
-
-
-If changes exist:
+If already indexed:
 
 Show:
 
-"Updated successfully"
+`Already in AI Library`
 
-
-Use toast notification.
-
-
-If no changes:
-
-Do not save.
-
-
-Show modal:
-
-"No changes were made."
-
-
-Options:
-
-- Stay
-- Return to Artifact List
-
+Do not allow duplicate feeding unless the existing system explicitly supports reprocessing.
 
 ---
 
-# 10. AI LIBRARY UX
+# 18. AI LIBRARY FEEDING
 
+Feeding an artifact to the AI Library must feel like a professional operation.
 
-Improve only the user experience.
+When processing starts, show a modal/dialog such as:
 
-Do not change AI processing logic.
+`Adding Artifact to AI Library`
 
+`Please wait while AI processing is running.`
 
-When feeding artifacts:
-
-Show:
-
-"Adding Artifact to AI Library"
-
-"Please wait while AI processing is running."
-
-
-Display:
+Show progress where available.
 
 Example:
 
-3/14 completed
+`3/14 completed`
 
+Provide states:
 
-States:
+* Processing
+* Completed
+* Failed
 
-- Processing
-- Completed
-- Failed
-
-
-After completion:
+When processing finishes:
 
 Show:
 
-Successful: X
+`Successful: X`
 
-Failed: X
+`Failed: X`
 
+Do not immediately display "failed" while the backend is still initializing or processing.
 
----
+The UI must distinguish:
 
-# 11. ARTIFACT ACTION MENU
-
-
-Current:
-
-- Edit
-- Delete
-
-
-Change:
-
-- Edit
-- Feed to AI Library
-- Delete
-
-
-Rules:
-
-Show "Feed to AI Library" only when artifact is not indexed.
-
-
-If indexed:
-
-Show:
-
-Already in AI Library
-
+* request failed
+* processing failed
+* model unavailable
+* processing completed
+* already indexed
 
 ---
 
-# 12. AI STATUS UI
+# 19. AI STATUS
 
+The UI must not incorrectly state:
 
-Problem:
+`AI Model is not ready`
 
-OpenCLIP may be loaded but UI shows:
+when OpenCLIP is already loaded.
 
-"AI Model is not ready"
+AI status should be refreshed after:
 
+* Initial screen load
+* Backend health check
+* Model initialization
+* Returning to the AI screen
+* Settings reload
+* App resume where appropriate
 
-Improve:
+Use a proper state flow such as:
 
-Refresh AI status after:
+Loading AI Model
 
-- Page load
-- Model initialization
-- Settings reload
-- Backend health check
+→
 
+AI Ready
 
-States:
+→
 
-- Loading AI Model
-- AI Ready
-- AI Index Available
-- Needs Rebuild
+AI Index Available
 
+or
 
-Do not show false errors.
+Needs Attention
 
+Do not show stale state from the previous screen lifecycle.
 
----
-
-# 13. QDRANT RULES
-
-
-Do not modify Qdrant logic until migration is complete.
-
-
-Known issue:
-
-artifact_images collection may not exist.
-
-
-Future improvement:
-
-Before vector operations:
-
-Check collection existence.
-
-
-If missing:
-
-Skip safely.
-
-Log:
-
-"Vector collection unavailable. Skipping cleanup."
-
+The AI screen should be able to refresh its state rather than relying only on the first response received.
 
 ---
 
-# 14. ADMIN ROLE SYSTEM
+# 20. AI STATUS DIAGNOSTICS
 
+When AI status is inconsistent:
 
-Roles:
+Inspect the actual backend responses.
 
+Relevant endpoints may include:
 
-## SUPER ADMIN
+* `/api/v1/ai/health`
+* `/api/v1/ai/index/status`
 
-Permissions:
+Do not infer AI failure purely from a stale UI state.
 
-- Manage administrators
-- Manage users
-- Manage artifacts
-- AI settings
-- Vector rebuild
-- System settings
-- Logs
+If backend logs show a Qdrant error:
 
+Identify whether the problem is:
 
-## ADMIN
+* connection
+* collection name
+* escaping
+* URL/configuration
+* Docker networking
+* actual missing collection
 
-Allowed:
+Do not assume vector corruption.
 
-- Create artifacts
-- Edit artifacts
-- Upload images
-- Manage metadata
-- Feed AI library
-
-
-Restricted:
-
-- User management
-- System settings
-- Vector rebuild
-
+Do not rebuild the vectors.
 
 ---
 
-# 15. ADMIN USER MANAGEMENT
+# 21. PAGE REFRESH / LIFECYCLE
 
+Screens that depend on changing backend state must refresh appropriately.
 
-Fields:
+For example:
 
-- Name
-- Email
-- Role
-- Status
-- Created Date
+When returning to AI Recognition or Settings:
 
+Refresh the relevant AI/model/index status.
 
-Actions:
+When returning to an artifact list:
 
-- Edit
-- Disable
-- Delete
+Refresh the relevant artifact state when appropriate.
 
+Use Android lifecycle-aware mechanisms.
+
+Avoid excessive polling.
+
+Avoid duplicate API calls.
+
+Do not refresh every component indiscriminately.
 
 ---
 
-# 16. ADMIN DASHBOARD
+# 22. ADMIN DASHBOARD
 
-
-Priorities:
+Admin dashboard priorities:
 
 1. Artifact statistics
 2. AI status
-3. Recent activity
-4. System health
+3. System health
+4. Recent activity
 
+Use compact, useful cards.
 
-Avoid:
-
-Large unused panels.
-
-
-Prefer:
-
-- Compact cards
-- Clear indicators
-- Useful charts only
-
+Avoid large decorative panels that do not provide information.
 
 ---
 
-# 17. IMPLEMENTATION WORKFLOW
+# 23. ADMIN ROLE SYSTEM
 
+SUPER ADMIN:
 
-For every request:
+* Manage administrators
+* Manage users
+* Manage artifacts
+* AI settings
+* Vector rebuild controls
+* System settings
+* Logs
 
+ADMIN:
 
-Phase 1:
-Analyze only.
+* Create artifacts
+* Edit artifacts
+* Upload images
+* Manage metadata
+* Feed AI Library
 
-Return:
+Restricted for ADMIN:
 
-- Current files
-- Current behavior
-- Problems
-- Recommended changes
+* User management
+* System settings
+* Vector rebuild
 
-
-Phase 2:
-Planning.
-
-Return:
-
-- Files to modify
-- Files not to modify
-- Testing checklist
-
-
-Phase 3:
-Implement only after approval.
-
+Do not weaken authorization rules for UI convenience.
 
 ---
 
-# FINAL STANDARD
+# 24. API / BACKEND PRESERVATION
 
+Do not change API contracts for UI styling.
 
-The application should feel like:
+Do not change:
 
-A professional museum digital platform.
+* Endpoint semantics
+* Request structures
+* Response structures
+* Authentication behavior
+* Database schemas
 
+unless the requested bug genuinely requires it.
 
-Priority:
+If a backend change is required, make the smallest possible targeted fix.
 
-1. Preserve existing functionality
-2. User experience
-3. Stability
-4. Clean architecture
-5. New features
+---
+
+# 25. NETWORKING
+
+The Android application must not depend permanently on the developer's current laptop IP.
+
+The eventual deployment model is:
+
+Client laptop:
+Docker
+
+* MongoDB
+* Qdrant
+* FastAPI backend
+
+Client phone:
+Android APK
+
+The APK must be designed so that changing the client laptop/network does not require rewriting application source code.
+
+Do not hardcode the developer's current IP into production code.
+
+Networking architecture changes must be analyzed separately from UI changes.
+
+---
+
+# 26. FILE MODIFICATION RULE
+
+Prefer modifying existing files over creating unnecessary new files.
+
+Before creating a reusable component, verify that an equivalent component does not already exist.
+
+Do not create:
+
+* duplicate themes
+* duplicate dialogs
+* duplicate buttons
+* duplicate card components
+* duplicate API clients
+* duplicate state classes
+
+Reuse existing project architecture.
+
+---
+
+# 27. FINAL VERIFICATION
+
+After implementation, verify the affected functionality.
+
+For UI changes check:
+
+* Android build
+* Compilation
+* Navigation
+* Loading state
+* Error state
+* Success state
+* Empty state
+* Screen lifecycle
+* API behavior
+* Physical-device behavior when possible
+
+For AI-related changes additionally verify:
+
+* `/api/v1/ai/health`
+* `/api/v1/ai/index/status`
+* Existing Qdrant collection
+* Existing vector availability
+
+Never run a vector rebuild as a verification step.
+
+---
+
+# 28. ENGINEERING PRINCIPLE
+
+When choosing between:
+
+A large rewrite
+
+and
+
+A small targeted correction:
+
+Choose the small targeted correction.
+
+When choosing between:
+
+Changing data
+
+and
+
+Fixing configuration/state management:
+
+Choose configuration/state management.
+
+When choosing between:
+
+Adding complexity
+
+and
+
+Reusing existing architecture:
+
+Reuse existing architecture.
+
+The goal is:
+
+**A polished production-quality museum application built on the existing working system.**

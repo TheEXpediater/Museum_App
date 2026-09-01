@@ -111,6 +111,11 @@ class AiModelsTest {
               "total_artifacts": 3,
               "total_images": 5,
               "total_categories": 2,
+              "published_artifacts": 2,
+              "draft_artifacts": 1,
+              "ai_library_ready_artifacts": 1,
+              "ai_library_pending_artifacts": 1,
+              "ai_library_stale_artifacts": 0,
               "indexed_artifacts": 1,
               "pending_artifacts": 1,
               "failed_artifacts": 1,
@@ -126,5 +131,28 @@ class AiModelsTest {
         assertNotNull(parsed)
         assertEquals(3, parsed!!.totalArtifacts)
         assertEquals("healthy", parsed.aiStatus)
+        assertEquals(1, parsed.aiLibraryPendingArtifacts)
+    }
+
+    @Test
+    fun parsesAiLibraryFeedResponse() {
+        val adapter = moshi.adapter(AiLibraryFeedResponse::class.java)
+        val parsed = adapter.fromJson(
+            """
+            {
+              "artifacts_processed": 20,
+              "images_processed": 437,
+              "successful_artifacts": 18,
+              "failed_artifacts": 2,
+              "errors": ["two artifacts failed"]
+            }
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        assertEquals(20, parsed!!.artifactsProcessed)
+        assertEquals(437, parsed.imagesProcessed)
+        assertEquals(18, parsed.successfulArtifacts)
+        assertEquals(2, parsed.failedArtifacts)
     }
 }

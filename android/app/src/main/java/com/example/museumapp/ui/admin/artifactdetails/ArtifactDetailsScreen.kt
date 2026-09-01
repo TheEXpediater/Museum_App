@@ -48,6 +48,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.museumapp.data.model.ArtifactDto
+import com.example.museumapp.data.model.ArtifactMetadataSectionIds
 import com.example.museumapp.data.repository.AdminRepositoryContract
 import com.example.museumapp.ui.admin.components.ArtifactAiStatusChip
 
@@ -145,6 +146,9 @@ private fun ArtifactDetailsContent(artifact: ArtifactDto, padding: PaddingValues
             DetailSection("Historical Information") {
                 DetailRow("Origin", artifact.origin)
                 DetailRow("Historical period", artifact.historicalPeriod)
+                artifact.metadataSectionFields(ArtifactMetadataSectionIds.HistoricalDetails).forEach { field ->
+                    DetailRow(field.label, listOf(field.value, field.unit).filter { !it.isNullOrBlank() }.joinToString(" "))
+                }
             }
         }
         item {
@@ -152,8 +156,23 @@ private fun ArtifactDetailsContent(artifact: ArtifactDto, padding: PaddingValues
                 DetailRow("Material", artifact.material)
                 DetailRow("Dimensions", artifact.dimensions)
                 DetailRow("Condition", artifact.condition)
+                artifact.metadataSectionFields(ArtifactMetadataSectionIds.PhysicalDetails).forEach { field ->
+                    DetailRow(field.label, listOf(field.value, field.unit).filter { !it.isNullOrBlank() }.joinToString(" "))
+                }
             }
         }
+        artifact.metadataSections
+            .filterNot { it.id in ArtifactMetadataSectionIds.SystemSections }
+            .filter { section -> section.fields.any { it.label.isNotBlank() || it.value.isNotBlank() } }
+            .forEach { section ->
+                item {
+                    DetailSection(section.title) {
+                        section.fields.sortedBy { it.order }.forEach { field ->
+                            DetailRow(field.label.ifBlank { "Untitled field" }, listOf(field.value, field.unit).filter { !it.isNullOrBlank() }.joinToString(" "))
+                        }
+                    }
+                }
+            }
         if (artifact.customFields.any { it.value.isNotBlank() }) {
             item {
                 DetailSection("Additional Information") {
@@ -241,14 +260,16 @@ private fun PrimaryImageCard(artifact: ArtifactDto) {
 
 @Composable
 private fun AdditionalImagesSection(artifact: ArtifactDto) {
-    val primaryImage = artifact.primaryImageUrl ?: artifact.imageUrls.firstOrNull()
-    val additionalImages = artifact.imageUrls.filter { it.isNotBlank() && it != primaryImage }
-    DetailSection("Additional Images") {
-        if (additionalImages.isEmpty()) {
-            Text("No additional images", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val images = artifact.imageUrls.mapIndexedNotNull { index, url ->
+        val path = artifact.imagePaths.getOrNull(index)
+        if (url.isBlank() || path == null) null else path to url
+    }.primaryFirst(artifact.primaryImagePath)
+    DetailSection("Images (${images.size})") {
+        if (images.isEmpty()) {
+            Text("No images", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(additionalImages, key = { it }) { image ->
+                items(images, key = { it.first }) { image ->
                     Box(
                         modifier = Modifier
                             .size(112.dp)
@@ -257,15 +278,38 @@ private fun AdditionalImagesSection(artifact: ArtifactDto) {
                         contentAlignment = Alignment.Center
                     ) {
                         AsyncImage(
-                            model = image,
+                            model = image.second,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
+                        if (image.first == artifact.primaryImagePath) {
+                            GalleryBadge("MAIN", modifier = Modifier.align(Alignment.TopStart).padding(6.dp))
+                        } else if (image.first in artifact.visitorGalleryImagePaths) {
+                            GalleryBadge("SELECTED", modifier = Modifier.align(Alignment.TopStart).padding(6.dp))
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun GalleryBadge(text: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary
+    ) {
+        Text(
+            text,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
     }
 }
 
@@ -304,6 +348,18 @@ private fun DetailRow(label: String, value: String?) {
             fontWeight = FontWeight.SemiBold
         )
     }
+}
+
+private fun ArtifactDto.metadataSectionFields(sectionId: String) = metadataSections
+    .firstOrNull { it.id == sectionId }
+    ?.fields
+    ?.sortedBy { it.order }
+    ?.filter { it.label.isNotBlank() || it.value.isNotBlank() }
+    .orEmpty()
+
+private fun List<Pair<String, String>>.primaryFirst(primaryPath: String?): List<Pair<String, String>> {
+    val primary = firstOrNull { it.first == primaryPath }
+    return if (primary == null) this else listOf(primary) + filterNot { it.first == primaryPath }
 }
 
 @Composable
