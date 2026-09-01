@@ -30,7 +30,7 @@ Not completed:
 - Docker environment setup.
 - MongoDB Docker container setup.
 - MongoDB BSON restore.
-- Qdrant vector migration.
+- Qdrant vector restore.
 - OpenCLIP production verification.
 
 
@@ -186,33 +186,23 @@ artifact_images
 
 ---
 
-# 5. FRONTEND PRIORITY
+# 5. CURRENT DEVELOPMENT PRIORITY
 
 Current priority:
 
-Improve the existing frontend experience first.
+Complete migration verification first.
 
-Focus:
+Order:
 
-1. Visitor UX
-2. Admin UX
-3. Loading and state management
-4. Artifact workflows
+1. Docker environment
+2. MongoDB restore verification
+3. Qdrant restore verification
+4. Backend connection verification
+5. AI verification
+6. Frontend redesign
+7. Admin improvements
 
-
-Do not rebuild the frontend framework.
-
-Reuse:
-
-- Existing components
-- Existing API endpoints
-- Existing data models
-
-
-Goal:
-
-Improve the application, not replace it.
-
+Do not start frontend redesign until migration verification is complete.
 
 ---
 
