@@ -24,6 +24,16 @@ artifact_import_source/
 artifact_image_source/
 artifact_import_report.json
 
+# Migration backups (large, machine-specific runtime data; transferred separately, see migration/README.md)
+migration/mongodb-backup/*
+!migration/mongodb-backup/.gitkeep
+migration/docker-volume-backup/*
+!migration/docker-volume-backup/.gitkeep
+migration/uploads/*
+!migration/uploads/.gitkeep
+migration/openclip-backup/*
+!migration/openclip-backup/.gitkeep
+
 # Android / Gradle
 .gradle/
 **/.gradle/
@@ -59,3 +69,9 @@ Thumbs.db
 # Java heap dumps
 *.hprof
 images.zip
+
+# Legacy ad-hoc backup snapshots superseded by migration/backup.ps1 output (kept on disk, not in Git)
+/mongodb_backup.zip
+/qdrant.zip
+/museum-images.zip
+/image-assets.zip

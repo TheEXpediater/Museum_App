@@ -8,22 +8,197 @@ Out of scope for this phase: continuous/video recognition, face recognition, reg
 
 ## Handoff Quick Start
 
-For a new computer receiving this project folder:
+The museum's data lives in three places that always move together: **MongoDB** (artifact records, categories, admin/visitor accounts), **Qdrant** (one AI recognition vector per managed artifact image), and **`backend\uploads\images\`** (the actual managed image files that MongoDB records point to and that Qdrant's vectors were generated from). Moving this project to a new computer means transferring all three together through the migration backup, not recreating them from scratch.
+
+### Moving to a new computer (existing installation)
+
+**On the OLD computer**, from the project folder:
 
 ```text
-1. Put an artifact image ZIP (see "Bulk Artifact Import") in the project root, named
-   museum-images.zip or image-assets.zip, if new artifact photos need to be imported.
-2. Double-click setup.bat. Wait for "SETUP COMPLETE".
-3. Double-click run.bat. Keep that window open.
-4. Note the "Android Backend Address" printed by run.bat (e.g. 192.168.1.20:8000).
-5. Install the APK on the phone, connect it to the same Wi-Fi/hotspot as the laptop.
-6. Open the app. It finds the backend automatically. If it cannot, enter the address
-   from step 4 on the "Backend Not Found" screen.
+migration\backup.ps1
 ```
 
-`setup.bat` and `run.bat` are thin wrappers around `start_backend.py` (see "Simplified Backend Startup"); both are safe to run more than once. If this project folder was copied from another computer that already had data (MongoDB, Qdrant, uploaded images), restore that data first with `migration\restore.ps1` (see [migration/README.md](migration/README.md)) before running `setup.bat` — `setup.bat` never overwrites or restores existing Docker volumes itself, by design, so real data is never silently replaced by a stale backup.
+This reads the running MongoDB and Qdrant containers and the `backend\uploads\images\` folder and writes a backup into the `migration\` folder (`migration\mongodb-backup\`, `migration\docker-volume-backup\`, `migration\uploads\`). It only reads the existing system; it never changes it. See [migration/README.md](migration/README.md) for full details and prerequisites (Docker, and MongoDB Database Tools for the most reliable database dump).
 
-The Android app never has a laptop IP compiled into it. See "Android Backend Connection" below.
+Two things then need to move to the new computer, separately:
+
+1. **The Git repository** — the application source code (`android\`, `backend\`, scripts, `compose.yaml`, this README). Clone it normally, or copy the folder.
+2. **The `migration\` backup folder's contents** — `mongodb-backup\`, `docker-volume-backup\`, and `uploads\` are large and are not tracked by Git (see `.gitignore`), so they must be copied separately, for example on a USB drive or external storage, into the same `migration\` folder on the new computer.
+
+**On the NEW computer**, in order:
+
+1. **Install prerequisites** — required: Python 3.12 or 3.13, and Docker Desktop, installed and **running**. Optional: MongoDB Database Tools (`mongorestore`), needed only to restore the database backup produced above.
+2. **Clone/copy the repository** to the new computer, for example `C:\Capstone-client\Museum_App`.
+3. **Copy the backup folder contents** from the old computer into `migration\mongodb-backup\`, `migration\docker-volume-backup\`, and `migration\uploads\` on the new computer, if not already done.
+4. **Restore the existing data**, once, **before** running `setup.bat`:
+
+   ```text
+   migration\restore.ps1
+   ```
+
+   This restores the existing MongoDB records, the existing Qdrant vector collection, and the existing managed artifact images in `backend\uploads\images\` — exactly as they were on the old computer. It is **not** an indexing or rebuild operation: no vectors are regenerated and no images are reprocessed, they are restored as-is. See [migration/README.md](migration/README.md).
+
+   Only run this against a new/empty destination. `restore.ps1` overwrites the target MongoDB and Qdrant Docker volumes with the backup's contents, so never re-run it on a computer that already holds the current live data — that would replace live data with the (possibly older) backup.
+5. Continue with **Run setup** below.
+
+### Setting up a brand-new installation (no existing museum data)
+
+Skip the backup/restore steps above and start directly with **Install prerequisites** and **Clone the project**, then go to **Run setup**.
+
+### Run setup
+
+Double-click:
+
+```text
+setup.bat
+```
+
+This checks that Python and Docker are available, then runs `python start_backend.py --setup`, which:
+
+- prepares the backend's Python virtual environment
+- creates `backend\.env` from `backend\.env.example` if it does not already exist
+- starts and validates the MongoDB and Qdrant Docker containers
+- installs the AI/OpenCLIP dependencies
+- prepares/verifies OpenCLIP can load and produce embeddings
+- imports any artifact ZIP files found in `artifact_image_source\` (see "Adding new artifacts" below) — already-imported artifacts are recognized and skipped automatically, so running this after a migration restore does not duplicate or re-create the existing dataset
+- creates the first admin account if one does not already exist
+- attempts to add a narrowly-scoped Windows Firewall rule for the backend port (this step needs an elevated/Administrator prompt to succeed; if it cannot, it prints the one-line PowerShell command to run manually — see Troubleshooting)
+- runs a final setup validation check
+
+`setup.bat` is safe to run more than once. It does not intentionally delete, overwrite, regenerate, or rebuild existing MongoDB data, Qdrant collections, vectors, or managed artifact images.
+
+### Adding new artifacts (optional, not needed to restore an existing installation)
+
+To add artifacts that do not already exist in the system, provide their photos one of two ways:
+
+**Preferred method** — place the per-artifact ZIP files directly inside:
+
+```text
+Museum_App\artifact_image_source\
+```
+
+Filenames do not need to match anything predefined; the importer (`backend/scripts/import_artifact_zips.py`) automatically scans this folder for `.zip` files and uses each ZIP's own filename as the artifact name. One ZIP = one artifact. An optional one-level subfolder becomes that artifact's initial category.
+
+**Optional alternative** — place a single ZIP in the project root named either `Museum_App\museum-images.zip` or `Museum_App\image-assets.zip`, containing the per-artifact ZIPs described above. `setup.bat` extracts it into `artifact_image_source\` automatically.
+
+`artifact_image_source\` is not tracked by Git (it is listed in `.gitignore`) because it holds large image data; it must exist inside the cloned `Museum_App` folder, not beside it. This raw source is only ever needed to create *new* artifacts — it is not required to restore the existing museum dataset, which already lives in MongoDB, Qdrant, and `backend\uploads\images\`.
+
+### Run the backend
+
+Double-click:
+
+```text
+run.bat
+```
+
+Keep this window open the entire time the Android app is being used — closing it stops the backend. It starts MongoDB, Qdrant, and the FastAPI backend, and prints the available network addresses.
+
+### Get the Android backend address
+
+Look at every address printed under the `Network:` heading, not only the single `Android Backend Address:` line — on a laptop with more than one active network adapter (for example a Docker-internal virtual adapter alongside the real Wi-Fi adapter), that single highlighted line is not guaranteed to be the correct one. Identify the address that belongs to the same Wi-Fi network or mobile hotspot the phone is connected to. Example:
+
+```text
+Network:
+http://192.168.1.20:8000
+```
+
+The address to use in the app is the `host:port` part, e.g. `192.168.1.20:8000`.
+
+### Install the APK
+
+The provided debug build can be installed directly on the Android phone:
+
+```text
+android\app\build\outputs\apk\debug\app-debug.apk
+```
+
+Android may prompt to allow installing from unknown sources, since this is a debug build and not a Play Store-signed release. The APK never needs to be rebuilt to work with a different laptop or a different IP address.
+
+### Connect phone and laptop
+
+The phone and the laptop must be connected to the same Wi-Fi network, or the same mobile hotspot. The laptop is the one providing the local backend; internet access is not required for normal museum operation once setup has completed and the required model dependencies are already available locally (see "Internet Requirements" below).
+
+### Open the Android app
+
+The app's backend connection follows this flow (implemented by `BackendConnectionManager`, see "Android Backend Connection"):
+
+```text
+App opens
+    |
+    v
+Try the previously saved successful backend address -> health check
+    |
+    +-- succeeds --> connect and keep using it
+    |
+    +-- fails ------> scan the phone's current local Wi-Fi /24 subnet
+                          |
+                          +-- backend found -----> connect and save the address
+                          |
+                          +-- backend not found -> show "Backend Not Found"
+                                                        |
+                                                        v
+                                          user enters laptop IP:port manually
+                                                        |
+                                                        v
+                                                  health check
+                                                        |
+                                                        v
+                                        successful address is saved
+```
+
+No mDNS, no NSD, no Bonjour, and no cloud-based discovery are used. No laptop IP is ever hardcoded into the APK, and the APK never needs to be rebuilt when the laptop's IP changes.
+
+### Network changes
+
+If the phone later moves to a different Wi-Fi network or hotspot while the app is already open, the current implementation does not detect that change mid-session. Close and reopen the app to trigger the saved-address check and local-network scan again.
+
+### Normal operation
+
+Once setup is complete, day-to-day use is:
+
+```text
+Start laptop
+    |
+    v
+Start Docker Desktop
+    |
+    v
+Double-click run.bat
+    |
+    v
+Connect phone and laptop to the same Wi-Fi or hotspot
+    |
+    v
+Open the installed APK
+    |
+    v
+App connects to the local backend
+    |
+    v
+Use the museum system
+```
+
+## Internet Requirements
+
+Internet access may be required during initial setup, to download Python packages, AI/OpenCLIP dependencies, and OpenCLIP model weights that are not already cached locally.
+
+After setup is complete and the required model files already exist locally, normal museum operation is fully local:
+
+```text
+Android phone
+      |
+      | local Wi-Fi / hotspot
+      |
+      v
+Windows laptop
+      |
+      +-- FastAPI backend
+      +-- MongoDB
+      +-- Qdrant
+      `-- OpenCLIP
+```
+
+No internet connection is required for normal backend communication, artifact browsing, or AI recognition once setup has completed.
 
 ## Visitor Application
 
@@ -375,9 +550,9 @@ The Android System Status screen labels this action `Index Artifact Images`. It 
 
 ## Bulk Artifact Import
 
-Place removable ZIP collections under the repository-root folder `artifact_image_source/`. This folder is ignored by Git and is only an import source; the app continues to store managed runtime images under `backend/uploads/images/`.
+Place removable ZIP collections under the repository-root folder `artifact_image_source/`. This folder is ignored by Git and is only an import source for *new* artifacts; the app continues to store managed runtime images under `backend/uploads/images/`. Restoring an existing installation's dataset does not use this folder — see "Handoff Quick Start" for the MongoDB/Qdrant/managed-image migration procedure.
 
-For a handoff, the recipient does not need to create this folder by hand: put a single ZIP named `museum-images.zip` or `image-assets.zip` in the project root, containing the per-artifact ZIPs (and optional category subfolders) below. `setup.bat` (`python start_backend.py --setup`) extracts it into `artifact_image_source/` and imports it automatically.
+To add new artifacts, a single ZIP named `museum-images.zip` or `image-assets.zip` can be placed in the project root, containing the per-artifact ZIPs (and optional category subfolders) below. `setup.bat` (`python start_backend.py --setup`) extracts it into `artifact_image_source/` and imports it automatically.
 
 Example (either placed directly, or inside `museum-images.zip`):
 
@@ -481,11 +656,11 @@ Verify that port `8000` is listening:
 Get-NetTCPConnection -LocalPort 8000 -State Listen
 ```
 
-Optional Administrator PowerShell firewall rule, scoped to only the museum backend port:
+`setup.bat` attempts to add this rule automatically (it needs an Administrator prompt to succeed). If it could not, add it manually with this Administrator PowerShell command — the name matches what `setup.bat` checks for, so it will not be duplicated on the next run:
 
 ```powershell
 New-NetFirewallRule `
-  -DisplayName "Museum FastAPI 8000" `
+  -DisplayName "Museum Backend 8000" `
   -Direction Inbound `
   -Protocol TCP `
   -LocalPort 8000 `
@@ -677,8 +852,36 @@ If the laptop switches to a different Wi-Fi/hotspot network while the Android ap
 
 ## Troubleshooting
 
-If AI health is degraded, check `python start_backend.py --check-ai`, Qdrant at `http://localhost:6333`, and the OpenCLIP dependency installation. If recognition returns `no_match`, first confirm that artifacts have indexed vectors, then tune thresholds with real museum photos.
+**Python missing** — `setup.bat`/`run.bat` report this and exit. Install Python 3.12 or 3.13 from [python.org](https://www.python.org/downloads/) and make sure it is on PATH, then re-run.
 
-If the Android app shows "Backend Not Found": confirm the phone and laptop are on the same Wi-Fi/hotspot, confirm `run.bat` is still running and shows `Status: RUNNING`, confirm the Windows Firewall rule for port `8000` exists, and try entering the "Android Backend Address" that `run.bat` printed directly into the app's manual-entry field. A wrong or stale address is never retried forever or silently kept — it is only saved after a real health check succeeds.
+**Docker missing** — `setup.bat` reports this and exits. Install Docker Desktop, then re-run `setup.bat`.
 
-If Docker is missing, install Docker Desktop and re-run `setup.bat`. If MongoDB or Qdrant will not start, check whether another process already holds port `27017`/`6333` (`netstat -ano | findstr :27017`). If moving this project from another computer and the database appears empty, restore from a backup with `migration\restore.ps1` (see [migration/README.md](migration/README.md)) rather than re-creating data by hand — never delete or recreate MongoDB/Qdrant volumes as a shortcut.
+**Docker installed but not running** — `setup.bat` reports this and exits. Start Docker Desktop, wait for it to finish starting, then re-run `setup.bat`.
+
+**MongoDB restore failure** (`migration\restore.ps1`) — confirm Docker is running and `mongorestore` (MongoDB Database Tools) is installed and on PATH, then re-run `migration\restore.ps1`. See [migration/README.md](migration/README.md).
+
+**Qdrant restore failure** — confirm Docker is running; if no Qdrant volume backup is available, the Qdrant collection can be re-created empty and re-indexed from MongoDB with `python start_backend.py --index-ai --rebuild`, but only do this when there genuinely is no existing vector backup to restore — never as a shortcut when real vectors already exist.
+
+**Backend not starting / port `8000` already in use** — another process is already listening on port 8000. Check with `netstat -ano | findstr :8000`, stop the conflicting process, then run `run.bat` again.
+
+**MongoDB or Qdrant will not start** — check whether another process already holds their ports (`netstat -ano | findstr :27018` for MongoDB, `netstat -ano | findstr :6333` for Qdrant — MongoDB is published on host port `27018`, not the default `27017`, to avoid colliding with a MongoDB service already installed on the laptop).
+
+**AI health is degraded** — check `python start_backend.py --check-ai`, confirm Qdrant is reachable at `http://localhost:6333`, and confirm the AI/OpenCLIP dependencies installed correctly during setup. If recognition returns `no_match`, first confirm that artifacts have indexed vectors, then tune thresholds with real museum photos.
+
+**Phone cannot reach the backend** — confirm the phone and laptop are on the same Wi-Fi network or hotspot, confirm `run.bat` is still running and shows `Status: RUNNING`, and confirm the Windows Firewall rule for port `8000` exists (see below).
+
+**Wrong LAN IP selected** — a laptop with more than one active network adapter (for example a Docker-internal virtual adapter) can have `run.bat` highlight an address on the wrong adapter. Check every address under `Network:` and use the one on the same network as the phone, not only the single highlighted `Android Backend Address:` line.
+
+**Windows Firewall blocking port 8000** — `setup.bat` tries to add a scoped inbound rule automatically, but this normally requires an Administrator prompt to succeed. If it could not be added, run this once in an Administrator PowerShell:
+
+```powershell
+New-NetFirewallRule -DisplayName "Museum Backend 8000" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow
+```
+
+**Phone and laptop on different networks** — the app's local-network scan only checks the phone's own `/24` subnet, so it cannot find a backend on a different network. Connect both devices to the same Wi-Fi network or the same mobile hotspot.
+
+**App shows "Backend Not Found"** — enter the laptop's `host:port` from the `Network:` list printed by `run.bat` into the app's manual-entry field. A wrong or stale address is never retried forever or silently kept; the app only saves an address after a real health check against it succeeds.
+
+**Stale saved IP after changing networks** — this is expected and self-resolving: on the next app launch (or after closing and reopening the app), the app retries the saved address, fails fast if it no longer works, rescans the current network, and falls back to manual entry if nothing is found. See "Network changes" above.
+
+**General rule when troubleshooting a migration**: never delete MongoDB or Qdrant Docker volumes, and never rebuild the vector database, as a troubleshooting shortcut. Investigate the actual cause (wrong port, wrong `.env` value, Docker not running, missing backup file) first.

@@ -49,7 +49,7 @@ function Ensure-Dirs {
 
 function Test-DockerReady {
     if (-not (Test-Command docker)) { return $false }
-    & docker info *> $null
+    cmd /c "docker info >nul 2>nul"
     return ($LASTEXITCODE -eq 0)
 }
 
@@ -112,7 +112,7 @@ function Backup-MongoDb {
 }
 
 function Test-VolumeExists($VolumeName) {
-    & docker volume inspect $VolumeName *> $null
+    cmd /c "docker volume inspect `"$VolumeName`" >nul 2>nul"
     return ($LASTEXITCODE -eq 0)
 }
 

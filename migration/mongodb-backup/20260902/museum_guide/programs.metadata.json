@@ -1,1 +1,0 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"name_normalized":{"$numberInt":"1"}},"name":"uniq_programs_name","unique":true},{"v":{"$numberInt":"2"},"key":{"active":{"$numberInt":"1"}},"name":"idx_programs_active"}],"uuid":"bed29953a6cd4aa580284e788c9c4b5f","collectionName":"programs","type":"collection"}

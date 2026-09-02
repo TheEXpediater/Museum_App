@@ -39,20 +39,20 @@ function Invoke-Compose {
 
 function Validate-Docker {
     if (-not (Test-Command docker)) { Fail "Docker was not found. Install Docker Desktop first." }
-    & docker info *> $null
+    cmd /c "docker info >nul 2>nul"
     if ($LASTEXITCODE -ne 0) { Fail "Docker is installed but not running." }
-    & docker compose version *> $null
+    cmd /c "docker compose version >nul 2>nul"
     if ($LASTEXITCODE -ne 0) { Fail "Docker Compose was not found." }
     if (-not (Test-Path -LiteralPath $ComposeFile)) { Fail "compose.yaml was not found." }
     Write-Ok "Docker and Compose are available"
 }
 
 function Create-Networks {
-    & docker network inspect museum_app_default *> $null
+    cmd /c "docker network inspect museum_app_default >nul 2>nul"
     if ($LASTEXITCODE -eq 0) {
         Write-Ok "Docker network exists: museum_app_default"
     } else {
-        & docker network create museum_app_default *> $null
+        cmd /c "docker network create museum_app_default >nul 2>nul"
         if ($LASTEXITCODE -ne 0) { Fail "Could not create Docker network museum_app_default." }
         Write-Ok "Docker network created: museum_app_default"
     }

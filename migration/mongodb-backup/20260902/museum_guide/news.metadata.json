@@ -1,1 +1,0 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"published_at":{"$numberInt":"-1"}},"name":"idx_news_published_at"},{"v":{"$numberInt":"2"},"key":{"is_published":{"$numberInt":"1"}},"name":"idx_news_is_published"}],"uuid":"5bf773c95ad94c2ab791317a83c65600","collectionName":"news","type":"collection"}
