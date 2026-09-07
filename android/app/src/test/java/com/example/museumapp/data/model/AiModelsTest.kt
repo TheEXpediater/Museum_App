@@ -4,6 +4,7 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class AiModelsTest {
@@ -132,6 +133,39 @@ class AiModelsTest {
         assertEquals(3, parsed!!.totalArtifacts)
         assertEquals("healthy", parsed.aiStatus)
         assertEquals(1, parsed.aiLibraryPendingArtifacts)
+        // model_3d_* fields are absent from this legacy-shaped payload -- must default safely.
+        assertEquals(false, parsed.model3dEnabled)
+        assertEquals(false, parsed.colmapAvailable)
+        assertNull(parsed.colmapVersion)
+    }
+
+    @Test
+    fun parsesDashboardResponseWithModel3DFields() {
+        val adapter = moshi.adapter(DashboardSummaryResponse::class.java)
+        val parsed = adapter.fromJson(
+            """
+            {
+              "total_artifacts": 3,
+              "total_images": 5,
+              "total_categories": 2,
+              "indexed_artifacts": 1,
+              "pending_artifacts": 1,
+              "failed_artifacts": 1,
+              "indexed_vectors": 5,
+              "ai_status": "healthy",
+              "database_status": "connected",
+              "uploads_status": "available",
+              "model_3d_enabled": true,
+              "colmap_available": true,
+              "colmap_version": "3.9"
+            }
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        assertEquals(true, parsed!!.model3dEnabled)
+        assertEquals(true, parsed.colmapAvailable)
+        assertEquals("3.9", parsed.colmapVersion)
     }
 
     @Test

@@ -19,6 +19,9 @@ import com.example.museumapp.data.model.GuestSessionRequestDto
 import com.example.museumapp.data.model.HealthResponse
 import com.example.museumapp.data.model.LoginRequest
 import com.example.museumapp.data.model.LoginResponse
+import com.example.museumapp.data.model.Model3DBuildResponseDto
+import com.example.museumapp.data.model.Model3DStateDto
+import com.example.museumapp.data.model.Model3DStatusResponseDto
 import com.example.museumapp.data.model.MuseumInformationDto
 import com.example.museumapp.data.model.NewsDto
 import com.example.museumapp.data.model.PrimaryImageRequest
@@ -213,4 +216,33 @@ interface AdminApiService {
 
     @GET("api/v1/ai/index/status")
     suspend fun indexStatus(): AiIndexStatusResponse
+
+    @GET("api/v1/artifacts/{artifactId}/3d")
+    suspend fun get3DState(@Path("artifactId") artifactId: String): Model3DStateDto
+
+    @Multipart
+    @POST("api/v1/artifacts/{artifactId}/3d/images")
+    suspend fun add3DImages(
+        @Path("artifactId") artifactId: String,
+        @Part("reuse_image_paths") reuseImagePaths: RequestBody,
+        @Part images: List<MultipartBody.Part>
+    ): Model3DStateDto
+
+    @DELETE("api/v1/artifacts/{artifactId}/3d/images/{imageId}")
+    suspend fun delete3DImage(
+        @Path("artifactId") artifactId: String,
+        @Path("imageId") imageId: String
+    ): Model3DStateDto
+
+    @DELETE("api/v1/artifacts/{artifactId}/3d")
+    suspend fun delete3DReconstruction(@Path("artifactId") artifactId: String): Model3DStateDto
+
+    @POST("api/v1/artifacts/{artifactId}/3d/preflight")
+    suspend fun run3DPreflight(@Path("artifactId") artifactId: String): Model3DStateDto
+
+    @POST("api/v1/artifacts/{artifactId}/3d/build")
+    suspend fun build3DModel(@Path("artifactId") artifactId: String): Model3DBuildResponseDto
+
+    @GET("api/v1/artifacts/{artifactId}/3d/status")
+    suspend fun get3DStatus(@Path("artifactId") artifactId: String): Model3DStatusResponseDto
 }

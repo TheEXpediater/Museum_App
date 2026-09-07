@@ -146,6 +146,14 @@ dependencies {
     implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
     implementation("io.coil-kt:coil-compose:2.7.0")
 
+    // Local (non-AR) 3D object viewer for published artifact reconstructions. Version pinned to
+    // 2.3.0 -- the latest release on Maven Central whose bundled Compose UI/Foundation (1.7.8)
+    // and Kotlin stdlib (2.0.21) requirements match this project's Compose BOM (2024.12.01, ~ui
+    // 1.7.6) and Kotlin Gradle plugin (2.0.21). Versions 2.3.1+ (and the 3.x/4.x line) bump their
+    // bundled Compose runtime to 1.9.x/1.10.x and Kotlin stdlib to 2.2/2.4, which would force a
+    // much newer Compose/Kotlin toolchain onto this app than the one it's pinned to.
+    implementation("io.github.sceneview:sceneview:2.3.0")
+
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

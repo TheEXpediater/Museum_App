@@ -39,6 +39,11 @@ class PublicArtifactResponse(BaseModel):
     metadata_sections: list[PublicArtifactMetadataSection] = Field(default_factory=list)
     image_urls: list[str] = Field(default_factory=list)
     primary_image_url: str | None = None
+    model_3d_available: bool = False
+    model_3d_url: str | None = None
+    model_3d_version: int | None = None
+    model_3d_sha256: str | None = None
+    model_3d_size_bytes: int | None = None
 
 
 class PublicArtifactListResponse(BaseModel):

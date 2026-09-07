@@ -30,4 +30,7 @@ class DashboardSummaryResponse(BaseModel):
     ai_status: str
     database_status: str
     uploads_status: str
+    model_3d_enabled: bool = False
+    colmap_available: bool = False
+    colmap_version: str | None = None
     recent_artifacts: list[DashboardRecentArtifact] = Field(default_factory=list)

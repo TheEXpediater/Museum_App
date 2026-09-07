@@ -50,6 +50,17 @@ class Settings(BaseSettings):
     ai_recognition_max_results: int = Field(default=5, alias="AI_RECOGNITION_MAX_RESULTS")
     ai_recognition_vector_candidates: int = Field(default=25, alias="AI_RECOGNITION_VECTOR_CANDIDATES")
 
+    model_3d_enabled: bool = Field(default=True, alias="MODEL_3D_ENABLED")
+    colmap_bin: str = Field(default="colmap", alias="COLMAP_BIN")
+    colmap_use_gpu: bool = Field(default=False, alias="COLMAP_USE_GPU")
+    reconstruction_directory: str = Field(default="uploads/reconstruction", alias="RECONSTRUCTION_DIRECTORY")
+    model_3d_directory: str = Field(default="uploads/models3d", alias="MODEL_3D_DIRECTORY")
+    model_3d_min_source_images: int = Field(default=20, alias="MODEL_3D_MIN_SOURCE_IMAGES")
+    model_3d_min_registered_ratio: float = Field(default=0.70, alias="MODEL_3D_MIN_REGISTERED_RATIO")
+    model_3d_max_input_dimension: int = Field(default=2000, alias="MODEL_3D_MAX_INPUT_DIMENSION")
+    model_3d_simplify_ratio: float = Field(default=0.25, alias="MODEL_3D_SIMPLIFY_RATIO")
+    model_3d_max_glb_mb: int = Field(default=50, alias="MODEL_3D_MAX_GLB_MB")
+
     @field_validator(
         "mongodb_url",
         "mongodb_database",
@@ -143,6 +154,34 @@ class Settings(BaseSettings):
             raise ValueError("GUEST_SESSION_EXPIRE_HOURS must be greater than zero")
         return value
 
+    @field_validator("model_3d_min_source_images")
+    @classmethod
+    def min_source_images_must_be_positive(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("MODEL_3D_MIN_SOURCE_IMAGES must be greater than zero")
+        return value
+
+    @field_validator("model_3d_min_registered_ratio")
+    @classmethod
+    def registered_ratio_must_be_fractional(cls, value: float) -> float:
+        if not 0.0 < value <= 1.0:
+            raise ValueError("MODEL_3D_MIN_REGISTERED_RATIO must be between 0 and 1")
+        return value
+
+    @field_validator("model_3d_max_input_dimension", "model_3d_max_glb_mb")
+    @classmethod
+    def model_3d_positive_integer(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("value must be greater than zero")
+        return value
+
+    @field_validator("model_3d_simplify_ratio")
+    @classmethod
+    def simplify_ratio_must_be_fractional(cls, value: float) -> float:
+        if not 0.0 < value <= 1.0:
+            raise ValueError("MODEL_3D_SIMPLIFY_RATIO must be between 0 and 1")
+        return value
+
     @property
     def parsed_cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
@@ -160,6 +199,20 @@ class Settings(BaseSettings):
         if upload_path.name == "images":
             return upload_path.parent
         return upload_path
+
+    def _resolved_backend_path(self, raw_path: str) -> Path:
+        path = Path(raw_path).expanduser()
+        if not path.is_absolute():
+            path = BACKEND_DIR / path
+        return path.resolve()
+
+    @property
+    def reconstruction_root_path(self) -> Path:
+        return self._resolved_backend_path(self.reconstruction_directory)
+
+    @property
+    def model_3d_root_path(self) -> Path:
+        return self._resolved_backend_path(self.model_3d_directory)
 
 
 @lru_cache

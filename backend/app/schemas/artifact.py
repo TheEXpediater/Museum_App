@@ -53,6 +53,8 @@ class ArtifactResponse(BaseModel):
     ai_indexed_image_count: int | None = None
     ai_indexed_at: str | None = None
     ai_index_error: str | None = None
+    model_3d_status: str = "none"
+    model_3d_available: bool = False
     created_by: str
     created_at: str
     updated_at: str

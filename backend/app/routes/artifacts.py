@@ -27,6 +27,7 @@ from app.services.artifact_validation import (
 )
 from app.services.artifact_indexing_service import ArtifactIndexingService
 from app.services.image_storage import cleanup_images, image_url_for_path, safe_delete_image, save_uploads
+from app.repositories.reconstruction_repository import get_model_3d_state
 from app.utils import to_object_id
 
 
@@ -45,6 +46,7 @@ def serialize_artifact(document: dict, request: Request) -> ArtifactResponse:
     image_paths = document.get("image_paths", [])
     primary_image_path = document.get("primary_image_path")
     visitor_gallery_image_paths = effective_visitor_gallery_paths(document)
+    model_3d = get_model_3d_state(document)
     return ArtifactResponse(
         id=str(document["_id"]),
         artifact_code=document.get("artifact_code", ""),
@@ -71,6 +73,8 @@ def serialize_artifact(document: dict, request: Request) -> ArtifactResponse:
         ai_indexed_image_count=document.get("ai_indexed_image_count"),
         ai_indexed_at=serialize_datetime(document.get("ai_indexed_at")) if document.get("ai_indexed_at") else None,
         ai_index_error=document.get("ai_index_error"),
+        model_3d_status=model_3d["status"],
+        model_3d_available=model_3d["status"] == "ready" and bool(model_3d.get("path")),
         created_by=str(document.get("created_by", "")),
         created_at=serialize_datetime(document.get("created_at")),
         updated_at=serialize_datetime(document.get("updated_at")),

@@ -35,7 +35,10 @@ data class DashboardSummaryResponse(
     @Json(name = "ai_status") val aiStatus: String,
     @Json(name = "database_status") val databaseStatus: String,
     @Json(name = "uploads_status") val uploadsStatus: String,
-    @Json(name = "recent_artifacts") val recentArtifacts: List<DashboardRecentArtifactDto> = emptyList()
+    @Json(name = "recent_artifacts") val recentArtifacts: List<DashboardRecentArtifactDto> = emptyList(),
+    @Json(name = "model_3d_enabled") val model3dEnabled: Boolean = false,
+    @Json(name = "colmap_available") val colmapAvailable: Boolean = false,
+    @Json(name = "colmap_version") val colmapVersion: String? = null
 )
 
 data class DashboardRecentArtifactDto(

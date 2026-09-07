@@ -16,7 +16,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import Settings, get_settings
 from app.database.mongodb import MongoConnectionError, ensure_indexes, mongo_manager
-from app.routes import admin, ai, artifact_categories, artifacts, auth, public, student, visitor
+from app.repositories import reconstruction_repository
+from app.routes import admin, ai, artifact_categories, artifacts, auth, model3d, public, student, visitor
 from app.services.image_storage import ensure_upload_directory
 from app.services.openclip_warmup_service import get_openclip_warmup_service
 
@@ -67,6 +68,8 @@ def create_app(settings: Settings | None = None, database=None) -> FastAPI:
     @app.on_event("startup")
     def startup() -> None:
         ensure_upload_directory(settings)
+        settings.reconstruction_root_path.mkdir(parents=True, exist_ok=True)
+        settings.model_3d_root_path.mkdir(parents=True, exist_ok=True)
         if app.state.database is None:
             app.state.database = mongo_manager.connect(settings)
         else:
@@ -76,6 +79,10 @@ def create_app(settings: Settings | None = None, database=None) -> FastAPI:
                 get_openclip_warmup_service(settings).start()
             except Exception:
                 logger.exception("Failed to start OpenCLIP warmup during application startup.")
+        try:
+            reconstruction_repository.reconcile_abandoned_jobs(app.state.database)
+        except Exception:
+            logger.exception("Failed to reconcile abandoned 3D reconstruction jobs during startup.")
 
     @app.on_event("shutdown")
     def shutdown() -> None:
@@ -104,6 +111,7 @@ def create_app(settings: Settings | None = None, database=None) -> FastAPI:
     app.include_router(public.public_router, prefix=API_PREFIX)
     app.include_router(public.visitor_artifact_router, prefix=API_PREFIX)
     app.include_router(artifacts.router, prefix=API_PREFIX)
+    app.include_router(model3d.router, prefix=API_PREFIX)
     app.include_router(artifact_categories.router, prefix=API_PREFIX)
     app.include_router(ai.router, prefix=API_PREFIX)
     app.include_router(admin.router, prefix=API_PREFIX)

@@ -20,6 +20,7 @@ import com.example.museumapp.ui.visitor.artifacts.VisitorArtifactsScreen
 import com.example.museumapp.ui.visitor.entry.VisitorEntryScreen
 import com.example.museumapp.ui.visitor.guest.GuestInfoScreen
 import com.example.museumapp.ui.visitor.home.VisitorHomeScreen
+import com.example.museumapp.ui.visitor.model3d.ArtifactModel3DScreen
 import com.example.museumapp.ui.visitor.onboarding.VisitorOnboardingScreen
 import com.example.museumapp.ui.visitor.scan.VisitorCameraScreen
 import com.example.museumapp.ui.visitor.settings.VisitorSettingsScreen
@@ -179,7 +180,18 @@ fun VisitorNavGraph(
                 artifactId = entry.arguments?.getString("artifactId"),
                 openedFromScan = entry.arguments?.getBoolean("fromScan") ?: false,
                 onBack = { navController.popBackStack() },
-                onScanAgain = { navController.navigate(VisitorRoutes.Camera) }
+                onScanAgain = { navController.navigate(VisitorRoutes.Camera) },
+                onViewModel3D = { id -> navController.navigate(VisitorRoutes.artifactModel3D(id)) }
+            )
+        }
+        composable(
+            route = VisitorRoutes.ArtifactModel3D,
+            arguments = listOf(navArgument("artifactId") { type = NavType.StringType })
+        ) { entry ->
+            ArtifactModel3DScreen(
+                repository = repository,
+                artifactId = entry.arguments?.getString("artifactId"),
+                onBack = { navController.popBackStack() }
             )
         }
     }

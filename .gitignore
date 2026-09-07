@@ -20,6 +20,10 @@ build/
 # Uploads
 backend/uploads/images/*
 !backend/uploads/images/.gitkeep
+backend/uploads/reconstruction/*
+!backend/uploads/reconstruction/.gitkeep
+backend/uploads/models3d/*
+!backend/uploads/models3d/.gitkeep
 artifact_import_source/
 artifact_image_source/
 artifact_import_report.json

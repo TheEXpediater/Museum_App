@@ -79,6 +79,8 @@ fun ArtifactDetailsScreen(
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var menuExpanded by remember { mutableStateOf(false) }
+    var showAddPhotosSheet by remember { mutableStateOf(false) }
+    var showRebuildConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState.deleted) {
         if (uiState.deleted) onBack()
@@ -162,9 +164,82 @@ fun ArtifactDetailsScreen(
             )
             uiState.artifact != null -> ArtifactDetailsContent(
                 artifact = uiState.artifact!!,
-                padding = padding
+                uiState = uiState,
+                padding = padding,
+                onAddPhotosClick = { showAddPhotosSheet = true },
+                onRemoveModel3DImage = viewModel::remove3DImage,
+                onRunPreflight = viewModel::runPreflight,
+                onBuildModel = viewModel::buildModel,
+                onRebuildClick = { showRebuildConfirm = true },
+                onDeleteReconstructionClick = viewModel::requestDeleteReconstruction
             )
         }
+    }
+
+    if (showAddPhotosSheet && uiState.artifact != null) {
+        AddReconstructionPhotosDialog(
+            artifact = uiState.artifact!!,
+            onDismiss = { showAddPhotosSheet = false },
+            onConfirm = { reusePaths, newImages ->
+                viewModel.add3DImages(reusePaths, newImages)
+                showAddPhotosSheet = false
+            }
+        )
+    }
+
+    if (showRebuildConfirm) {
+        AlertDialog(
+            onDismissRequest = { showRebuildConfirm = false },
+            title = { Text("Rebuild 3D model?") },
+            text = { Text("This starts a new reconstruction. The current 3D model stays available to visitors until the rebuild finishes successfully.") },
+            confirmButton = {
+                Button(onClick = {
+                    showRebuildConfirm = false
+                    viewModel.buildModel()
+                }) {
+                    Text("Rebuild")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRebuildConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (uiState.pendingDeleteReconstruction) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissDeleteReconstruction,
+            title = { Text("Delete 3D reconstruction data?") },
+            text = { Text("This removes all reconstruction photos, work files, and any published 3D model for this artifact. This cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = viewModel::confirmDeleteReconstruction,
+                    enabled = !uiState.deletingReconstruction,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissDeleteReconstruction, enabled = !uiState.deletingReconstruction) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    uiState.model3DError?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissModel3DError,
+            title = { Text("3D Model Action Failed") },
+            text = { Text(message) },
+            confirmButton = {
+                Button(onClick = viewModel::dismissModel3DError) { Text("Done") }
+            }
+        )
     }
 
     if (uiState.pendingDelete) {
@@ -216,7 +291,17 @@ fun ArtifactDetailsScreen(
 }
 
 @Composable
-private fun ArtifactDetailsContent(artifact: ArtifactDto, padding: PaddingValues) {
+private fun ArtifactDetailsContent(
+    artifact: ArtifactDto,
+    uiState: ArtifactDetailsUiState,
+    padding: PaddingValues,
+    onAddPhotosClick: () -> Unit,
+    onRemoveModel3DImage: (String) -> Unit,
+    onRunPreflight: () -> Unit,
+    onBuildModel: () -> Unit,
+    onRebuildClick: () -> Unit,
+    onDeleteReconstructionClick: () -> Unit
+) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -292,6 +377,20 @@ private fun ArtifactDetailsContent(artifact: ArtifactDto, padding: PaddingValues
         }
         item {
             AiIndexSection(artifact)
+        }
+        item {
+            Model3DSection(
+                state = uiState.model3D,
+                job = uiState.model3DJob,
+                isLoading = uiState.model3DLoading,
+                isBusy = uiState.model3DBusy || uiState.deletingReconstruction,
+                onAddPhotosClick = onAddPhotosClick,
+                onRemoveImage = onRemoveModel3DImage,
+                onRunPreflight = onRunPreflight,
+                onBuildModel = onBuildModel,
+                onRebuildClick = onRebuildClick,
+                onDeleteReconstructionClick = onDeleteReconstructionClick
+            )
         }
     }
 }
@@ -431,7 +530,7 @@ private fun AiIndexSection(artifact: ArtifactDto) {
 }
 
 @Composable
-private fun DetailSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun DetailSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -444,7 +543,7 @@ private fun DetailSection(title: String, content: @Composable ColumnScope.() -> 
 }
 
 @Composable
-private fun DetailRow(label: String, value: String?) {
+internal fun DetailRow(label: String, value: String?) {
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(

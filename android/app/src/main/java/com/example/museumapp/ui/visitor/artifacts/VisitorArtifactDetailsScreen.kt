@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,19 +20,26 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.outlined.ViewInAr
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -45,6 +53,8 @@ import com.example.museumapp.data.model.PublicArtifactDto
 import com.example.museumapp.data.model.PublicArtifactMetadataFieldDto
 import com.example.museumapp.data.model.PublicArtifactMetadataSectionDto
 import com.example.museumapp.data.repository.VisitorRepositoryContract
+import com.example.museumapp.narration.ArtifactNarrationTextBuilder
+import com.example.museumapp.narration.NarrationState
 import com.example.museumapp.ui.visitor.components.ArtifactImage
 import com.example.museumapp.ui.visitor.components.InfoRow
 import com.example.museumapp.ui.visitor.components.MetadataRow
@@ -64,14 +74,20 @@ fun VisitorArtifactDetailsScreen(
     artifactId: String?,
     openedFromScan: Boolean,
     onBack: () -> Unit,
-    onScanAgain: () -> Unit
+    onScanAgain: () -> Unit,
+    onViewModel3D: (String) -> Unit = {}
 ) {
     val viewModel: VisitorArtifactDetailsViewModel = viewModel(
         key = "visitor_artifact_$artifactId",
         factory = VisitorArtifactDetailsViewModel.factory(repository, artifactId)
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val narrationState by viewModel.narrationState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        viewModel.initializeNarration(context.applicationContext)
+    }
 
     Scaffold(
         topBar = {
@@ -120,6 +136,12 @@ fun VisitorArtifactDetailsScreen(
                 relatedArticles = uiState.relatedArticles,
                 openedFromScan = openedFromScan,
                 onScanAgain = onScanAgain,
+                onViewModel3D = onViewModel3D,
+                narrationState = narrationState,
+                onListen = viewModel::playNarration,
+                onPauseNarration = viewModel::pauseNarration,
+                onResumeNarration = viewModel::resumeNarration,
+                onStopNarration = viewModel::stopNarration,
                 padding = padding
             )
         }
@@ -132,6 +154,12 @@ private fun ArtifactDetailsContent(
     relatedArticles: List<ArticleDto>,
     openedFromScan: Boolean,
     onScanAgain: () -> Unit,
+    onViewModel3D: (String) -> Unit,
+    narrationState: NarrationState,
+    onListen: () -> Unit,
+    onPauseNarration: () -> Unit,
+    onResumeNarration: () -> Unit,
+    onStopNarration: () -> Unit,
     padding: PaddingValues
 ) {
     val metadata = listOf(
@@ -200,6 +228,24 @@ private fun ArtifactDetailsContent(
                 }
             }
         }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(VisitorSpacing.Sm)) {
+                NarrationControls(
+                    artifact = artifact,
+                    narrationState = narrationState,
+                    onListen = onListen,
+                    onPause = onPauseNarration,
+                    onResume = onResumeNarration,
+                    onStop = onStopNarration
+                )
+                if (artifact.model3dAvailable) {
+                    OutlinedButton(onClick = { onViewModel3D(artifact.id) }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Outlined.ViewInAr, contentDescription = null)
+                        Text(" View 3D Model", modifier = Modifier.padding(start = VisitorSpacing.Sm))
+                    }
+                }
+            }
+        }
         if (artifact.description.hasMuseumContent()) {
             item {
                 DetailSection("Historical Description") {
@@ -233,7 +279,62 @@ private fun ArtifactDetailsContent(
     }
 }
 
-private fun visitorMetadataSections(artifact: PublicArtifactDto): List<PublicArtifactMetadataSectionDto> {
+/**
+ * Renders the artifact's Listen/Pause/Resume/Stop narration controls. Hidden entirely when the
+ * built narration text is blank; shows [NarrationState.OfflineVoiceUnavailable]'s exact message
+ * instead of playback controls when no offline-capable voice is installed.
+ */
+@Composable
+private fun NarrationControls(
+    artifact: PublicArtifactDto,
+    narrationState: NarrationState,
+    onListen: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onStop: () -> Unit
+) {
+    val narrationText = remember(artifact) { ArtifactNarrationTextBuilder.build(artifact) }
+    if (narrationText.isBlank()) return
+
+    when (narrationState) {
+        is NarrationState.OfflineVoiceUnavailable -> Text(
+            "An offline narration voice is not installed on this device.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        is NarrationState.Error -> Text(
+            narrationState.message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error
+        )
+        is NarrationState.Idle -> OutlinedButton(onClick = onListen, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Outlined.PlayArrow, contentDescription = null)
+            Text(" Listen", modifier = Modifier.padding(start = VisitorSpacing.Sm))
+        }
+        is NarrationState.Speaking -> Row(horizontalArrangement = Arrangement.spacedBy(VisitorSpacing.Sm)) {
+            OutlinedButton(onClick = onPause, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Outlined.Pause, contentDescription = null)
+                Text(" Pause", modifier = Modifier.padding(start = VisitorSpacing.Sm))
+            }
+            OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Outlined.Stop, contentDescription = null)
+                Text(" Stop", modifier = Modifier.padding(start = VisitorSpacing.Sm))
+            }
+        }
+        is NarrationState.Paused -> Row(horizontalArrangement = Arrangement.spacedBy(VisitorSpacing.Sm)) {
+            OutlinedButton(onClick = onResume, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Outlined.PlayArrow, contentDescription = null)
+                Text(" Resume", modifier = Modifier.padding(start = VisitorSpacing.Sm))
+            }
+            OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Outlined.Stop, contentDescription = null)
+                Text(" Stop", modifier = Modifier.padding(start = VisitorSpacing.Sm))
+            }
+        }
+    }
+}
+
+internal fun visitorMetadataSections(artifact: PublicArtifactDto): List<PublicArtifactMetadataSectionDto> {
     if (artifact.metadataSections.isNotEmpty()) {
         return artifact.metadataSections.mapNotNull { section ->
             val fields = section.fields.filter { it.label.hasMuseumContent() && it.value.hasMuseumContent() }

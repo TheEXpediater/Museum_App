@@ -21,6 +21,9 @@ import com.example.museumapp.data.model.ArtifactListResponse
 import com.example.museumapp.data.model.DashboardSummaryResponse
 import com.example.museumapp.data.model.HealthResponse
 import com.example.museumapp.data.model.LoginRequest
+import com.example.museumapp.data.model.Model3DBuildResponseDto
+import com.example.museumapp.data.model.Model3DStateDto
+import com.example.museumapp.data.model.Model3DStatusResponseDto
 import com.example.museumapp.data.model.PrimaryImageRequest
 import com.example.museumapp.data.model.RecognitionResponseDto
 import com.example.museumapp.data.model.UserDto
@@ -95,6 +98,13 @@ interface AdminRepositoryContract : RecognitionRepositoryContract {
     suspend fun retryFailedIndexes(): RepositoryResult<AiIndexAllResponse>
     suspend fun rebuildArtifactIndex(): RepositoryResult<AiIndexAllResponse>
     suspend fun indexStatus(): RepositoryResult<AiIndexStatusResponse>
+    suspend fun get3DState(artifactId: String): RepositoryResult<Model3DStateDto>
+    suspend fun add3DImages(artifactId: String, reuseImagePaths: List<String>, images: List<Uri>): RepositoryResult<Model3DStateDto>
+    suspend fun delete3DImage(artifactId: String, imageId: String): RepositoryResult<Model3DStateDto>
+    suspend fun delete3DReconstruction(artifactId: String): RepositoryResult<Model3DStateDto>
+    suspend fun run3DPreflight(artifactId: String): RepositoryResult<Model3DStateDto>
+    suspend fun build3DModel(artifactId: String): RepositoryResult<Model3DBuildResponseDto>
+    suspend fun get3DStatus(artifactId: String): RepositoryResult<Model3DStatusResponseDto>
 }
 
 class AdminRepository(
@@ -312,9 +322,46 @@ class AdminRepository(
         api.indexStatus()
     }
 
+    override suspend fun get3DState(artifactId: String): RepositoryResult<Model3DStateDto> = safeApiCall {
+        api.get3DState(artifactId)
+    }
+
+    override suspend fun add3DImages(
+        artifactId: String,
+        reuseImagePaths: List<String>,
+        images: List<Uri>
+    ): RepositoryResult<Model3DStateDto> = safeApiCall(conflictMessage = RECONSTRUCTION_BUSY_MESSAGE) {
+        api.add3DImages(artifactId, reuseImagePaths.joinToString(",").asTextPart(), imageParts(images))
+    }
+
+    override suspend fun delete3DImage(artifactId: String, imageId: String): RepositoryResult<Model3DStateDto> =
+        safeApiCall(conflictMessage = RECONSTRUCTION_BUSY_MESSAGE) {
+            api.delete3DImage(artifactId, imageId)
+        }
+
+    override suspend fun delete3DReconstruction(artifactId: String): RepositoryResult<Model3DStateDto> =
+        safeApiCall(conflictMessage = RECONSTRUCTION_BUSY_MESSAGE) {
+            api.delete3DReconstruction(artifactId)
+        }
+
+    override suspend fun run3DPreflight(artifactId: String): RepositoryResult<Model3DStateDto> =
+        safeApiCall(conflictMessage = RECONSTRUCTION_BUSY_MESSAGE) {
+            api.run3DPreflight(artifactId)
+        }
+
+    override suspend fun build3DModel(artifactId: String): RepositoryResult<Model3DBuildResponseDto> =
+        safeApiCall(conflictMessage = RECONSTRUCTION_BUSY_MESSAGE) {
+            api.build3DModel(artifactId)
+        }
+
+    override suspend fun get3DStatus(artifactId: String): RepositoryResult<Model3DStatusResponseDto> = safeApiCall {
+        api.get3DStatus(artifactId)
+    }
+
     private suspend fun <T> safeApiCall(
         clearSessionOnUnauthorized: Boolean = true,
         unauthorizedMessage: String = "Your session has expired. Please log in again.",
+        conflictMessage: String? = null,
         block: suspend () -> T
     ): RepositoryResult<T> {
         return try {
@@ -323,7 +370,7 @@ class AdminRepository(
             if (exception.code() == 401 && clearSessionOnUnauthorized) {
                 sessionManager.clearSession()
             }
-            RepositoryResult.Error(exception.toUserMessage(unauthorizedMessage))
+            RepositoryResult.Error(exception.toUserMessage(unauthorizedMessage, conflictMessage))
         } catch (exception: IOException) {
             RepositoryResult.Error(NetworkErrorMessages.from(exception))
         } catch (exception: IllegalArgumentException) {
@@ -331,13 +378,13 @@ class AdminRepository(
         }
     }
 
-    private fun HttpException.toUserMessage(unauthorizedMessage: String): String {
+    private fun HttpException.toUserMessage(unauthorizedMessage: String, conflictMessage: String? = null): String {
         val fallback = when (code()) {
             400 -> "The request could not be completed."
             401 -> unauthorizedMessage
             403 -> "This account does not have administrator access."
             404 -> "The requested artifact was not found."
-            409 -> "An artifact with this code already exists."
+            409 -> conflictMessage ?: "An artifact with this code already exists."
             413 -> "One of the selected images is too large."
             415 -> "Only JPEG, PNG, and WEBP images can be uploaded."
             422 -> "Please check the form values and try again."
@@ -543,6 +590,10 @@ class AdminRepository(
         }
         val body = file.asRequestBody("image/jpeg".toMediaTypeOrNull())
         return MultipartBody.Part.createFormData(partName, file.name, body)
+    }
+
+    private companion object {
+        const val RECONSTRUCTION_BUSY_MESSAGE = "A reconstruction job is already running."
     }
 }
 

@@ -28,6 +28,8 @@ data class ArtifactDto(
     @Json(name = "ai_indexed_image_count") val aiIndexedImageCount: Int? = null,
     @Json(name = "ai_indexed_at") val aiIndexedAt: String? = null,
     @Json(name = "ai_index_error") val aiIndexError: String? = null,
+    @Json(name = "model_3d_status") val model3dStatus: String = "none",
+    @Json(name = "model_3d_available") val model3dAvailable: Boolean = false,
     @Json(name = "created_by") val createdBy: String,
     @Json(name = "created_at") val createdAt: String,
     @Json(name = "updated_at") val updatedAt: String

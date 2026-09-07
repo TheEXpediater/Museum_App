@@ -1,87 +1,145 @@
 # Museum Guide System
 
-Give 2 implements the Admin Artifact Management System with AI image recognition: secure admin login, JWT session handling, artifact CRUD, multipart image upload, local image storage, OpenCLIP embeddings, Qdrant vector search, artifact matching, AI maintenance tools, and green Material 3 Android admin screens.
+A local-network museum guide system: an Android app for visitors, students, and museum administrators, backed by a FastAPI service running on a laptop. MongoDB stores artifact and account records, Qdrant powers AI-based artifact image recognition, and OpenCLIP generates the recognition vectors. Administrators manage artifacts and content from the same Android app; visitors get onboarding, artifact browsing, and camera-based artifact recognition.
 
-Give 3 adds a separate guest and student visitor experience inside the same Android app and FastAPI backend. Fresh installs open visitor onboarding instead of administrator login. The completed administrator application, administrator navigation, artifact management, OpenCLIP setup, Qdrant indexing, camera test, System Status, and Settings remain separate and preserved.
+This package is a complete, self-contained handoff: the working museum dataset (artifact records, managed images, and AI recognition data) is already included and is restored automatically during setup — no manual data entry or re-import is required.
 
-Out of scope for this phase: continuous/video recognition, face recognition, registrar-backed Student ID verification, email verification, password reset, visitor analytics beyond guest session records, 3D artifacts, social comments, and admin authoring screens for news/articles.
+## What Is Included
 
-## Handoff Quick Start
+- The Android application, source and a ready-to-install APK (`Museum_App.apk`)
+- The FastAPI backend source (`backend/`)
+- The existing museum dataset, as a migration backup (`migration/`): MongoDB records (artifacts, categories, admin/visitor accounts), the Qdrant AI recognition vector collection, the managed artifact image files, and the cached OpenCLIP model
+- `setup.bat` — the one-time setup launcher
+- `run.bat` — the everyday backend launcher
+- `compose.yaml` — the Docker service definitions setup/run use for MongoDB and Qdrant
+- The Postman collection (`postman/`), for anyone testing the API directly
 
-The museum's data lives in three places that always move together: **MongoDB** (artifact records, categories, admin/visitor accounts), **Qdrant** (one AI recognition vector per managed artifact image), and **`backend\uploads\images\`** (the actual managed image files that MongoDB records point to and that Qdrant's vectors were generated from). Moving this project to a new computer means transferring all three together through the migration backup, not recreating them from scratch.
+## Installation
 
-### Moving to a new computer (existing installation)
+**Required, and handled automatically by `setup.bat` where possible:**
+- Windows 10 or 11
+- Python 3.12 or 3.13 (installed automatically via `winget` if missing, or install manually from [python.org](https://www.python.org/downloads/))
+- Docker Desktop, installed and running (installed automatically via `winget` if missing, or install manually from [docker.com](https://www.docker.com/products/docker-desktop/) — Docker Desktop's own first-run setup, including WSL2, may still need one manual step)
 
-**On the OLD computer**, from the project folder:
+**Optional:**
+- MongoDB Database Tools (`mongorestore`) — improves the reliability of the database restore step; not required for `setup.bat` to complete
+- Git — only needed by developers changing source code, never by an end user of this package
 
-```text
-migration\backup.ps1
-```
+**Internet access:**
+- Needed during first-time setup, to install Python packages and AI dependencies (unless already cached) and, if the bundled OpenCLIP cache is missing for some reason, to download model weights
+- Not needed for normal day-to-day museum operation once setup has completed — the phone and laptop only need to be on the same local network
 
-This reads the running MongoDB and Qdrant containers and the `backend\uploads\images\` folder and writes a backup into the `migration\` folder (`migration\mongodb-backup\`, `migration\docker-volume-backup\`, `migration\uploads\`). It only reads the existing system; it never changes it. See [migration/README.md](migration/README.md) for full details and prerequisites (Docker, and MongoDB Database Tools for the most reliable database dump).
-
-Two things then need to move to the new computer, separately:
-
-1. **The Git repository** — the application source code (`android\`, `backend\`, scripts, `compose.yaml`, this README). Clone it normally, or copy the folder.
-2. **The `migration\` backup folder's contents** — `mongodb-backup\`, `docker-volume-backup\`, and `uploads\` are large and are not tracked by Git (see `.gitignore`), so they must be copied separately, for example on a USB drive or external storage, into the same `migration\` folder on the new computer.
-
-**On the NEW computer**, in order:
-
-1. **Install prerequisites** — required: Python 3.12 or 3.13, and Docker Desktop, installed and **running**. Optional: MongoDB Database Tools (`mongorestore`), needed only to restore the database backup produced above.
-2. **Clone/copy the repository** to the new computer, for example `C:\Capstone-client\Museum_App`.
-3. **Copy the backup folder contents** from the old computer into `migration\mongodb-backup\`, `migration\docker-volume-backup\`, and `migration\uploads\` on the new computer, if not already done.
-4. **Restore the existing data**, once, **before** running `setup.bat`:
-
-   ```text
-   migration\restore.ps1
-   ```
-
-   This restores the existing MongoDB records, the existing Qdrant vector collection, and the existing managed artifact images in `backend\uploads\images\` — exactly as they were on the old computer. It is **not** an indexing or rebuild operation: no vectors are regenerated and no images are reprocessed, they are restored as-is. See [migration/README.md](migration/README.md).
-
-   Only run this against a new/empty destination. `restore.ps1` overwrites the target MongoDB and Qdrant Docker volumes with the backup's contents, so never re-run it on a computer that already holds the current live data — that would replace live data with the (possibly older) backup.
-5. Continue with **Run setup** below.
-
-### Setting up a brand-new installation (no existing museum data)
-
-Skip the backup/restore steps above and start directly with **Install prerequisites** and **Clone the project**, then go to **Run setup**.
-
-### Run setup
-
-Double-click:
+## First-Time Setup
 
 ```text
-setup.bat
+Extract Museum_App_Handoff.zip
+        |
+        v
+Install prerequisites (or let setup.bat do it)
+        |
+        v
+Double-click setup.bat, wait for "SETUP COMPLETE"
+        |
+        v
+Double-click run.bat
+        |
+        v
+Install Museum_App.apk on the Android phone
+        |
+        v
+Connect the phone and laptop to the same Wi-Fi/hotspot
+        |
+        v
+Open the app
 ```
 
-This checks that Python and Docker are available, then runs `python start_backend.py --setup`, which:
+`setup.bat` prepares the Python environment, restores the bundled museum dataset (see "Existing Data Migration" below), and validates MongoDB, Qdrant, OpenCLIP, and the restored data automatically. It is safe to run more than once.
 
-- prepares the backend's Python virtual environment
-- creates `backend\.env` from `backend\.env.example` if it does not already exist
-- starts and validates the MongoDB and Qdrant Docker containers
-- installs the AI/OpenCLIP dependencies
-- prepares/verifies OpenCLIP can load and produce embeddings
-- imports any artifact ZIP files found in `artifact_image_source\` (see "Adding new artifacts" below) — already-imported artifacts are recognized and skipped automatically, so running this after a migration restore does not duplicate or re-create the existing dataset
-- creates the first admin account if one does not already exist
-- attempts to add a narrowly-scoped Windows Firewall rule for the backend port (this step needs an elevated/Administrator prompt to succeed; if it cannot, it prints the one-line PowerShell command to run manually — see Troubleshooting)
-- runs a final setup validation check
+## Existing Data Migration
 
-`setup.bat` is safe to run more than once. It does not intentionally delete, overwrite, regenerate, or rebuild existing MongoDB data, Qdrant collections, vectors, or managed artifact images.
+This package already contains a full backup of the working museum dataset in `migration\`. The first time `setup.bat` runs on a computer, it restores that backup automatically — the existing artifact records, images, and AI recognition data become available exactly as they were, with no manual steps.
 
-### Adding new artifacts (optional, not needed to restore an existing installation)
+You should **not**:
+- manually run any migration or restore commands
+- re-import the raw artifact source ZIPs to "recreate" the dataset
+- rebuild or re-index the Qdrant vector collection
+- regenerate AI embeddings
 
-To add artifacts that do not already exist in the system, provide their photos one of two ways:
+None of that is necessary — the dataset is already restored as-is. `setup.bat` is also safe to run again later (for example after a Windows update): it detects that the data is already present and will not overwrite it.
 
-**Preferred method** — place the per-artifact ZIP files directly inside:
+## Artifact Image Source
+
+```text
+artifact_image_source\
+```
+
+is **optional** raw source material for adding **new** artifacts in the future — it is not part of this handoff package and is not required to use the existing museum dataset. See "Adding new artifacts" below if you want to add new artifacts later.
+
+## Backend Connection
+
+The Android app finds the laptop automatically:
+
+```text
+saved backend address
+        |
+        v
+health check against the current local network
+        |
+        +-- succeeds --> connect
+        |
+        +-- fails ------> scan the phone's local Wi-Fi network
+                               |
+                               +-- found -----> connect and save the new address
+                               |
+                               +-- not found -> "Backend Not Found": enter the laptop's IP manually
+```
+
+No laptop IP is ever built into the APK, and the APK never needs to be rebuilt when the laptop's IP address changes — the app always re-checks and, if needed, asks for the address again.
+
+## Offline / Local Operation
+
+Once setup has completed and the required software is installed, normal museum operation does not need internet access. The phone and the laptop only need to be connected to the same Wi-Fi network or mobile hotspot; the Android app talks directly to the FastAPI backend on the laptop over the local network.
+
+## Troubleshooting
+
+See the "Troubleshooting" section later in this document for step-by-step fixes to the most common setup and connection issues (Python, Docker, migration restore, port 8000, Windows Firewall, Wi-Fi/hotspot, "Backend Not Found", and stale IP addresses).
+
+## Getting Started (End Users)
+
+This folder is a self-contained handoff package. You do **not** need Git, GitHub, Docker commands, PowerShell migration commands, or a Python installation you manage yourself — `setup.bat` detects and prepares all of that automatically.
+
+1. **Extract the ZIP** to any folder, for example `C:\Museum_App`.
+2. **Double-click `setup.bat`** and let it finish. On first run it will, in order:
+   - check for Python 3.12/3.13 and Docker Desktop, and try to install either one automatically (via `winget`) if missing
+   - wait for the Docker engine to be ready
+   - detect the migration backup already bundled inside `migration\`
+   - restore MongoDB, Qdrant, the OpenCLIP model cache, and the existing managed artifact images from that bundled backup — **only** on a fresh computer that doesn't already have this data; it will not overwrite an already-set-up computer (safe to run more than once)
+   - prepare the backend's Python virtual environment and install dependencies
+   - validate MongoDB, Qdrant, OpenCLIP, and the restored data, and print a summary
+3. **Install `Museum_App.apk`** on the Android phone (in the project root). Android may ask to allow installing from unknown sources — allow it.
+4. **Double-click `run.bat`** to start the backend. Keep that window open while the app is in use.
+5. **Connect the phone and the laptop to the same Wi-Fi network or mobile hotspot.**
+6. **Open the app** on the phone.
+
+That's it for normal use. See "Normal operation" below for the day-to-day routine once setup has completed once.
+
+If `setup.bat` reports a problem it can't fix automatically (for example Docker Desktop needing a manual first launch, or a Windows Firewall rule needing an Administrator prompt), it prints exactly what to do and continues with everything else it safely can — see "Troubleshooting" below.
+
+### Adding new artifacts (optional, not needed for the bundled dataset)
+
+The dataset bundled with this handoff is already restored by `setup.bat` — this section is only for adding artifacts that don't already exist in the system.
+
+**Preferred method** — place the per-artifact ZIP files directly inside a folder named:
 
 ```text
 Museum_App\artifact_image_source\
 ```
 
-Filenames do not need to match anything predefined; the importer (`backend/scripts/import_artifact_zips.py`) automatically scans this folder for `.zip` files and uses each ZIP's own filename as the artifact name. One ZIP = one artifact. An optional one-level subfolder becomes that artifact's initial category.
+(create this folder if it does not exist). Filenames do not need to match anything predefined; the importer (`backend/scripts/import_artifact_zips.py`) automatically scans this folder for `.zip` files and uses each ZIP's own filename as the artifact name. One ZIP = one artifact. An optional one-level subfolder becomes that artifact's initial category. The next time `setup.bat` runs, already-imported artifacts are recognized and skipped automatically, so this never duplicates the existing dataset.
 
 **Optional alternative** — place a single ZIP in the project root named either `Museum_App\museum-images.zip` or `Museum_App\image-assets.zip`, containing the per-artifact ZIPs described above. `setup.bat` extracts it into `artifact_image_source\` automatically.
 
-`artifact_image_source\` is not tracked by Git (it is listed in `.gitignore`) because it holds large image data; it must exist inside the cloned `Museum_App` folder, not beside it. This raw source is only ever needed to create *new* artifacts — it is not required to restore the existing museum dataset, which already lives in MongoDB, Qdrant, and `backend\uploads\images\`.
+`artifact_image_source\` is not part of the handoff package and is not tracked by Git — it only matters if you're adding new artifacts.
 
 ### Run the backend
 
@@ -109,10 +167,10 @@ The address to use in the app is the `host:port` part, e.g. `192.168.1.20:8000`.
 The provided debug build can be installed directly on the Android phone:
 
 ```text
-android\app\build\outputs\apk\debug\app-debug.apk
+Museum_App.apk
 ```
 
-Android may prompt to allow installing from unknown sources, since this is a debug build and not a Play Store-signed release. The APK never needs to be rebuilt to work with a different laptop or a different IP address.
+(in the project root). Android may prompt to allow installing from unknown sources, since this is a debug build and not a Play Store-signed release. The APK never needs to be rebuilt to work with a different laptop or a different IP address, and end users never need Android Studio or Gradle to install or use it.
 
 ### Connect phone and laptop
 
@@ -177,6 +235,32 @@ App connects to the local backend
     v
 Use the museum system
 ```
+
+## Developer Notes: Migration & Backup
+
+This section is for developers moving a *working development checkout* between computers, or refreshing the bundled migration backup that ships inside a handoff ZIP. End users following "Getting Started" above never need any of this — `setup.bat` runs it automatically from the migration backup already bundled in `migration\`.
+
+The museum's data lives in three places that always move together: **MongoDB** (artifact records, categories, admin/visitor accounts), **Qdrant** (one AI recognition vector per managed artifact image), and **`backend\uploads\images\`** (the actual managed image files that MongoDB records point to and that Qdrant's vectors were generated from).
+
+**To capture a fresh backup from a running development instance**, from the project folder:
+
+```text
+migration\backup.ps1
+```
+
+This reads the running MongoDB and Qdrant containers and the `backend\uploads\images\` folder and writes a backup into `migration\mongodb-backup\`, `migration\docker-volume-backup\`, `migration\uploads\`, and `migration\openclip-backup\`. It only reads the existing system; it never changes it. See [migration/README.md](migration/README.md) for full details and prerequisites (Docker, and MongoDB Database Tools for the most reliable database dump).
+
+**To manually restore that backup** on another development checkout (rather than letting `setup.bat` do it automatically):
+
+```text
+migration\restore.ps1
+```
+
+This restores the existing MongoDB records, the existing Qdrant vector collection, and the existing managed artifact images in `backend\uploads\images\` — exactly as they were on the source computer. It is **not** an indexing or rebuild operation: no vectors are regenerated and no images are reprocessed, they are restored as-is. See [migration/README.md](migration/README.md).
+
+Only run this against a new/empty destination. `restore.ps1` overwrites the target MongoDB and Qdrant Docker volumes with the backup's contents, so never re-run it on a computer that already holds current live data — that would replace live data with the (possibly older) backup. `setup.bat` protects against this automatically by only invoking `restore.ps1` when no `museum_app_museum_mongodb_data` Docker volume already exists.
+
+The `migration\` folder's backup contents (`mongodb-backup\`, `docker-volume-backup\`, `uploads\`, `openclip-backup\`) are not tracked by Git (see `.gitignore`) — they travel with the project folder itself (for example inside a handoff ZIP), not through source control.
 
 ## Internet Requirements
 

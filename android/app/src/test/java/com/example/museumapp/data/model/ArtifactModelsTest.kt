@@ -57,5 +57,47 @@ class ArtifactModelsTest {
         assertEquals(true, parsed.primaryImageNeedsReview)
         assertEquals(true, parsed.visitorGalleryConfigured)
         assertEquals("Weight", parsed.customFields.single().label)
+        // model_3d_* fields are absent from this payload -- must default safely.
+        assertEquals("none", parsed.model3dStatus)
+        assertEquals(false, parsed.model3dAvailable)
+    }
+
+    @Test
+    fun parsesArtifactModel3DFields() {
+        val adapter = Moshi.Builder()
+            .add(KotlinJsonAdapterFactory())
+            .build()
+            .adapter(ArtifactDto::class.java)
+
+        val parsed = adapter.fromJson(
+            """
+            {
+              "id": "1",
+              "artifact_code": "ART-1",
+              "name": "Jar",
+              "description": "Clay jar",
+              "category": "Ceramics",
+              "status": "published",
+              "origin": null,
+              "historical_period": null,
+              "material": "Clay",
+              "dimensions": null,
+              "condition": "Good",
+              "image_paths": [],
+              "image_urls": [],
+              "primary_image_path": null,
+              "primary_image_url": null,
+              "model_3d_status": "ready",
+              "model_3d_available": true,
+              "created_by": "admin",
+              "created_at": "2026-08-03T11:00:00",
+              "updated_at": "2026-08-03T12:00:00"
+            }
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        assertEquals("ready", parsed!!.model3dStatus)
+        assertEquals(true, parsed.model3dAvailable)
     }
 }

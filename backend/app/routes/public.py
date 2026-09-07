@@ -20,6 +20,8 @@ from app.schemas.public_content import (
 )
 from app.services.image_storage import image_url_for_path
 from app.services.artifact_validation import effective_visitor_gallery_paths, public_custom_fields, public_metadata_sections
+from app.services.model3d import states as model3d_states
+from app.repositories.reconstruction_repository import get_model_3d_state
 from app.utils import to_object_id
 
 
@@ -35,6 +37,8 @@ def serialize_artifact(document: dict, request: Request) -> PublicArtifactRespon
     base_url = str(request.base_url)
     primary_image_path = document.get("primary_image_path")
     gallery_paths = visitor_gallery_paths(document)
+    model_3d = get_model_3d_state(document)
+    model_3d_ready = model_3d["status"] == model3d_states.READY and bool(model_3d.get("path"))
     return PublicArtifactResponse(
         id=str(document["_id"]),
         artifact_code=document.get("artifact_code", ""),
@@ -50,6 +54,11 @@ def serialize_artifact(document: dict, request: Request) -> PublicArtifactRespon
         metadata_sections=public_metadata_sections(document),
         image_urls=[image_url_for_path(base_url, path) for path in gallery_paths],
         primary_image_url=image_url_for_path(base_url, primary_image_path),
+        model_3d_available=model_3d_ready,
+        model_3d_url=image_url_for_path(base_url, model_3d["path"]) if model_3d_ready else None,
+        model_3d_version=model_3d["version"] if model_3d_ready else None,
+        model_3d_sha256=model_3d["sha256"] if model_3d_ready else None,
+        model_3d_size_bytes=model_3d["size_bytes"] if model_3d_ready else None,
     )
 
 

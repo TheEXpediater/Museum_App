@@ -10,6 +10,7 @@ from app.repositories import artifact_repository
 from app.services.artifact_validation import persisted_status
 from app.schemas.admin import DashboardRecentArtifact, DashboardSummaryResponse
 from app.services.image_storage import image_url_for_path
+from app.services.model3d.colmap_service import detect_colmap
 from app.vector import qdrant_manager as qdrant_vectors
 
 
@@ -43,6 +44,7 @@ def dashboard(request: Request) -> DashboardSummaryResponse:
         serialize_recent_artifact(item, str(request.base_url))
         for item in artifact_repository.list_recent_artifacts(database, limit=5)
     ]
+    colmap_availability = detect_colmap(settings)
     return DashboardSummaryResponse(
         total_artifacts=artifact_repository.count_artifacts(database),
         total_images=artifact_repository.count_total_images(database),
@@ -59,6 +61,9 @@ def dashboard(request: Request) -> DashboardSummaryResponse:
         ai_status=ai_status,
         database_status=database_status,
         uploads_status=uploads_status,
+        model_3d_enabled=settings.model_3d_enabled,
+        colmap_available=colmap_availability.available,
+        colmap_version=colmap_availability.version,
         recent_artifacts=recent,
     )
 

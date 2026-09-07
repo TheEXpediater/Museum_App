@@ -12,7 +12,10 @@ object VisitorRoutes {
     const val Settings = "visitor_settings"
     const val Camera = "visitor_camera"
     const val ArtifactDetails = "visitor_artifact_details/{artifactId}?fromScan={fromScan}"
+    const val ArtifactModel3D = "visitor_artifact_model3d/{artifactId}"
 
     fun artifactDetails(artifactId: String, fromScan: Boolean = false): String =
         "visitor_artifact_details/$artifactId?fromScan=$fromScan"
+
+    fun artifactModel3D(artifactId: String): String = "visitor_artifact_model3d/$artifactId"
 }

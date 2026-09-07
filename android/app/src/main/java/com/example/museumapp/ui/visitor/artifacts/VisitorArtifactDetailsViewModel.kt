@@ -1,5 +1,6 @@
 package com.example.museumapp.ui.visitor.artifacts
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -7,6 +8,9 @@ import com.example.museumapp.data.model.ArticleDto
 import com.example.museumapp.data.model.PublicArtifactDto
 import com.example.museumapp.data.repository.RepositoryResult
 import com.example.museumapp.data.repository.VisitorRepositoryContract
+import com.example.museumapp.narration.ArtifactNarrationController
+import com.example.museumapp.narration.ArtifactNarrationTextBuilder
+import com.example.museumapp.narration.NarrationState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,10 +26,16 @@ data class VisitorArtifactDetailsUiState(
 
 class VisitorArtifactDetailsViewModel(
     private val repository: VisitorRepositoryContract,
-    private val artifactId: String?
+    private val artifactId: String?,
+    private val narrationController: ArtifactNarrationController = ArtifactNarrationController()
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(VisitorArtifactDetailsUiState())
     val uiState: StateFlow<VisitorArtifactDetailsUiState> = _uiState.asStateFlow()
+
+    /** Listen/Pause/Resume/Stop state for the artifact narration controls. */
+    val narrationState: StateFlow<NarrationState> = narrationController.state
+
+    private var narrationInitialized = false
 
     init {
         load()
@@ -33,6 +43,41 @@ class VisitorArtifactDetailsViewModel(
 
     fun retry() {
         load()
+    }
+
+    /**
+     * Must be called once (e.g. from a `LaunchedEffect(Unit)` in the screen) before any playback
+     * control, since the [ArtifactNarrationController] needs a [Context] to start the underlying
+     * TextToSpeech engine. Safe to call more than once -- only the first call takes effect.
+     */
+    fun initializeNarration(context: Context) {
+        if (narrationInitialized) return
+        narrationInitialized = true
+        narrationController.initialize(context)
+    }
+
+    fun playNarration() {
+        val artifact = _uiState.value.artifact ?: return
+        val text = ArtifactNarrationTextBuilder.build(artifact)
+        if (text.isBlank()) return
+        narrationController.play(text)
+    }
+
+    fun pauseNarration() {
+        narrationController.pause()
+    }
+
+    fun resumeNarration() {
+        narrationController.resume()
+    }
+
+    fun stopNarration() {
+        narrationController.stop()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        narrationController.shutdown()
     }
 
     private fun load() {

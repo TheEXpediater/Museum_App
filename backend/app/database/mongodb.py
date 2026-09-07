@@ -71,5 +71,10 @@ def ensure_indexes(database: Database) -> None:
     database.programs.create_index([("name_normalized", ASCENDING)], unique=True, name="uniq_programs_name")
     database.programs.create_index([("active", ASCENDING)], name="idx_programs_active")
 
+    database.reconstruction_images.create_index([("artifact_id", ASCENDING)], name="idx_reconstruction_images_artifact_id")
+    database.reconstruction_images.create_index([("artifact_id", ASCENDING), ("digest", ASCENDING)], name="idx_reconstruction_images_digest")
+    database.reconstruction_jobs.create_index([("artifact_id", ASCENDING), ("created_at", DESCENDING)], name="idx_reconstruction_jobs_artifact_created")
+    database.reconstruction_jobs.create_index([("status", ASCENDING)], name="idx_reconstruction_jobs_status")
+
 
 mongo_manager = MongoManager()

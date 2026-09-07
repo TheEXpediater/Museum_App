@@ -15,6 +15,9 @@ import com.example.museumapp.data.model.ArtifactMetadataSectionDto
 import com.example.museumapp.data.model.ArtifactListResponse
 import com.example.museumapp.data.model.DashboardSummaryResponse
 import com.example.museumapp.data.model.HealthResponse
+import com.example.museumapp.data.model.Model3DBuildResponseDto
+import com.example.museumapp.data.model.Model3DStateDto
+import com.example.museumapp.data.model.Model3DStatusResponseDto
 import com.example.museumapp.data.model.RecognitionResponseDto
 import com.example.museumapp.data.model.UserDto
 import com.example.museumapp.data.repository.AdminRepositoryContract
@@ -116,6 +119,16 @@ class FakeAdminRepository : AdminRepositoryContract {
             collectionStatus = "ready"
         )
     )
+    var model3DStateResult: RepositoryResult<Model3DStateDto> = RepositoryResult.Success(Model3DStateDto())
+    var add3DImagesResult: RepositoryResult<Model3DStateDto> = RepositoryResult.Success(Model3DStateDto())
+    var delete3DImageResult: RepositoryResult<Model3DStateDto> = RepositoryResult.Success(Model3DStateDto())
+    var delete3DReconstructionResult: RepositoryResult<Model3DStateDto> = RepositoryResult.Success(Model3DStateDto())
+    var run3DPreflightResult: RepositoryResult<Model3DStateDto> = RepositoryResult.Success(Model3DStateDto())
+    var build3DModelResult: RepositoryResult<Model3DBuildResponseDto> = RepositoryResult.Success(Model3DBuildResponseDto(jobId = "job-1", status = "queued"))
+    // Terminal by default so a polling loop started in a test settles on the very first tick.
+    var get3DStatusResult: RepositoryResult<Model3DStatusResponseDto> = RepositoryResult.Success(
+        Model3DStatusResponseDto(state = Model3DStateDto(status = "ready", version = 1))
+    )
 
     var recognizedUri: Uri? = null
     var recognizedFile: File? = null
@@ -132,6 +145,15 @@ class FakeAdminRepository : AdminRepositoryContract {
     var indexArtifactCalls = 0
     var feedAiLibraryCalls = 0
     var dashboardCalls = 0
+    var get3DStateCalls = 0
+    var lastAdd3DImagesArtifactId: String? = null
+    var lastAdd3DImagesReusePaths: List<String> = emptyList()
+    var lastAdd3DImagesUris: List<Uri> = emptyList()
+    var lastDelete3DImageArgs: Pair<String, String>? = null
+    var delete3DReconstructionCalls = 0
+    var run3DPreflightCalls = 0
+    var build3DModelCalls = 0
+    var get3DStatusCalls = 0
 
     override suspend fun checkHealth(): RepositoryResult<HealthResponse> = healthResult
     override suspend fun aiHealth(): RepositoryResult<AiHealthResponse> = aiHealthResult
@@ -259,6 +281,43 @@ class FakeAdminRepository : AdminRepositoryContract {
         return rebuildResult
     }
     override suspend fun indexStatus(): RepositoryResult<AiIndexStatusResponse> = indexStatusResult
+
+    override suspend fun get3DState(artifactId: String): RepositoryResult<Model3DStateDto> {
+        get3DStateCalls += 1
+        return model3DStateResult
+    }
+
+    override suspend fun add3DImages(artifactId: String, reuseImagePaths: List<String>, images: List<Uri>): RepositoryResult<Model3DStateDto> {
+        lastAdd3DImagesArtifactId = artifactId
+        lastAdd3DImagesReusePaths = reuseImagePaths
+        lastAdd3DImagesUris = images
+        return add3DImagesResult
+    }
+
+    override suspend fun delete3DImage(artifactId: String, imageId: String): RepositoryResult<Model3DStateDto> {
+        lastDelete3DImageArgs = artifactId to imageId
+        return delete3DImageResult
+    }
+
+    override suspend fun delete3DReconstruction(artifactId: String): RepositoryResult<Model3DStateDto> {
+        delete3DReconstructionCalls += 1
+        return delete3DReconstructionResult
+    }
+
+    override suspend fun run3DPreflight(artifactId: String): RepositoryResult<Model3DStateDto> {
+        run3DPreflightCalls += 1
+        return run3DPreflightResult
+    }
+
+    override suspend fun build3DModel(artifactId: String): RepositoryResult<Model3DBuildResponseDto> {
+        build3DModelCalls += 1
+        return build3DModelResult
+    }
+
+    override suspend fun get3DStatus(artifactId: String): RepositoryResult<Model3DStatusResponseDto> {
+        get3DStatusCalls += 1
+        return get3DStatusResult
+    }
 
     companion object {
         fun sampleCategory(

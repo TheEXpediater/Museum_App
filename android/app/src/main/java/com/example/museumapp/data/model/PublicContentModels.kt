@@ -16,7 +16,12 @@ data class PublicArtifactDto(
     @Json(name = "custom_fields") val customFields: List<PublicArtifactCustomFieldDto> = emptyList(),
     @Json(name = "metadata_sections") val metadataSections: List<PublicArtifactMetadataSectionDto> = emptyList(),
     @Json(name = "image_urls") val imageUrls: List<String> = emptyList(),
-    @Json(name = "primary_image_url") val primaryImageUrl: String? = null
+    @Json(name = "primary_image_url") val primaryImageUrl: String? = null,
+    @Json(name = "model_3d_available") val model3dAvailable: Boolean = false,
+    @Json(name = "model_3d_url") val model3dUrl: String? = null,
+    @Json(name = "model_3d_version") val model3dVersion: Int? = null,
+    @Json(name = "model_3d_sha256") val model3dSha256: String? = null,
+    @Json(name = "model_3d_size_bytes") val model3dSizeBytes: Long? = null
 )
 
 data class PublicArtifactCustomFieldDto(
