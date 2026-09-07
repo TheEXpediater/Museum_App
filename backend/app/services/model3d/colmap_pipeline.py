@@ -69,15 +69,24 @@ def run_feature_extraction(bin_path: str, *, database_path: Path, image_path: Pa
     ]
     if _subcommand_supports(bin_path, "feature_extractor", "--SiftExtraction.max_image_size"):
         args += ["--SiftExtraction.max_image_size", str(max_dimension)]
-    if not use_gpu and _subcommand_supports(bin_path, "feature_extractor", "--SiftExtraction.use_gpu"):
-        args += ["--SiftExtraction.use_gpu", "0"]
+    if not use_gpu:
+        # COLMAP renamed this flag from --SiftExtraction.use_gpu to --FeatureExtraction.use_gpu
+        # in COLMAP 4.x; support both so CPU-only mode works across installed versions.
+        for flag in ("--FeatureExtraction.use_gpu", "--SiftExtraction.use_gpu"):
+            if _subcommand_supports(bin_path, "feature_extractor", flag):
+                args += [flag, "0"]
+                break
     _run_stage(bin_path, "feature_extractor", args, log_file=log_file)
 
 
 def run_matching(bin_path: str, *, database_path: Path, use_gpu: bool, log_file) -> None:
     args = ["--database_path", str(database_path)]
-    if not use_gpu and _subcommand_supports(bin_path, "exhaustive_matcher", "--SiftMatching.use_gpu"):
-        args += ["--SiftMatching.use_gpu", "0"]
+    if not use_gpu:
+        # Same COLMAP 4.x rename as feature_extractor: --SiftMatching.use_gpu -> --FeatureMatching.use_gpu.
+        for flag in ("--FeatureMatching.use_gpu", "--SiftMatching.use_gpu"):
+            if _subcommand_supports(bin_path, "exhaustive_matcher", flag):
+                args += [flag, "0"]
+                break
     _run_stage(bin_path, "exhaustive_matcher", args, log_file=log_file)
 
 
