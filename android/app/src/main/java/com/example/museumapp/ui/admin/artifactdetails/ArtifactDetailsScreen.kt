@@ -71,7 +71,8 @@ fun ArtifactDetailsScreen(
     repository: AdminRepositoryContract,
     artifactId: String?,
     onBack: () -> Unit,
-    onEditArtifact: (String) -> Unit
+    onEditArtifact: (String) -> Unit,
+    onPreviewDraftModel: (artifactId: String, version: Int, sha256: String, url: String) -> Unit = { _, _, _, _ -> }
 ) {
     val viewModel: ArtifactDetailsViewModel = viewModel(
         key = "artifact_details_$artifactId",
@@ -171,7 +172,12 @@ fun ArtifactDetailsScreen(
                 onRunPreflight = viewModel::runPreflight,
                 onBuildModel = viewModel::buildModel,
                 onRebuildClick = { showRebuildConfirm = true },
-                onDeleteReconstructionClick = viewModel::requestDeleteReconstruction
+                onDeleteReconstructionClick = viewModel::requestDeleteReconstruction,
+                onPreviewDraft = { version, sha256, url ->
+                    onPreviewDraftModel(uiState.artifact!!.id, version, sha256, url)
+                },
+                onAcceptModel = viewModel::acceptModel,
+                onRejectModel = viewModel::rejectModel
             )
         }
     }
@@ -300,7 +306,10 @@ private fun ArtifactDetailsContent(
     onRunPreflight: () -> Unit,
     onBuildModel: () -> Unit,
     onRebuildClick: () -> Unit,
-    onDeleteReconstructionClick: () -> Unit
+    onDeleteReconstructionClick: () -> Unit,
+    onPreviewDraft: (version: Int, sha256: String, url: String) -> Unit,
+    onAcceptModel: () -> Unit,
+    onRejectModel: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier
@@ -389,7 +398,10 @@ private fun ArtifactDetailsContent(
                 onRunPreflight = onRunPreflight,
                 onBuildModel = onBuildModel,
                 onRebuildClick = onRebuildClick,
-                onDeleteReconstructionClick = onDeleteReconstructionClick
+                onDeleteReconstructionClick = onDeleteReconstructionClick,
+                onPreviewDraft = onPreviewDraft,
+                onAcceptModel = onAcceptModel,
+                onRejectModel = onRejectModel
             )
         }
     }

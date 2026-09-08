@@ -62,7 +62,10 @@ fun Model3DSection(
     onRunPreflight: () -> Unit,
     onBuildModel: () -> Unit,
     onRebuildClick: () -> Unit,
-    onDeleteReconstructionClick: () -> Unit
+    onDeleteReconstructionClick: () -> Unit,
+    onPreviewDraft: (version: Int, sha256: String, url: String) -> Unit,
+    onAcceptModel: () -> Unit,
+    onRejectModel: () -> Unit
 ) {
     DetailSection("3D Model") {
         if (isLoading && state == null) {
@@ -74,12 +77,17 @@ fun Model3DSection(
         when {
             model.status == Model3DStatus.None -> {
                 Text(
-                    "This artifact does not have a 3D model yet.",
+                    "This artifact does not have a 3D preview yet.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Text(
+                    "Minimum: 3 overlapping photos. Additional angles may improve the preview.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Button(onClick = onAddPhotosClick, enabled = !isBusy) {
-                    Text("Create 3D Model")
+                    Text("Create 3D Preview")
                 }
             }
 
@@ -96,8 +104,13 @@ fun Model3DSection(
                 }
                 if (model.status == Model3DStatus.ReadyForBuild) {
                     Button(onClick = onBuildModel, enabled = !isBusy, modifier = Modifier.fillMaxWidth()) {
-                        Text("Build 3D Model")
+                        Text("Generate Preview")
                     }
+                    Text(
+                        "The quality and completeness of the 3D preview depend on the photographs provided.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 
@@ -116,6 +129,32 @@ fun Model3DSection(
                 )
             }
 
+            model.status == Model3DStatus.PendingReview -> {
+                PendingReviewBanner(model)
+                GuidanceList(model.guidance)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            val version = model.draftVersion
+                            val sha256 = model.draftSha256
+                            val url = model.draftModelUrl
+                            if (version != null && !sha256.isNullOrBlank() && !url.isNullOrBlank()) {
+                                onPreviewDraft(version, sha256, url)
+                            }
+                        },
+                        enabled = !isBusy && model.draftModelUrl != null
+                    ) {
+                        Text("Preview 3D")
+                    }
+                    Button(onClick = onAcceptModel, enabled = !isBusy) {
+                        Text("Accept 3D Model")
+                    }
+                    OutlinedButton(onClick = onRejectModel, enabled = !isBusy) {
+                        Text("Reject 3D Model")
+                    }
+                }
+            }
+
             model.status == Model3DStatus.Ready -> {
                 ModelReadyBanner(model)
                 if (!model.failureMessage.isNullOrBlank()) {
@@ -126,7 +165,7 @@ fun Model3DSection(
                         Text("Add Photos")
                     }
                     OutlinedButton(onClick = onRebuildClick, enabled = !isBusy) {
-                        Text("Rebuild")
+                        Text("Regenerate Preview")
                     }
                 }
             }
@@ -137,7 +176,7 @@ fun Model3DSection(
                         ?: if (model.status == Model3DStatus.Interrupted) {
                             "The reconstruction was interrupted, for example by a server restart."
                         } else {
-                            "The last reconstruction attempt failed."
+                            "Unable to create a usable 3D preview from these photographs. Add photos from overlapping angles and try again."
                         },
                     color = MaterialTheme.colorScheme.error
                 )
@@ -150,7 +189,7 @@ fun Model3DSection(
                         Text("Re-run Check")
                     }
                     Button(onClick = onBuildModel, enabled = !isBusy) {
-                        Text("Build Again")
+                        Text("Generate Preview Again")
                     }
                 }
             }
@@ -203,6 +242,28 @@ private fun GuidanceList(guidance: List<String>) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         guidance.forEach { line ->
             Text("•  $line", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun PendingReviewBanner(model: Model3DStateDto) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("3D preview ready for review", fontWeight = FontWeight.SemiBold)
+            Text("Source photos: ${model.sourceImageCount}", style = MaterialTheme.typography.bodySmall)
+            model.registeredImageCount?.let {
+                Text("Reconstructed from: $it photo(s)", style = MaterialTheme.typography.bodySmall)
+            }
+            model.draftSizeBytes?.let { Text(humanReadableBytes(it), style = MaterialTheme.typography.bodySmall) }
+            Text(
+                "The quality and completeness of the 3D preview depend on the photographs provided.",
+                style = MaterialTheme.typography.bodySmall
+            )
         }
     }
 }

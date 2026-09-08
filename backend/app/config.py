@@ -55,11 +55,17 @@ class Settings(BaseSettings):
     colmap_use_gpu: bool = Field(default=False, alias="COLMAP_USE_GPU")
     reconstruction_directory: str = Field(default="uploads/reconstruction", alias="RECONSTRUCTION_DIRECTORY")
     model_3d_directory: str = Field(default="uploads/models3d", alias="MODEL_3D_DIRECTORY")
-    model_3d_min_source_images: int = Field(default=20, alias="MODEL_3D_MIN_SOURCE_IMAGES")
+    model_3d_min_source_images: int = Field(default=8, alias="MODEL_3D_MIN_SOURCE_IMAGES")
     model_3d_min_registered_ratio: float = Field(default=0.70, alias="MODEL_3D_MIN_REGISTERED_RATIO")
-    model_3d_max_input_dimension: int = Field(default=2000, alias="MODEL_3D_MAX_INPUT_DIMENSION")
+    # Low-resource preview profile defaults: this system targets an ~8GB RAM CPU-only laptop.
+    # A real test on such a machine (7.8GB RAM, 4 cores) crashed COLMAP outright at full
+    # resolution with automatic threading, so working copies are downscaled and threading is
+    # capped rather than assuming a workstation-class machine.
+    model_3d_max_input_dimension: int = Field(default=1280, alias="MODEL_3D_MAX_INPUT_DIMENSION")
+    model_3d_cpu_threads: int = Field(default=1, alias="MODEL_3D_CPU_THREADS")
+    model_3d_max_features: int = Field(default=4096, alias="MODEL_3D_MAX_FEATURES")
     model_3d_simplify_ratio: float = Field(default=0.25, alias="MODEL_3D_SIMPLIFY_RATIO")
-    model_3d_max_glb_mb: int = Field(default=50, alias="MODEL_3D_MAX_GLB_MB")
+    model_3d_max_glb_mb: int = Field(default=15, alias="MODEL_3D_MAX_GLB_MB")
 
     @field_validator(
         "mongodb_url",
@@ -168,7 +174,7 @@ class Settings(BaseSettings):
             raise ValueError("MODEL_3D_MIN_REGISTERED_RATIO must be between 0 and 1")
         return value
 
-    @field_validator("model_3d_max_input_dimension", "model_3d_max_glb_mb")
+    @field_validator("model_3d_max_input_dimension", "model_3d_max_glb_mb", "model_3d_cpu_threads", "model_3d_max_features")
     @classmethod
     def model_3d_positive_integer(cls, value: int) -> int:
         if value <= 0:

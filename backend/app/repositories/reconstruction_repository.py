@@ -13,11 +13,20 @@ from app.utils import utc_now
 
 DEFAULT_MODEL_3D_STATE: dict[str, Any] = {
     "status": states.NONE,
+    # Published/accepted model - what the visitor API exposes.
     "version": 0,
     "path": None,
     "sha256": None,
     "size_bytes": None,
     "created_at": None,
+    # Draft model awaiting admin review - never exposed to visitors. Populated when a build
+    # reaches PENDING_REVIEW; cleared on Accept (folded into the published fields above) or
+    # Reject (discarded).
+    "draft_version": None,
+    "draft_path": None,
+    "draft_sha256": None,
+    "draft_size_bytes": None,
+    "draft_created_at": None,
     "source_image_count": 0,
     "registered_image_count": None,
     "registered_image_ratio": None,

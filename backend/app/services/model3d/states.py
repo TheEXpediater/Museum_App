@@ -9,6 +9,7 @@ DENSE_RECONSTRUCTION = "dense_reconstruction"
 MESHING = "meshing"
 TEXTURING = "texturing"
 CONVERTING = "converting"
+PENDING_REVIEW = "pending_review"
 READY = "ready"
 FAILED = "failed"
 INTERRUPTED = "interrupted"
@@ -23,6 +24,7 @@ ALL_STATES = (
     MESHING,
     TEXTURING,
     CONVERTING,
+    PENDING_REVIEW,
     READY,
     FAILED,
     INTERRUPTED,
@@ -41,9 +43,11 @@ ACTIVE_JOB_STATES = (
 )
 
 # Artifact-level states from which a new build may be launched (initial build or a deliberate
-# rebuild/replacement of a previously published model).
+# rebuild/replacement of a previously published model). PENDING_REVIEW is included so an admin
+# can discard an unreviewed draft by simply rebuilding rather than having to reject first.
 BUILDABLE_STATES = (
     READY_FOR_BUILD,
+    PENDING_REVIEW,
     READY,
     FAILED,
     INTERRUPTED,

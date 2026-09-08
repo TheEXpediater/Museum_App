@@ -26,6 +26,13 @@ data class Model3DStateDto(
     val sha256: String? = null,
     @Json(name = "size_bytes") val sizeBytes: Long? = null,
     @Json(name = "created_at") val createdAt: String? = null,
+    // Draft model awaiting admin Accept/Reject review - never visitor-visible. Populated only
+    // while status == PendingReview.
+    @Json(name = "draft_version") val draftVersion: Int? = null,
+    @Json(name = "draft_sha256") val draftSha256: String? = null,
+    @Json(name = "draft_size_bytes") val draftSizeBytes: Long? = null,
+    @Json(name = "draft_created_at") val draftCreatedAt: String? = null,
+    @Json(name = "draft_model_url") val draftModelUrl: String? = null,
     @Json(name = "source_image_count") val sourceImageCount: Int = 0,
     @Json(name = "registered_image_count") val registeredImageCount: Int? = null,
     @Json(name = "registered_image_ratio") val registeredImageRatio: Double? = null,
@@ -80,6 +87,7 @@ object Model3DStatus {
     const val Meshing = "meshing"
     const val Texturing = "texturing"
     const val Converting = "converting"
+    const val PendingReview = "pending_review"
     const val Ready = "ready"
     const val Failed = "failed"
     const val Interrupted = "interrupted"

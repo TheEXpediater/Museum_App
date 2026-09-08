@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import shutil
+import subprocess
 from pathlib import Path
 
 import mongomock
@@ -63,11 +65,11 @@ def _fake_colored_mesh(path: Path) -> None:
 
 
 def _patch_pipeline_success(monkeypatch, *, registered_ratio: float = 1.0, point_count: int = 1200):
-    def fake_feature_extraction(bin_path, *, database_path, image_path, use_gpu, max_dimension, log_file):
+    def fake_feature_extraction(bin_path, *, database_path, image_path, use_gpu, max_dimension, num_threads, max_features, log_file):
         database_path.parent.mkdir(parents=True, exist_ok=True)
         database_path.touch()
 
-    def fake_matching(bin_path, *, database_path, use_gpu, log_file):
+    def fake_matching(bin_path, *, database_path, use_gpu, num_threads, log_file):
         pass
 
     def fake_mapper(bin_path, *, database_path, image_path, sparse_path, log_file):
@@ -88,19 +90,15 @@ def _patch_pipeline_success(monkeypatch, *, registered_ratio: float = 1.0, point
         registered = max(int(source_count * registered_ratio), 0)
         return pipeline.SparseStats(registered_image_count=registered, sparse_point_count=point_count, mean_reprojection_error=0.55)
 
-    def fake_export_sparse_as_ply(bin_path, *, sparse_model_path, output_ply, log_file):
+    def fake_sparse_mesher(bin_path, *, sparse_model_path, output_ply, log_file):
         output_ply.parent.mkdir(parents=True, exist_ok=True)
         _fake_colored_mesh(output_ply)
-
-    def fake_mesher(bin_path, *, input_ply, output_ply, log_file):
-        shutil.copy(input_ply, output_ply)
 
     monkeypatch.setattr(pipeline, "run_feature_extraction", fake_feature_extraction)
     monkeypatch.setattr(pipeline, "run_matching", fake_matching)
     monkeypatch.setattr(pipeline, "run_mapper", fake_mapper)
     monkeypatch.setattr(pipeline, "analyze_sparse_model", fake_analyze)
-    monkeypatch.setattr(pipeline, "export_sparse_as_ply", fake_export_sparse_as_ply)
-    monkeypatch.setattr(pipeline, "run_mesher", fake_mesher)
+    monkeypatch.setattr(pipeline, "run_sparse_mesher", fake_sparse_mesher)
 
 
 def _mock_colmap_available(monkeypatch) -> None:
@@ -223,6 +221,24 @@ def test_preflight_with_too_few_images_returns_needs_images_without_running_colm
     assert body["guidance"]
 
 
+def test_preflight_with_exactly_three_images_attempts_reconstruction(model3d_context, monkeypatch):
+    """Three is the product minimum to ATTEMPT a preview - not a guarantee of success."""
+    client, database, settings = model3d_context
+    headers = auth_headers(client)
+    artifact = create_artifact(client, headers)
+    artifact_id = artifact["id"]
+    _add_reconstruction_images(client, headers, artifact_id, count=3)
+
+    _mock_colmap_available(monkeypatch)
+    _patch_pipeline_success(monkeypatch, registered_ratio=1.0, point_count=50)
+
+    response = client.post(f"/api/v1/artifacts/{artifact_id}/3d/preflight", headers=headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready_for_build"
+    assert body["registered_image_count"] == 3
+
+
 def test_preflight_ready_for_build_when_registration_is_good(model3d_context, monkeypatch):
     client, database, settings = model3d_context
     headers = auth_headers(client)
@@ -241,7 +257,9 @@ def test_preflight_ready_for_build_when_registration_is_good(model3d_context, mo
     assert body["sparse_point_count"] == 1500
 
 
-def test_preflight_needs_images_when_registration_is_poor(model3d_context, monkeypatch):
+def test_preflight_ready_for_build_from_a_partial_low_ratio_reconstruction(model3d_context, monkeypatch):
+    """This is a best-effort preview feature: a low registered-image ratio alone must not block
+    an otherwise usable partial reconstruction from reaching admin review."""
     client, database, settings = model3d_context
     headers = auth_headers(client)
     artifact = create_artifact(client, headers)
@@ -250,6 +268,43 @@ def test_preflight_needs_images_when_registration_is_poor(model3d_context, monke
 
     _mock_colmap_available(monkeypatch)
     _patch_pipeline_success(monkeypatch, registered_ratio=0.3, point_count=1500)
+
+    response = client.post(f"/api/v1/artifacts/{artifact_id}/3d/preflight", headers=headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready_for_build"
+    assert body["registered_image_count"] == 3
+    assert body["registered_image_ratio"] == 0.3
+
+
+def test_preflight_needs_images_when_too_few_images_registered(model3d_context, monkeypatch):
+    client, database, settings = model3d_context
+    headers = auth_headers(client)
+    artifact = create_artifact(client, headers)
+    artifact_id = artifact["id"]
+    _add_reconstruction_images(client, headers, artifact_id, count=10)
+
+    _mock_colmap_available(monkeypatch)
+    # Below MIN_USABLE_REGISTERED_IMAGES (2): not enough posed images for any real geometry.
+    _patch_pipeline_success(monkeypatch, registered_ratio=0.1, point_count=1500)
+
+    response = client.post(f"/api/v1/artifacts/{artifact_id}/3d/preflight", headers=headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "needs_images"
+    assert len(body["guidance"]) > 0
+
+
+def test_preflight_needs_images_when_sparse_points_too_few(model3d_context, monkeypatch):
+    client, database, settings = model3d_context
+    headers = auth_headers(client)
+    artifact = create_artifact(client, headers)
+    artifact_id = artifact["id"]
+    _add_reconstruction_images(client, headers, artifact_id, count=10)
+
+    _mock_colmap_available(monkeypatch)
+    # Registered images are fine, but the point cloud is degenerately small.
+    _patch_pipeline_success(monkeypatch, registered_ratio=1.0, point_count=3)
 
     response = client.post(f"/api/v1/artifacts/{artifact_id}/3d/preflight", headers=headers)
     assert response.status_code == 200
@@ -291,7 +346,7 @@ def test_build_rejected_while_another_job_is_active(model3d_context, monkeypatch
     assert second.status_code == 409
 
 
-def test_full_build_publishes_glb_with_version_and_sha(model3d_context, monkeypatch):
+def test_full_build_reaches_pending_review_not_immediately_published(model3d_context, monkeypatch):
     client, database, settings = model3d_context
     headers = auth_headers(client)
     artifact = create_artifact(client, headers, with_image=True)
@@ -309,21 +364,88 @@ def test_full_build_publishes_glb_with_version_and_sha(model3d_context, monkeypa
 
     status_response = client.get(f"/api/v1/artifacts/{artifact_id}/3d/status", headers=headers)
     body = status_response.json()
-    assert body["state"]["status"] == "ready"
-    assert body["state"]["version"] == 1
-    assert len(body["state"]["sha256"]) == 64
-    assert body["state"]["size_bytes"] > 0
-    assert body["state"]["model_url"] is not None
-    assert body["job"]["status"] == "ready"
+    # A finished build is a DRAFT awaiting admin review, not a published model.
+    assert body["state"]["status"] == "pending_review"
+    assert body["state"]["version"] == 0
+    assert body["state"]["sha256"] is None
+    assert body["state"]["model_url"] is None
+    assert body["state"]["draft_version"] == 1
+    assert len(body["state"]["draft_sha256"]) == 64
+    assert body["state"]["draft_size_bytes"] > 0
+    assert body["state"]["draft_model_url"] is not None
+    assert body["job"]["status"] == "pending_review"
 
-    published_path = settings.model_3d_root_path / artifact_id / "model-v1.glb"
-    assert published_path.is_file()
-
-    visitor_view = client.get(f"/api/v1/artifacts/{artifact_id}", headers=headers).json()
-    assert visitor_view is not None  # admin view sanity check; visitor exposure covered below
+    draft_path = settings.model_3d_root_path / artifact_id / "model-v1.glb"
+    assert draft_path.is_file()
 
 
-def test_visitor_artifact_exposes_model_only_when_ready(model3d_context, monkeypatch):
+def test_accept_publishes_draft_model(model3d_context, monkeypatch):
+    client, database, settings = model3d_context
+    headers = auth_headers(client)
+    artifact = create_artifact(client, headers)
+    artifact_id = artifact["id"]
+    _add_reconstruction_images(client, headers, artifact_id, count=10)
+    _mock_colmap_available(monkeypatch)
+    _patch_pipeline_success(monkeypatch)
+    client.post(f"/api/v1/artifacts/{artifact_id}/3d/preflight", headers=headers)
+    _run_worker_synchronously()
+    client.post(f"/api/v1/artifacts/{artifact_id}/3d/build", headers=headers)
+
+    pending = client.get(f"/api/v1/artifacts/{artifact_id}/3d", headers=headers).json()
+    draft_sha = pending["draft_sha256"]
+    assert pending["status"] == "pending_review"
+
+    accept = client.post(f"/api/v1/artifacts/{artifact_id}/3d/accept", headers=headers)
+    assert accept.status_code == 200, accept.text
+    body = accept.json()
+    assert body["status"] == "ready"
+    assert body["version"] == 1
+    assert body["sha256"] == draft_sha
+    assert body["model_url"] is not None
+    assert body["draft_version"] is None
+    assert body["draft_model_url"] is None
+
+
+def test_reject_discards_draft_without_exposing_it(model3d_context, monkeypatch):
+    client, database, settings = model3d_context
+    headers = auth_headers(client)
+    artifact = create_artifact(client, headers, code="ART-REJECT", with_image=True)
+    artifact_id = artifact["id"]
+    client.patch(f"/api/v1/artifacts/{artifact_id}", data={"status": "published"}, headers=headers)
+    _add_reconstruction_images(client, headers, artifact_id, count=10)
+    _mock_colmap_available(monkeypatch)
+    _patch_pipeline_success(monkeypatch)
+    client.post(f"/api/v1/artifacts/{artifact_id}/3d/preflight", headers=headers)
+    _run_worker_synchronously()
+    client.post(f"/api/v1/artifacts/{artifact_id}/3d/build", headers=headers)
+
+    draft_path = settings.model_3d_root_path / artifact_id / "model-v1.glb"
+    assert draft_path.is_file()
+
+    guest_session = database.guest_sessions.insert_one(
+        {"role": "guest", "created_at": utc_now(), "expires_at": None}
+    ).inserted_id
+    from app.auth.jwt_handler import create_access_token as make_token
+
+    guest_token, _ = make_token(str(guest_session), "guest@example.com", "guest", settings)
+    guest_headers = {"Authorization": f"Bearer {guest_token}"}
+
+    reject = client.post(f"/api/v1/artifacts/{artifact_id}/3d/reject", headers=headers)
+    assert reject.status_code == 200, reject.text
+    body = reject.json()
+    assert body["status"] == "needs_images"  # no previously accepted model to fall back to
+    assert body["draft_version"] is None
+    assert not draft_path.is_file()
+
+    visitor_view = client.get(f"/api/v1/visitor/artifacts/{artifact_id}", headers=guest_headers).json()
+    assert visitor_view["model_3d_available"] is False
+
+    # Rejecting again (nothing pending) is a conflict, not a silent no-op.
+    second_reject = client.post(f"/api/v1/artifacts/{artifact_id}/3d/reject", headers=headers)
+    assert second_reject.status_code == 409
+
+
+def test_visitor_artifact_exposes_model_only_after_accept(model3d_context, monkeypatch):
     client, database, settings = model3d_context
     headers = auth_headers(client)
     artifact = create_artifact(client, headers, code="ART-VISIBLE", with_image=True)
@@ -350,6 +472,12 @@ def test_visitor_artifact_exposes_model_only_when_ready(model3d_context, monkeyp
     _run_worker_synchronously()
     client.post(f"/api/v1/artifacts/{artifact_id}/3d/build", headers=headers)
 
+    # A draft awaiting review must never reach the visitor.
+    still_hidden = client.get(f"/api/v1/visitor/artifacts/{artifact_id}", headers=guest_headers)
+    assert still_hidden.json()["model_3d_available"] is False
+
+    client.post(f"/api/v1/artifacts/{artifact_id}/3d/accept", headers=headers)
+
     after = client.get(f"/api/v1/visitor/artifacts/{artifact_id}", headers=guest_headers)
     body = after.json()
     assert body["model_3d_available"] is True
@@ -358,7 +486,7 @@ def test_visitor_artifact_exposes_model_only_when_ready(model3d_context, monkeyp
     assert body["model_3d_url"].endswith(".glb")
 
 
-def test_failed_rebuild_preserves_previous_published_model(model3d_context, monkeypatch):
+def test_failed_rebuild_preserves_previous_accepted_model(model3d_context, monkeypatch):
     client, database, settings = model3d_context
     headers = auth_headers(client)
     artifact = create_artifact(client, headers)
@@ -370,16 +498,17 @@ def test_failed_rebuild_preserves_previous_published_model(model3d_context, monk
 
     _run_worker_synchronously()
     client.post(f"/api/v1/artifacts/{artifact_id}/3d/build", headers=headers)
-    first_status = client.get(f"/api/v1/artifacts/{artifact_id}/3d/status", headers=headers).json()
-    assert first_status["state"]["status"] == "ready"
-    original_sha = first_status["state"]["sha256"]
+    accept = client.post(f"/api/v1/artifacts/{artifact_id}/3d/accept", headers=headers)
+    first_status = accept.json()
+    assert first_status["status"] == "ready"
+    original_sha = first_status["sha256"]
     original_path = settings.model_3d_root_path / artifact_id / "model-v1.glb"
     assert original_path.is_file()
 
-    def broken_mesher(bin_path, *, input_ply, output_ply, log_file):
-        raise pipeline.ColmapStageError("poisson_mesher", "simulated meshing failure")
+    def broken_mesher(bin_path, *, sparse_model_path, output_ply, log_file):
+        raise pipeline.ColmapStageError("delaunay_mesher", "simulated meshing failure")
 
-    monkeypatch.setattr(pipeline, "run_mesher", broken_mesher)
+    monkeypatch.setattr(pipeline, "run_sparse_mesher", broken_mesher)
     client.post(f"/api/v1/artifacts/{artifact_id}/3d/preflight", headers=headers)
     client.post(f"/api/v1/artifacts/{artifact_id}/3d/build", headers=headers)
 
@@ -456,3 +585,113 @@ def test_reconcile_abandoned_jobs_marks_interrupted(model3d_context):
 
     reconciled_artifact = artifact_repository.get_artifact(database, artifact_id)
     assert repo.get_model_3d_state(reconciled_artifact)["status"] == states.INTERRUPTED
+
+
+# --- Low-resource CLI configuration ---------------------------------------------
+
+
+def test_feature_extraction_command_applies_low_resource_limits(monkeypatch, tmp_path):
+    """COLMAP crashed outright on a real 8GB/4-core CPU-only machine with default (all-core)
+    threading at full image resolution; this locks in that the configured image-size, feature
+    count, and thread limits actually reach the CLI invocation."""
+    captured: dict = {}
+
+    def fake_supports(bin_path, subcommand, option):
+        return True  # pretend every option this pipeline might pass is supported
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(pipeline, "_subcommand_supports", fake_supports)
+    monkeypatch.setattr(pipeline.subprocess, "run", fake_run)
+
+    log_path = tmp_path / "log.txt"
+    with log_path.open("w", encoding="utf-8") as log_file:
+        pipeline.run_feature_extraction(
+            "colmap",
+            database_path=tmp_path / "db.sqlite",
+            image_path=tmp_path / "source",
+            use_gpu=False,
+            max_dimension=1280,
+            num_threads=1,
+            max_features=4096,
+            log_file=log_file,
+        )
+    args = captured["command"]
+    assert "--SiftExtraction.max_image_size" in args
+    assert args[args.index("--SiftExtraction.max_image_size") + 1] == "1280"
+    assert "--SiftExtraction.max_num_features" in args
+    assert args[args.index("--SiftExtraction.max_num_features") + 1] == "4096"
+    assert "--FeatureExtraction.num_threads" in args
+    assert args[args.index("--FeatureExtraction.num_threads") + 1] == "1"
+
+    with log_path.open("w", encoding="utf-8") as log_file:
+        pipeline.run_matching(
+            "colmap",
+            database_path=tmp_path / "db.sqlite",
+            use_gpu=False,
+            num_threads=1,
+            log_file=log_file,
+        )
+    match_args = captured["command"]
+    assert "--FeatureMatching.num_threads" in match_args
+    assert match_args[match_args.index("--FeatureMatching.num_threads") + 1] == "1"
+
+
+def test_sparse_mesher_uses_delaunay_with_sparse_input_type(monkeypatch, tmp_path):
+    """A real CPU-fallback build failed with "Ply file does not contain normals" the one time
+    poisson_mesher actually ran against a raw sparse point cloud - poisson requires normals that
+    a sparse SfM point cloud does not have. delaunay_mesher's --input_type sparse works directly
+    on the sparse reconstruction and must be the only mesher used for this path (no poisson
+    fallback, since poisson cannot work here regardless of availability)."""
+    captured: dict = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(pipeline.subprocess, "run", fake_run)
+
+    sparse_model_path = tmp_path / "sparse" / "0"
+    sparse_model_path.mkdir(parents=True)
+    output_ply = tmp_path / "output" / "mesh.ply"
+
+    log_path = tmp_path / "log.txt"
+    with log_path.open("w", encoding="utf-8") as log_file:
+        pipeline.run_sparse_mesher(
+            "colmap",
+            sparse_model_path=sparse_model_path,
+            output_ply=output_ply,
+            log_file=log_file,
+        )
+
+    command = captured["command"]
+    assert command[0] == "colmap"
+    assert command[1] == "delaunay_mesher"
+    assert "--input_type" in command
+    assert command[command.index("--input_type") + 1] == "sparse"
+    assert "--input_path" in command
+    assert command[command.index("--input_path") + 1] == str(sparse_model_path)
+    assert "poisson_mesher" not in command
+
+
+def test_reconstruction_source_images_are_downscaled_and_exif_stripped(tmp_path):
+    from PIL import Image
+
+    from app.services.model3d.reconstruction_service import _write_source_image
+
+    large = Image.new("RGB", (4000, 3000), color=(10, 20, 30))
+    buffer = io.BytesIO()
+    large.save(buffer, format="JPEG")
+    data = buffer.getvalue()
+
+    destination = tmp_path / "working-copy.jpg"
+    width, height = _write_source_image(destination, data, max_dimension=1280)
+
+    assert max(width, height) == 1280
+    assert width / height == pytest.approx(4000 / 3000, rel=0.01)
+
+    with Image.open(destination) as written:
+        assert written.size == (width, height)
+        assert len(written.getexif()) == 0

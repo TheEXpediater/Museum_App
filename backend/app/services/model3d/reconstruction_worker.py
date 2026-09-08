@@ -12,6 +12,7 @@ from app.repositories import reconstruction_repository as repo
 from app.services.model3d import colmap_pipeline as pipeline
 from app.services.model3d import colmap_service, states
 from app.services.model3d.glb_converter import GlbConversionError, convert_to_glb
+from app.services.model3d.reconstruction_service import MIN_USABLE_REGISTERED_IMAGES, MIN_USABLE_SPARSE_POINTS
 from app.utils import utc_now
 
 logger = logging.getLogger(__name__)
@@ -108,9 +109,17 @@ def run(database: Database, settings: Settings, artifact_id: ObjectId, job_id: O
                 image_path=dirs["source"],
                 use_gpu=settings.colmap_use_gpu,
                 max_dimension=settings.model_3d_max_input_dimension,
+                num_threads=settings.model_3d_cpu_threads,
+                max_features=settings.model_3d_max_features,
                 log_file=log_file,
             )
-            pipeline.run_matching(bin_path, database_path=database_path, use_gpu=settings.colmap_use_gpu, log_file=log_file)
+            pipeline.run_matching(
+                bin_path,
+                database_path=database_path,
+                use_gpu=settings.colmap_use_gpu,
+                num_threads=settings.model_3d_cpu_threads,
+                log_file=log_file,
+            )
 
             sparse_path = dirs["workspace"] / "sparse"
             pipeline.run_mapper(bin_path, database_path=database_path, image_path=dirs["source"], sparse_path=sparse_path, log_file=log_file)
@@ -119,7 +128,7 @@ def run(database: Database, settings: Settings, artifact_id: ObjectId, job_id: O
             if not sparse_model_path.is_dir():
                 _fail(
                     database, job_id, artifact_id,
-                    message="COLMAP could not register enough photographs to build a sparse model.",
+                    message="Unable to create a usable 3D preview from these photographs.",
                     guidance=SPARSE_GUIDANCE,
                 )
                 return
@@ -135,8 +144,12 @@ def run(database: Database, settings: Settings, artifact_id: ObjectId, job_id: O
             }
             repo.update_job(database, job_id, metrics)
 
-            if ratio < settings.model_3d_min_registered_ratio or not stats.sparse_point_count:
-                repo.update_job(database, job_id, {"status": states.FAILED, "stage_message": "Sparse reconstruction quality gate failed.", "error": "needs_more_images", "finished_at": utc_now()})
+            # Lightweight sanity gate (see reconstruction_service.run_preflight for the same
+            # gate applied earlier): a best-effort preview only needs some real geometry, not a
+            # high registered-image ratio. ratio stays informational.
+            usable = registered >= MIN_USABLE_REGISTERED_IMAGES and (stats.sparse_point_count or 0) >= MIN_USABLE_SPARSE_POINTS
+            if not usable:
+                repo.update_job(database, job_id, {"status": states.FAILED, "stage_message": "Sparse reconstruction did not produce usable geometry.", "error": "needs_more_images", "finished_at": utc_now()})
                 # As in _fail(): do not hide an existing published model behind NEEDS_IMAGES just
                 # because a rebuild attempt's sparse gate came up short.
                 next_status = states.READY if _has_published_model(database, artifact_id) else states.NEEDS_IMAGES
@@ -164,16 +177,17 @@ def run(database: Database, settings: Settings, artifact_id: ObjectId, job_id: O
                 except pipeline.ColmapStageError as exc:
                     log_file.write(f"\n[dense stereo unavailable, falling back to sparse mesh: {exc}]\n")
 
-            if not used_dense_stereo:
-                # CPU-only environments (the default for this system) cannot run COLMAP's
-                # CUDA-only patch_match_stereo. Mesh the sparse point cloud directly instead of
-                # requiring a GPU - a real, working (lower-fidelity) result beats hard failure.
-                _set_progress(database, job_id, artifact_id, status=states.DENSE_RECONSTRUCTION, stage_message="Building point cloud from sparse reconstruction (CPU mode).", **metrics)
-                pipeline.export_sparse_as_ply(bin_path, sparse_model_path=sparse_model_path, output_ply=fused_ply, log_file=log_file)
-
             _set_progress(database, job_id, artifact_id, status=states.MESHING, stage_message="Generating mesh.", **metrics)
             mesh_ply = dirs["output"] / "mesh.ply"
-            pipeline.run_mesher(bin_path, input_ply=fused_ply, output_ply=mesh_ply, log_file=log_file)
+            if used_dense_stereo:
+                pipeline.run_mesher(bin_path, input_ply=fused_ply, output_ply=mesh_ply, log_file=log_file)
+            else:
+                # CPU-only environments (the default for this system) cannot run COLMAP's
+                # CUDA-only patch_match_stereo, so there is no fused/dense point cloud with
+                # normals to hand to poisson_mesher. Mesh straight from the sparse
+                # reconstruction with delaunay_mesher instead - a real, working
+                # (lower-fidelity) preview beats hard failure.
+                pipeline.run_sparse_mesher(bin_path, sparse_model_path=sparse_model_path, output_ply=mesh_ply, log_file=log_file)
             if not mesh_ply.is_file():
                 _fail(database, job_id, artifact_id, message="Meshing did not produce an output file.", guidance=SPARSE_GUIDANCE)
                 return
@@ -199,20 +213,27 @@ def run(database: Database, settings: Settings, artifact_id: ObjectId, job_id: O
             # Stored relative to BACKEND_DIR (e.g. "uploads/models3d/<id>/model-v1.glb"), matching
             # how artifact image_paths are stored, so image_url_for_path() works unmodified.
             relative_glb_path = destination.relative_to(settings.model_3d_root_path.parent.parent).as_posix()
-            guidance = list(result.warnings)
+            guidance = [
+                "3D preview generated from the supplied photographs. Areas without sufficient "
+                "image coverage may appear incomplete.",
+                *result.warnings,
+            ]
             if not used_dense_stereo:
                 guidance.append("Built from the sparse point cloud (CPU mode). Enable COLMAP_USE_GPU for higher-fidelity dense reconstruction.")
 
-            repo.update_job(database, job_id, {"status": states.READY, "stage_message": "Model published.", "finished_at": utc_now()})
+            # A successful build produces a DRAFT awaiting admin review, not an immediately
+            # visible published model - the visitor-facing version/path/sha/size fields (and
+            # any previously accepted model they point to) are left untouched here.
+            repo.update_job(database, job_id, {"status": states.PENDING_REVIEW, "stage_message": "3D preview ready for review.", "finished_at": utc_now()})
             repo.update_model_3d_state(
                 database, artifact_id,
                 {
-                    "status": states.READY,
-                    "version": target_version,
-                    "path": relative_glb_path,
-                    "sha256": result.sha256,
-                    "size_bytes": result.size_bytes,
-                    "created_at": utc_now(),
+                    "status": states.PENDING_REVIEW,
+                    "draft_version": target_version,
+                    "draft_path": relative_glb_path,
+                    "draft_sha256": result.sha256,
+                    "draft_size_bytes": result.size_bytes,
+                    "draft_created_at": utc_now(),
                     "failure_message": None,
                     "guidance": guidance,
                     **metrics,

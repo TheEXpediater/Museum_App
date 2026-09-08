@@ -243,6 +243,12 @@ interface AdminApiService {
     @POST("api/v1/artifacts/{artifactId}/3d/build")
     suspend fun build3DModel(@Path("artifactId") artifactId: String): Model3DBuildResponseDto
 
+    @POST("api/v1/artifacts/{artifactId}/3d/accept")
+    suspend fun accept3DModel(@Path("artifactId") artifactId: String): Model3DStateDto
+
+    @POST("api/v1/artifacts/{artifactId}/3d/reject")
+    suspend fun reject3DModel(@Path("artifactId") artifactId: String): Model3DStateDto
+
     @GET("api/v1/artifacts/{artifactId}/3d/status")
     suspend fun get3DStatus(@Path("artifactId") artifactId: String): Model3DStatusResponseDto
 }

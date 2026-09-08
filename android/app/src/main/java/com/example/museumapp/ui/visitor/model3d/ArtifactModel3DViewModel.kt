@@ -20,16 +20,26 @@ sealed class Model3DViewerState {
     data class Error(val message: String) : Model3DViewerState()
 }
 
+/** Where an [ArtifactModel3DViewModel] gets the model's url/version/sha256 from. */
+private sealed class Model3DSource {
+    /** Visitor flow: fetch the artifact's ACCEPTED model via [VisitorRepositoryContract]. */
+    data class VisitorArtifact(val artifactId: String) : Model3DSource()
+
+    /** Admin draft-review flow: coordinates are already known from the 3D state response, so no
+     * extra fetch is needed - and a draft is never visible through the visitor endpoint anyway. */
+    data class Direct(val artifactId: String, val version: Int, val sha256: String, val url: String) : Model3DSource()
+}
+
 /**
- * Fetches the visitor artifact (which now carries the `model_3d_*` fields) and, when a model is
- * available, drives [Model3DCacheRepository] to obtain a verified local copy for the viewer
- * screen. Deliberately reuses [VisitorRepositoryContract.visitorArtifactDetails] rather than
- * adding a redundant new repository call just for the 3D fields.
+ * Drives [Model3DCacheRepository] to obtain a verified local copy of a GLB for the viewer screen,
+ * either the visitor's ACCEPTED model (fetched via [VisitorRepositoryContract.visitorArtifactDetails],
+ * reusing that call rather than adding a redundant one just for the 3D fields) or an admin's
+ * PENDING_REVIEW draft (coordinates passed in directly - drafts are never exposed to visitors).
  */
-class ArtifactModel3DViewModel(
-    private val repository: VisitorRepositoryContract,
+class ArtifactModel3DViewModel private constructor(
+    private val repository: VisitorRepositoryContract?,
     private val cacheRepository: Model3DCacheRepository,
-    private val artifactId: String?
+    private val source: Model3DSource
 ) : ViewModel() {
     private val _state = MutableStateFlow<Model3DViewerState>(Model3DViewerState.Loading)
     val state: StateFlow<Model3DViewerState> = _state.asStateFlow()
@@ -43,26 +53,29 @@ class ArtifactModel3DViewModel(
     }
 
     private fun load() {
-        val id = artifactId
-        if (id.isNullOrBlank()) {
-            _state.value = Model3DViewerState.Error("The requested artifact was not found.")
-            return
-        }
-        _state.value = Model3DViewerState.Loading
-        viewModelScope.launch {
-            when (val result = repository.visitorArtifactDetails(id)) {
-                is RepositoryResult.Success -> {
-                    val artifact = result.data
-                    val version = artifact.model3dVersion
-                    val sha256 = artifact.model3dSha256
-                    val url = artifact.model3dUrl
-                    if (!artifact.model3dAvailable || version == null || sha256.isNullOrBlank() || url.isNullOrBlank()) {
-                        _state.value = Model3DViewerState.Error("A 3D model is not available for this artifact.")
-                        return@launch
+        when (val current = source) {
+            is Model3DSource.Direct -> {
+                downloadAndCache(current.artifactId, current.version, current.sha256, current.url)
+            }
+            is Model3DSource.VisitorArtifact -> {
+                val repo = repository ?: return
+                _state.value = Model3DViewerState.Loading
+                viewModelScope.launch {
+                    when (val result = repo.visitorArtifactDetails(current.artifactId)) {
+                        is RepositoryResult.Success -> {
+                            val artifact = result.data
+                            val version = artifact.model3dVersion
+                            val sha256 = artifact.model3dSha256
+                            val url = artifact.model3dUrl
+                            if (!artifact.model3dAvailable || version == null || sha256.isNullOrBlank() || url.isNullOrBlank()) {
+                                _state.value = Model3DViewerState.Error("A 3D model is not available for this artifact.")
+                                return@launch
+                            }
+                            downloadAndCache(current.artifactId, version, sha256, url)
+                        }
+                        is RepositoryResult.Error -> _state.value = Model3DViewerState.Error(result.message)
                     }
-                    downloadAndCache(id, version, sha256, url)
                 }
-                is RepositoryResult.Error -> _state.value = Model3DViewerState.Error(result.message)
             }
         }
     }
@@ -92,7 +105,29 @@ class ArtifactModel3DViewModel(
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                ArtifactModel3DViewModel(repository, cacheRepository, artifactId) as T
+                ArtifactModel3DViewModel(
+                    repository,
+                    cacheRepository,
+                    Model3DSource.VisitorArtifact(artifactId.orEmpty())
+                ) as T
+        }
+
+        /** Admin preview of a PENDING_REVIEW draft: url/version/sha256 come straight from the
+         * 3D state response the admin already fetched, so no visitor lookup is involved. */
+        fun factoryForDraft(
+            cacheRepository: Model3DCacheRepository,
+            artifactId: String,
+            version: Int,
+            sha256: String,
+            url: String
+        ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                ArtifactModel3DViewModel(
+                    null,
+                    cacheRepository,
+                    Model3DSource.Direct(artifactId, version, sha256, url)
+                ) as T
         }
     }
 }

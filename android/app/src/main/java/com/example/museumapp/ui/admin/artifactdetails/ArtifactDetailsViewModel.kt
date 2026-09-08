@@ -190,6 +190,34 @@ class ArtifactDetailsViewModel(
         }
     }
 
+    fun acceptModel() {
+        val id = artifactId ?: return
+        if (_uiState.value.model3DBusy) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(model3DBusy = true, model3DError = null) }
+            when (val result = repository.accept3DModel(id)) {
+                is RepositoryResult.Success -> _uiState.update { it.copy(model3D = result.data, model3DBusy = false) }
+                is RepositoryResult.Error -> _uiState.update {
+                    it.copy(model3DBusy = false, model3DError = result.message)
+                }
+            }
+        }
+    }
+
+    fun rejectModel() {
+        val id = artifactId ?: return
+        if (_uiState.value.model3DBusy) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(model3DBusy = true, model3DError = null) }
+            when (val result = repository.reject3DModel(id)) {
+                is RepositoryResult.Success -> _uiState.update { it.copy(model3D = result.data, model3DBusy = false) }
+                is RepositoryResult.Error -> _uiState.update {
+                    it.copy(model3DBusy = false, model3DError = result.message)
+                }
+            }
+        }
+    }
+
     fun dismissModel3DError() {
         _uiState.update { it.copy(model3DError = null) }
     }

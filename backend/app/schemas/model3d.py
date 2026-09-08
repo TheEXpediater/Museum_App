@@ -18,6 +18,12 @@ class Model3DStateResponse(BaseModel):
     sha256: str | None = None
     size_bytes: int | None = None
     created_at: str | None = None
+    # Draft (pending_review) model awaiting admin Accept/Reject - never visitor-visible.
+    draft_version: int | None = None
+    draft_sha256: str | None = None
+    draft_size_bytes: int | None = None
+    draft_created_at: str | None = None
+    draft_model_url: str | None = None
     source_image_count: int = 0
     registered_image_count: int | None = None
     registered_image_ratio: float | None = None

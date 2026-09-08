@@ -101,6 +101,66 @@ fun ArtifactModel3DScreen(
     }
 }
 
+/**
+ * Admin counterpart of [ArtifactModel3DScreen] for reviewing a PENDING_REVIEW draft model before
+ * Accept/Reject. Renders with the exact same SceneView pipeline (one engine/model loader per
+ * screen instance, via [ArtifactModel3DViewModel.factoryForDraft]) - the only difference from the
+ * visitor screen is where the url/version/sha256 come from, since a draft is never visible
+ * through the visitor endpoint.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AdminModel3DPreviewScreen(
+    artifactId: String,
+    version: Int,
+    sha256: String,
+    url: String,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    val viewModel: ArtifactModel3DViewModel = viewModel(
+        key = "admin_draft_model3d_${artifactId}_$version",
+        factory = ArtifactModel3DViewModel.factoryForDraft(
+            cacheRepository = remember { Model3DCacheRepository(context.applicationContext) },
+            artifactId = artifactId,
+            version = version,
+            sha256 = sha256,
+            url = url
+        )
+    )
+    val state by viewModel.state.collectAsStateWithLifecycle()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("3D Preview (Draft)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.primary,
+                    navigationIconContentColor = MaterialTheme.colorScheme.primary
+                ),
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.Center
+        ) {
+            when (val current = state) {
+                is Model3DViewerState.Loading -> CircularProgressIndicator()
+                is Model3DViewerState.Downloading -> DownloadingContent(current.progressFraction)
+                is Model3DViewerState.Ready -> Model3DViewerContent(current.localFilePath)
+                is Model3DViewerState.Error -> ErrorContent(current.message, onRetry = viewModel::retry)
+            }
+        }
+    }
+}
+
 @Composable
 private fun DownloadingContent(progressFraction: Float?) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {

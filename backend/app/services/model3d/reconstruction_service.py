@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import shutil
 import threading
+from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
 from bson import ObjectId
 from fastapi import HTTPException, UploadFile, status
+from PIL import Image
 from pymongo.database import Database
 
 from app.config import Settings
@@ -17,10 +19,19 @@ from app.services.model3d import colmap_service, states
 from app.services.model3d.image_quality import assess_images
 from app.utils import utc_now
 
-# Below this, running COLMAP at all is not worth the machine time - the admin needs to add
-# photos first. This is intentionally lower than MODEL_3D_MIN_SOURCE_IMAGES (a "nice to have"
-# heuristic); it only prevents wasting a sparse reconstruction attempt on a hopeless input set.
-ABSOLUTE_MIN_IMAGES_FOR_SPARSE = 5
+# Product minimum: this is a best-effort preview feature, not professional photogrammetry.
+# Three overlapping photos are allowed to ATTEMPT a reconstruction - COLMAP's own sparse
+# quality gate (see MIN_USABLE_* below) decides whether that attempt actually produced
+# anything usable, not this floor.
+ABSOLUTE_MIN_IMAGES_FOR_SPARSE = 3
+
+# Lightweight sanity gate replacing the old fixed registered-image-ratio requirement: a preview
+# only needs *some* real geometry, not a complete/high-ratio scan. At least 2 posed images are
+# required for any 3D structure to exist at all; the point-count floor rejects a degenerate
+# near-empty cloud. Completeness beyond this is informational and left to the admin's
+# Accept/Reject review, not enforced here.
+MIN_USABLE_REGISTERED_IMAGES = 2
+MIN_USABLE_SPARSE_POINTS = 10
 
 ACTIVE_JOB_CONFLICT_MESSAGE = "A reconstruction job is already running. Wait for it to finish before starting another."
 
@@ -40,6 +51,34 @@ def _ensure_source_dir(settings: Settings, artifact_id: str) -> Path:
     return dirs["source"]
 
 
+def _write_source_image(path: Path, data: bytes, *, max_dimension: int) -> tuple[int, int]:
+    """Writes a working copy of an image for COLMAP, never the administrator's original file.
+
+    Two adjustments versus the original bytes, both driven by real hardware limits observed
+    on an 8GB/4-core CPU-only test machine:
+
+    - EXIF stripped entirely: real phone photos here carry EXIF orientation=0, which is not a
+      valid value (1-8) and crashes COLMAP 4.2's EXIF-based gravity/pose-prior parsing during
+      feature extraction. Pixel data is already stored in the visually correct orientation
+      (portrait shots are literally portrait-dimensioned), so no rotation is lost by dropping it.
+    - Downscaled to at most `max_dimension` on the longest side (aspect ratio preserved):
+      feeding full-resolution (e.g. 4080x3060) originals into COLMAP's own decode+resize step
+      still requires holding the full-resolution image in memory first, which is what exhausted
+      RAM on that machine. Pre-downscaling the working copy avoids that peak.
+    """
+    with Image.open(BytesIO(data)) as image:
+        original_format = image.format
+        width, height = image.size
+        longest_side = max(width, height)
+        if max_dimension and longest_side > max_dimension:
+            scale = max_dimension / float(longest_side)
+            width, height = max(1, round(width * scale)), max(1, round(height * scale))
+            image = image.resize((width, height), Image.LANCZOS)
+        save_kwargs = {"quality": 95} if original_format == "JPEG" else {}
+        image.save(path, format=original_format, **save_kwargs)
+    return width, height
+
+
 def serialize_image(document: dict) -> dict:
     return {
         "id": str(document["_id"]),
@@ -57,9 +96,11 @@ def get_state(database: Database, artifact: dict) -> dict:
     images = repo.list_reconstruction_images(database, artifact_id)
     active_job = repo.find_active_job_for_artifact(database, artifact_id)
     created_at = state.get("created_at")
+    draft_created_at = state.get("draft_created_at")
     return {
         **state,
         "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
+        "draft_created_at": draft_created_at.isoformat() if hasattr(draft_created_at, "isoformat") else draft_created_at,
         "source_image_count": len(images),
         "images": [serialize_image(image) for image in images],
         "active_job_id": str(active_job["_id"]) if active_job else None,
@@ -106,11 +147,7 @@ def add_images(
             continue
 
         filename = f"{uuid4().hex}{extension}"
-        (source_dir / filename).write_bytes(data)
-        from PIL import Image
-
-        with Image.open(source_dir / filename) as opened:
-            width, height = opened.size
+        width, height = _write_source_image(source_dir / filename, data, max_dimension=settings.model_3d_max_input_dimension)
 
         created.append(
             repo.add_reconstruction_image(
@@ -134,11 +171,7 @@ def add_images(
             continue
 
         filename = f"{uuid4().hex}{extension}"
-        (source_dir / filename).write_bytes(data)
-        from PIL import Image
-
-        with Image.open(source_dir / filename) as opened:
-            width, height = opened.size
+        width, height = _write_source_image(source_dir / filename, data, max_dimension=settings.model_3d_max_input_dimension)
 
         created.append(
             repo.add_reconstruction_image(
@@ -218,9 +251,9 @@ def run_preflight(database: Database, settings: Settings, artifact: dict) -> dic
 
     if len(images) < ABSOLUTE_MIN_IMAGES_FOR_SPARSE:
         guidance = [
-            f"Add at least {ABSOLUTE_MIN_IMAGES_FOR_SPARSE} photographs before running a check "
+            f"Minimum: {ABSOLUTE_MIN_IMAGES_FOR_SPARSE} overlapping photos "
             f"({len(images)} currently added).",
-            "Aim for {} or more overlapping photographs for a reliable reconstruction.".format(
+            "Additional angles may improve the preview - aim for {} or more where possible.".format(
                 settings.model_3d_min_source_images
             ),
         ]
@@ -262,15 +295,23 @@ def run_preflight(database: Database, settings: Settings, artifact: dict) -> dic
                 image_path=source_dir,
                 use_gpu=settings.colmap_use_gpu,
                 max_dimension=settings.model_3d_max_input_dimension,
+                num_threads=settings.model_3d_cpu_threads,
+                max_features=settings.model_3d_max_features,
                 log_file=log_file,
             )
-            pipeline.run_matching(bin_path, database_path=database_path, use_gpu=settings.colmap_use_gpu, log_file=log_file)
+            pipeline.run_matching(
+                bin_path,
+                database_path=database_path,
+                use_gpu=settings.colmap_use_gpu,
+                num_threads=settings.model_3d_cpu_threads,
+                log_file=log_file,
+            )
             pipeline.run_mapper(bin_path, database_path=database_path, image_path=source_dir, sparse_path=sparse_path, log_file=log_file)
 
             sparse_model_path = sparse_path / "0"
             if not sparse_model_path.is_dir():
                 guidance = [
-                    "COLMAP could not register enough photographs to build even a sparse model.",
+                    "Unable to create a usable 3D preview from these photographs.",
                     *_default_sparse_guidance(),
                 ]
                 repo.update_model_3d_state(
@@ -305,7 +346,11 @@ def run_preflight(database: Database, settings: Settings, artifact: dict) -> dic
 
     registered = stats.registered_image_count or 0
     ratio = (registered / len(images)) if images else 0.0
-    ready = ratio >= settings.model_3d_min_registered_ratio and bool(stats.sparse_point_count)
+    # Lightweight sanity gate, not a quality gate: this is a best-effort preview, so any sparse
+    # reconstruction with enough real geometry to mesh is allowed through to admin review.
+    # registered_image_ratio remains informational (shown to the admin) rather than enforced -
+    # a 3-photo attempt that registers only 2 images can still reach a usable partial preview.
+    ready = registered >= MIN_USABLE_REGISTERED_IMAGES and (stats.sparse_point_count or 0) >= MIN_USABLE_SPARSE_POINTS
 
     guidance: list[str] = list(quality.guidance)
     if not ready:
@@ -388,11 +433,80 @@ def start_build(database: Database, settings: Settings, artifact: dict) -> dict:
 
     target_version = int(state.get("version") or 0) + 1
     job = repo.create_job(database, artifact_id=artifact_id, target_version=target_version, source_image_count=len(images))
-    repo.update_model_3d_state(database, artifact_id, {"status": states.QUEUED, "failure_message": None})
+    # A fresh build supersedes any unreviewed draft from a previous attempt; the previously
+    # *accepted* (published) model above is untouched and stays visible to visitors throughout.
+    repo.update_model_3d_state(
+        database, artifact_id,
+        {
+            "status": states.QUEUED,
+            "failure_message": None,
+            "draft_version": None,
+            "draft_path": None,
+            "draft_sha256": None,
+            "draft_size_bytes": None,
+            "draft_created_at": None,
+        },
+    )
 
     starter = _worker_thread_starter or _default_worker_starter
     starter(database, settings, artifact_id, job["_id"])
     return job
+
+
+def accept_draft(database: Database, settings: Settings, artifact: dict) -> None:
+    """Publishes the pending draft model: visitor API exposes it from this point on."""
+    artifact_id: ObjectId = artifact["_id"]
+    state = repo.get_model_3d_state(artifact)
+    if state["status"] != states.PENDING_REVIEW or not state.get("draft_path"):
+        raise ReconstructionError(status_code=status.HTTP_409_CONFLICT, detail="No pending 3D preview to accept.")
+
+    repo.update_model_3d_state(
+        database, artifact_id,
+        {
+            "status": states.READY,
+            "version": state["draft_version"],
+            "path": state["draft_path"],
+            "sha256": state["draft_sha256"],
+            "size_bytes": state["draft_size_bytes"],
+            "created_at": state["draft_created_at"],
+            "draft_version": None,
+            "draft_path": None,
+            "draft_sha256": None,
+            "draft_size_bytes": None,
+            "draft_created_at": None,
+            "failure_message": None,
+        },
+    )
+
+
+def reject_draft(database: Database, settings: Settings, artifact: dict) -> None:
+    """Discards the pending draft model. The visitor never saw it; any previously accepted
+    model (if one exists) remains published and untouched."""
+    artifact_id: ObjectId = artifact["_id"]
+    state = repo.get_model_3d_state(artifact)
+    if state["status"] != states.PENDING_REVIEW:
+        raise ReconstructionError(status_code=status.HTTP_409_CONFLICT, detail="No pending 3D preview to reject.")
+
+    draft_path = state.get("draft_path")
+    if draft_path:
+        full_path = settings.model_3d_root_path.parent.parent / draft_path
+        if full_path.is_file():
+            full_path.unlink()
+
+    has_published_model = bool(state.get("path")) and int(state.get("version") or 0) > 0
+    next_status = states.READY if has_published_model else states.NEEDS_IMAGES
+    repo.update_model_3d_state(
+        database, artifact_id,
+        {
+            "status": next_status,
+            "draft_version": None,
+            "draft_path": None,
+            "draft_sha256": None,
+            "draft_size_bytes": None,
+            "draft_created_at": None,
+            "failure_message": None,
+        },
+    )
 
 
 def get_job_status(database: Database, artifact_id: ObjectId) -> dict | None:

@@ -104,6 +104,8 @@ interface AdminRepositoryContract : RecognitionRepositoryContract {
     suspend fun delete3DReconstruction(artifactId: String): RepositoryResult<Model3DStateDto>
     suspend fun run3DPreflight(artifactId: String): RepositoryResult<Model3DStateDto>
     suspend fun build3DModel(artifactId: String): RepositoryResult<Model3DBuildResponseDto>
+    suspend fun accept3DModel(artifactId: String): RepositoryResult<Model3DStateDto>
+    suspend fun reject3DModel(artifactId: String): RepositoryResult<Model3DStateDto>
     suspend fun get3DStatus(artifactId: String): RepositoryResult<Model3DStatusResponseDto>
 }
 
@@ -352,6 +354,16 @@ class AdminRepository(
     override suspend fun build3DModel(artifactId: String): RepositoryResult<Model3DBuildResponseDto> =
         safeApiCall(conflictMessage = RECONSTRUCTION_BUSY_MESSAGE) {
             api.build3DModel(artifactId)
+        }
+
+    override suspend fun accept3DModel(artifactId: String): RepositoryResult<Model3DStateDto> =
+        safeApiCall(conflictMessage = RECONSTRUCTION_BUSY_MESSAGE) {
+            api.accept3DModel(artifactId)
+        }
+
+    override suspend fun reject3DModel(artifactId: String): RepositoryResult<Model3DStateDto> =
+        safeApiCall(conflictMessage = RECONSTRUCTION_BUSY_MESSAGE) {
+            api.reject3DModel(artifactId)
         }
 
     override suspend fun get3DStatus(artifactId: String): RepositoryResult<Model3DStatusResponseDto> = safeApiCall {

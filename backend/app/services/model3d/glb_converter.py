@@ -9,6 +9,12 @@ class GlbConversionError(RuntimeError):
     pass
 
 
+# Absolute safety ceiling for a lightweight preview GLB, regardless of the configured soft
+# target (MODEL_3D_MAX_GLB_MB) - catches a wildly bloated export (e.g. simplification failed)
+# without depending purely on a multiplier of a small target.
+ABSOLUTE_GLB_HARD_CEILING_MB = 25
+
+
 @dataclass
 class GlbConversionResult:
     sha256: str
@@ -100,7 +106,7 @@ def convert_to_glb(
         raise GlbConversionError("Exported GLB is zero bytes.")
 
     size_mb = size_bytes / (1024 * 1024)
-    hard_ceiling_mb = max_glb_mb * 4
+    hard_ceiling_mb = max(max_glb_mb, ABSOLUTE_GLB_HARD_CEILING_MB)
     if size_mb > hard_ceiling_mb:
         temp_path.unlink(missing_ok=True)
         raise GlbConversionError(

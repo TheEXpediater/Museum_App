@@ -21,6 +21,9 @@ import com.example.museumapp.ui.admin.login.AdminLoginScreen
 import com.example.museumapp.ui.admin.recognition.RecognitionScreen
 import com.example.museumapp.ui.admin.settings.SettingsScreen
 import com.example.museumapp.ui.admin.status.SystemStatusScreen
+import com.example.museumapp.ui.visitor.model3d.AdminModel3DPreviewScreen
+import java.net.URLDecoder
+import java.net.URLEncoder
 
 object AdminRoutes {
     const val Login = "admin_login"
@@ -33,9 +36,12 @@ object AdminRoutes {
     const val ArtifactCreate = "admin_artifact_create"
     const val ArtifactEdit = "admin_artifact_edit/{artifactId}"
     const val ArtifactDetails = "admin_artifact_details/{artifactId}"
+    const val ArtifactModel3DPreview = "admin_artifact_model3d_preview/{artifactId}/{version}/{sha256}/{encodedUrl}"
 
     fun editArtifact(artifactId: String): String = "admin_artifact_edit/$artifactId"
     fun artifactDetails(artifactId: String): String = "admin_artifact_details/$artifactId"
+    fun artifactModel3DPreview(artifactId: String, version: Int, sha256: String, url: String): String =
+        "admin_artifact_model3d_preview/$artifactId/$version/$sha256/${URLEncoder.encode(url, "UTF-8")}"
 }
 
 private object AdminSavedStateKeys {
@@ -171,7 +177,30 @@ fun AdminNavGraph(repository: AdminRepository, onBackToVisitor: () -> Unit) {
                     navController.navigate(AdminRoutes.editArtifact(artifactId)) {
                         launchSingleTop = true
                     }
+                },
+                onPreviewDraftModel = { artifactId, version, sha256, url ->
+                    navController.navigate(AdminRoutes.artifactModel3DPreview(artifactId, version, sha256, url)) {
+                        launchSingleTop = true
+                    }
                 }
+            )
+        }
+        composable(
+            route = AdminRoutes.ArtifactModel3DPreview,
+            arguments = listOf(
+                navArgument("artifactId") { type = NavType.StringType },
+                navArgument("version") { type = NavType.IntType },
+                navArgument("sha256") { type = NavType.StringType },
+                navArgument("encodedUrl") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val args = backStackEntry.arguments
+            AdminModel3DPreviewScreen(
+                artifactId = args?.getString("artifactId").orEmpty(),
+                version = args?.getInt("version") ?: 0,
+                sha256 = args?.getString("sha256").orEmpty(),
+                url = URLDecoder.decode(args?.getString("encodedUrl").orEmpty(), "UTF-8"),
+                onBack = { navController.popBackStack() }
             )
         }
         composable(AdminRoutes.ArtifactCreate) { backStackEntry ->

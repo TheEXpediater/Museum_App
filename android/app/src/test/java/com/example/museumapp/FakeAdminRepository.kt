@@ -125,6 +125,8 @@ class FakeAdminRepository : AdminRepositoryContract {
     var delete3DReconstructionResult: RepositoryResult<Model3DStateDto> = RepositoryResult.Success(Model3DStateDto())
     var run3DPreflightResult: RepositoryResult<Model3DStateDto> = RepositoryResult.Success(Model3DStateDto())
     var build3DModelResult: RepositoryResult<Model3DBuildResponseDto> = RepositoryResult.Success(Model3DBuildResponseDto(jobId = "job-1", status = "queued"))
+    var accept3DModelResult: RepositoryResult<Model3DStateDto> = RepositoryResult.Success(Model3DStateDto(status = "ready", version = 1))
+    var reject3DModelResult: RepositoryResult<Model3DStateDto> = RepositoryResult.Success(Model3DStateDto(status = "none"))
     // Terminal by default so a polling loop started in a test settles on the very first tick.
     var get3DStatusResult: RepositoryResult<Model3DStatusResponseDto> = RepositoryResult.Success(
         Model3DStatusResponseDto(state = Model3DStateDto(status = "ready", version = 1))
@@ -153,6 +155,8 @@ class FakeAdminRepository : AdminRepositoryContract {
     var delete3DReconstructionCalls = 0
     var run3DPreflightCalls = 0
     var build3DModelCalls = 0
+    var accept3DModelCalls = 0
+    var reject3DModelCalls = 0
     var get3DStatusCalls = 0
 
     override suspend fun checkHealth(): RepositoryResult<HealthResponse> = healthResult
@@ -312,6 +316,16 @@ class FakeAdminRepository : AdminRepositoryContract {
     override suspend fun build3DModel(artifactId: String): RepositoryResult<Model3DBuildResponseDto> {
         build3DModelCalls += 1
         return build3DModelResult
+    }
+
+    override suspend fun accept3DModel(artifactId: String): RepositoryResult<Model3DStateDto> {
+        accept3DModelCalls += 1
+        return accept3DModelResult
+    }
+
+    override suspend fun reject3DModel(artifactId: String): RepositoryResult<Model3DStateDto> {
+        reject3DModelCalls += 1
+        return reject3DModelResult
     }
 
     override suspend fun get3DStatus(artifactId: String): RepositoryResult<Model3DStatusResponseDto> {

@@ -16,6 +16,7 @@ from app.schemas.model3d import (
 )
 from app.services.artifact_validation import parse_image_path_list
 from app.services.image_storage import image_url_for_path
+from app.services.model3d import colmap_service
 from app.services.model3d import reconstruction_service as service
 from app.services.model3d import states
 from app.utils import to_object_id
@@ -27,19 +28,30 @@ router = APIRouter(
 )
 
 
-def _state_response(database, artifact: dict, request: Request) -> Model3DStateResponse:
+def _state_response(database, settings, artifact: dict, request: Request) -> Model3DStateResponse:
     state = service.get_state(database, artifact)
+    base_url = str(request.base_url)
     model_url = None
     if state["status"] == states.READY and state.get("path"):
-        model_url = image_url_for_path(str(request.base_url), state["path"])
-    return Model3DStateResponse(**{k: v for k, v in state.items() if k != "path"}, model_url=model_url)
+        model_url = image_url_for_path(base_url, state["path"])
+    draft_model_url = None
+    if state["status"] == states.PENDING_REVIEW and state.get("draft_path"):
+        draft_model_url = image_url_for_path(base_url, state["draft_path"])
+    availability = colmap_service.detect_colmap(settings)
+    return Model3DStateResponse(
+        **{k: v for k, v in state.items() if k not in ("path", "draft_path")},
+        model_url=model_url,
+        draft_model_url=draft_model_url,
+        colmap_available=availability.available,
+    )
 
 
 @router.get("", response_model=Model3DStateResponse)
 def get_3d_state(artifact_id: str, request: Request) -> Model3DStateResponse:
     database = request.app.state.database
+    settings = request.app.state.settings
     _, artifact = get_existing_artifact_or_404(database, artifact_id)
-    return _state_response(database, artifact, request)
+    return _state_response(database, settings, artifact, request)
 
 
 @router.post("/images", response_model=Model3DStateResponse)
@@ -55,7 +67,7 @@ async def add_images(
     parsed_reuse_paths = parse_image_path_list(reuse_image_paths, partial=True, field_name="reuse_image_paths") or []
     service.add_images(database, settings, artifact, reuse_image_paths=parsed_reuse_paths, uploads=images or [])
     _, refreshed = get_existing_artifact_or_404(database, artifact_id)
-    return _state_response(database, refreshed, request)
+    return _state_response(database, settings, refreshed, request)
 
 
 @router.delete("/images/{image_id}", response_model=Model3DStateResponse)
@@ -68,7 +80,7 @@ def delete_image(artifact_id: str, image_id: str, request: Request) -> Model3DSt
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reconstruction image was not found.")
     service.remove_image(database, settings, object_id, image_object_id)
     _, refreshed = get_existing_artifact_or_404(database, artifact_id)
-    return _state_response(database, refreshed, request)
+    return _state_response(database, settings, refreshed, request)
 
 
 @router.delete("", response_model=Model3DStateResponse)
@@ -78,7 +90,7 @@ def delete_reconstruction(artifact_id: str, request: Request) -> Model3DStateRes
     object_id, artifact = get_existing_artifact_or_404(database, artifact_id)
     service.delete_all(database, settings, object_id)
     _, refreshed = get_existing_artifact_or_404(database, artifact_id)
-    return _state_response(database, refreshed, request)
+    return _state_response(database, settings, refreshed, request)
 
 
 @router.post("/preflight", response_model=Model3DStateResponse)
@@ -88,7 +100,7 @@ def run_preflight(artifact_id: str, request: Request) -> Model3DStateResponse:
     _, artifact = get_existing_artifact_or_404(database, artifact_id)
     service.run_preflight(database, settings, artifact)
     _, refreshed = get_existing_artifact_or_404(database, artifact_id)
-    return _state_response(database, refreshed, request)
+    return _state_response(database, settings, refreshed, request)
 
 
 @router.post("/build", response_model=Model3DBuildResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -100,12 +112,33 @@ def build(artifact_id: str, request: Request) -> Model3DBuildResponse:
     return Model3DBuildResponse(job_id=str(job["_id"]), status=job["status"])
 
 
+@router.post("/accept", response_model=Model3DStateResponse)
+def accept_model(artifact_id: str, request: Request) -> Model3DStateResponse:
+    database = request.app.state.database
+    settings = request.app.state.settings
+    _, artifact = get_existing_artifact_or_404(database, artifact_id)
+    service.accept_draft(database, settings, artifact)
+    _, refreshed = get_existing_artifact_or_404(database, artifact_id)
+    return _state_response(database, settings, refreshed, request)
+
+
+@router.post("/reject", response_model=Model3DStateResponse)
+def reject_model(artifact_id: str, request: Request) -> Model3DStateResponse:
+    database = request.app.state.database
+    settings = request.app.state.settings
+    _, artifact = get_existing_artifact_or_404(database, artifact_id)
+    service.reject_draft(database, settings, artifact)
+    _, refreshed = get_existing_artifact_or_404(database, artifact_id)
+    return _state_response(database, settings, refreshed, request)
+
+
 @router.get("/status", response_model=Model3DStatusResponse)
 def get_status(artifact_id: str, request: Request) -> Model3DStatusResponse:
     database = request.app.state.database
+    settings = request.app.state.settings
     object_id, artifact = get_existing_artifact_or_404(database, artifact_id)
     job = service.get_job_status(database, object_id)
     return Model3DStatusResponse(
-        state=_state_response(database, artifact, request),
+        state=_state_response(database, settings, artifact, request),
         job=Model3DJobResponse(**job) if job else None,
     )

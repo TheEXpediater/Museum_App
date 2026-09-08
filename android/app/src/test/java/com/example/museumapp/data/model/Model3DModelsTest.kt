@@ -106,6 +106,37 @@ class Model3DModelsTest {
     }
 
     @Test
+    fun parsesPendingReviewStateWithDraftFieldsButNoPublishedFields() {
+        // A finished build is a draft awaiting admin review: version/sha256/model_url stay at
+        // their "nothing published yet" defaults while the draft_* fields carry the new model.
+        val adapter = moshi.adapter(Model3DStateDto::class.java)
+        val parsed = adapter.fromJson(
+            """
+            {
+              "status": "pending_review",
+              "version": 0,
+              "sha256": null,
+              "model_url": null,
+              "draft_version": 1,
+              "draft_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd",
+              "draft_size_bytes": 2048,
+              "draft_model_url": "http://host:8000/uploads/models3d/1/model-v1.glb"
+            }
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        assertEquals(Model3DStatus.PendingReview, parsed!!.status)
+        assertEquals(0, parsed.version)
+        assertNull(parsed.sha256)
+        assertNull(parsed.modelUrl)
+        assertEquals(1, parsed.draftVersion)
+        assertEquals(2048L, parsed.draftSizeBytes)
+        assertTrue(parsed.draftModelUrl!!.endsWith(".glb"))
+        assertFalse(parsed.isJobActive()) // the build finished; it is just awaiting Accept/Reject
+    }
+
+    @Test
     fun parsesJobDto() {
         val adapter = moshi.adapter(Model3DJobDto::class.java)
         val parsed = adapter.fromJson(

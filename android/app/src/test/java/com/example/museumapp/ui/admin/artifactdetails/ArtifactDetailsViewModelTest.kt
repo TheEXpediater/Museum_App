@@ -72,6 +72,58 @@ class ArtifactDetailsViewModelTest {
     }
 
     @Test
+    fun acceptModelCallsRepositoryAndAdoptsPublishedState() = runTest {
+        val repository = FakeAdminRepository()
+        repository.model3DStateResult = RepositoryResult.Success(Model3DStateDto(status = Model3DStatus.PendingReview, draftVersion = 1))
+        repository.accept3DModelResult = RepositoryResult.Success(Model3DStateDto(status = Model3DStatus.Ready, version = 1))
+
+        val viewModel = ArtifactDetailsViewModel(repository, "artifact-1")
+        advanceUntilIdle()
+
+        viewModel.acceptModel()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.accept3DModelCalls)
+        assertEquals(Model3DStatus.Ready, viewModel.uiState.value.model3D?.status)
+        assertFalse(viewModel.uiState.value.model3DBusy)
+        assertNull(viewModel.uiState.value.model3DError)
+    }
+
+    @Test
+    fun rejectModelCallsRepositoryAndDiscardsDraft() = runTest {
+        val repository = FakeAdminRepository()
+        repository.model3DStateResult = RepositoryResult.Success(Model3DStateDto(status = Model3DStatus.PendingReview, draftVersion = 1))
+        repository.reject3DModelResult = RepositoryResult.Success(Model3DStateDto(status = Model3DStatus.NeedsImages))
+
+        val viewModel = ArtifactDetailsViewModel(repository, "artifact-1")
+        advanceUntilIdle()
+
+        viewModel.rejectModel()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.reject3DModelCalls)
+        assertEquals(Model3DStatus.NeedsImages, viewModel.uiState.value.model3D?.status)
+        assertNull(viewModel.uiState.value.model3D?.draftVersion)
+        assertFalse(viewModel.uiState.value.model3DBusy)
+    }
+
+    @Test
+    fun rejectModelConflictErrorSurfacesAsUserVisibleMessage() = runTest {
+        val repository = FakeAdminRepository()
+        repository.reject3DModelResult = RepositoryResult.Error("No pending 3D preview to reject.")
+
+        val viewModel = ArtifactDetailsViewModel(repository, "artifact-1")
+        advanceUntilIdle()
+
+        viewModel.rejectModel()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.reject3DModelCalls)
+        assertEquals("No pending 3D preview to reject.", viewModel.uiState.value.model3DError)
+        assertFalse(viewModel.uiState.value.model3DBusy)
+    }
+
+    @Test
     fun addImagesPassesReusePathsAndUrisToTheRepository() = runTest {
         val repository = FakeAdminRepository()
         val viewModel = ArtifactDetailsViewModel(repository, "artifact-1")
