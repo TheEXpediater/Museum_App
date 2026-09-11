@@ -182,6 +182,19 @@ private fun ErrorContent(message: String, onRetry: () -> Unit) {
     }
 }
 
+/**
+ * Cheap filesystem checks that must pass before a cached model file is handed to Filament.
+ * A missing/empty file fed into the engine is not a recoverable Kotlin exception - it is a
+ * native abort - so this is deliberately a plain, unit-testable function checked up front
+ * rather than left for [io.github.sceneview.loaders.ModelLoader] to discover.
+ */
+internal fun validateCachedModelFile(file: File): String? {
+    if (!file.isFile || file.length() <= 0L) {
+        return "Downloaded 3D model is missing or empty."
+    }
+    return null
+}
+
 @Composable
 private fun Model3DViewerContent(localFilePath: String) {
     var attempt by remember(localFilePath) { mutableIntStateOf(0) }
@@ -195,16 +208,19 @@ private fun Model3DViewerContent(localFilePath: String) {
         modelInstance = null
         loadError = null
         try {
+            val file = File(localFilePath)
+            validateCachedModelFile(file)?.let { error(it) }
+
             // Must run on the same thread that owns the Filament engine (rememberEngine() creates
             // it on this composition's thread, i.e. Main) -- Filament's asset/resource loading
             // panics with a native SIGABRT ("This thread has not been adopted") when called from
             // another thread such as Dispatchers.IO, since only the owning thread is "adopted"
-            // into the engine's rendering context. The GLB itself is a small mobile-optimized
-            // model, so a brief synchronous read here is an accepted trade-off, same as SceneView's
-            // own samples.
-            modelInstance = modelLoader.createModelInstance(File(localFilePath))
+            // into the engine's rendering context. LaunchedEffect already runs on Main by default,
+            // so no dispatcher switch is needed or safe here; this previously reproduced as a real
+            // crash on a physical device.
+            modelInstance = modelLoader.createModelInstance(file)
         } catch (throwable: Throwable) {
-            loadError = throwable.message?.takeIf { it.isNotBlank() } ?: "Could not display this 3D model."
+            loadError = throwable.message?.takeIf { it.isNotBlank() } ?: "Could not display this 3D preview."
         }
     }
 

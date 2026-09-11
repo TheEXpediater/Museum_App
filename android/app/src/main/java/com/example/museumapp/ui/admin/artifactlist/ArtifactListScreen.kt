@@ -96,6 +96,7 @@ fun ArtifactListScreen(
     padding: PaddingValues,
     onAddArtifact: () -> Unit,
     onEditArtifact: (String) -> Unit,
+    onViewDetails: (String) -> Unit = {},
     initialDestination: String = ArtifactListDestinations.All,
     onCategoryCreated: (String) -> Unit = {}
 ) {
@@ -159,6 +160,7 @@ fun ArtifactListScreen(
                     else -> ArtifactListContent(
                         uiState = uiState,
                         onEditArtifact = onEditArtifact,
+                        onViewDetails = onViewDetails,
                         onDeleteArtifact = viewModel::requestDelete,
                         onFeedToAi = viewModel::feedArtifactToAiLibrary,
                         onLoadMore = viewModel::loadNextPage
@@ -458,6 +460,7 @@ private fun sortLabel(value: String): String = when (value) {
 private fun ArtifactListContent(
     uiState: ArtifactListUiState,
     onEditArtifact: (String) -> Unit,
+    onViewDetails: (String) -> Unit,
     onDeleteArtifact: (ArtifactDto) -> Unit,
     onFeedToAi: (ArtifactDto) -> Unit,
     onLoadMore: () -> Unit
@@ -476,6 +479,7 @@ private fun ArtifactListContent(
                 deleting = uiState.deletingId == artifact.id,
                 feeding = uiState.feedingArtifactId == artifact.id,
                 onEdit = { onEditArtifact(artifact.id) },
+                onViewDetails = { onViewDetails(artifact.id) },
                 onDelete = { onDeleteArtifact(artifact) },
                 onFeedToAi = { onFeedToAi(artifact) }
             )
@@ -499,13 +503,14 @@ private fun ArtifactCard(
     deleting: Boolean,
     feeding: Boolean,
     onEdit: () -> Unit,
+    onViewDetails: () -> Unit,
     onDelete: () -> Unit,
     onFeedToAi: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val busy = deleting || feeding
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable(enabled = !busy, onClick = onViewDetails),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
@@ -549,6 +554,14 @@ private fun ArtifactCard(
                     }
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text("View Details") },
+                        leadingIcon = { Icon(Icons.Outlined.Image, contentDescription = null) },
+                        onClick = {
+                            menuExpanded = false
+                            onViewDetails()
+                        }
+                    )
                     DropdownMenuItem(
                         text = { Text("Edit") },
                         leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
