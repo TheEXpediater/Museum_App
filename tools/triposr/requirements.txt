@@ -1,0 +1,40 @@
+# Isolated TripoSR runtime (tools/triposr/.venv). Kept entirely separate from backend/.venv so a
+# broken or heavy local-AI install can never destabilize the FastAPI/OpenCLIP environment.
+#
+# Deliberately NOT installed: torchmcubes (official requirements.txt installs it by compiling a
+# C++/CUDA extension from source - this machine has no MSVC/CUDA build toolchain). Marching
+# cubes is instead implemented with scikit-image in repo/tsr/models/isosurface.py (same
+# pretrained network/weights, different isosurface-extraction implementation - see the comment
+# in that file). gradio is also omitted: only run.py-equivalent CLI inference (infer.py) is used,
+# never the interactive demo UI.
+#
+# transformers is pinned to the latest 4.x release, NOT the official requirements.txt's ==4.35.0
+# and NOT the current 5.x line. Both extremes were tried and rejected:
+#   - transformers==4.35.0: its matching `tokenizers` release has no prebuilt wheel for Python
+#     3.13 and falls back to building from source, which needs a Rust/cargo toolchain (not
+#     installed here - same class of problem as torchmcubes).
+#   - transformers 5.x (latest): internally refactored ViTModel's attention module naming
+#     (encoder.layer.N.attention.attention.{query,key,value} -> layers.N.attention.{q,k,v,o}_proj)
+#     which breaks loading TripoSR's pretrained checkpoint (state_dict key mismatch - proven by
+#     an actual failed run, not a guess).
+# transformers<5 (currently resolves to 4.57.6) keeps the original ViT naming the checkpoint
+# expects AND has a prebuilt tokenizers wheel for Python 3.13. xatlas is unpinned for the
+# prebuilt-wheel-availability reason only (no known naming/structure risk).
+#
+# Install order matters: torch/torchvision first (CUDA build), from the PyTorch index.
+#   .venv\Scripts\python.exe -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+# Then the rest from PyPI:
+#   .venv\Scripts\python.exe -m pip install -r requirements.txt
+
+omegaconf==2.3.0
+Pillow
+einops==0.7.0
+transformers<5
+trimesh
+rembg
+huggingface-hub
+imageio
+xatlas
+moderngl
+scikit-image
+onnxruntime

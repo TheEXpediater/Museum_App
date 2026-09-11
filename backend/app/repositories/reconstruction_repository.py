@@ -19,6 +19,8 @@ DEFAULT_MODEL_3D_STATE: dict[str, Any] = {
     "sha256": None,
     "size_bytes": None,
     "created_at": None,
+    # How the published model was produced (states.GENERATION_COLMAP / GENERATION_AI_MULTIVIEW).
+    "generation_method": None,
     # Draft model awaiting admin review - never exposed to visitors. Populated when a build
     # reaches PENDING_REVIEW; cleared on Accept (folded into the published fields above) or
     # Reject (discarded).
@@ -27,13 +29,29 @@ DEFAULT_MODEL_3D_STATE: dict[str, Any] = {
     "draft_sha256": None,
     "draft_size_bytes": None,
     "draft_created_at": None,
+    "draft_generation_method": None,
     "source_image_count": 0,
     "registered_image_count": None,
     "registered_image_ratio": None,
     "sparse_point_count": None,
     "mean_reprojection_error": None,
+    # Coarse pass/fail verdict from quality.assess_reconstruction_quality(), plus the specific
+    # reasons - set by preflight (sparse-only) and refined by the worker (sparse + mesh) once a
+    # draft exists. Never blocks status transitions by itself; see quality.py for why.
+    "quality_assessment": None,
+    "quality_reasons": [],
     "failure_message": None,
     "guidance": [],
+    # Estimated coverage for the published/draft AI model (see quality.py's ESTIMATED_COVERAGE_
+    # REGIONS and ai_generation_service.start_ai_build). Never a claimed model confidence value -
+    # always a heuristic derived from which of the 6 major regions the admin marked as visible in
+    # the generation image. None/empty means "coverage estimate unavailable", not 0%.
+    "visible_regions": [],
+    "estimated_supported_percent": None,
+    "estimated_inferred_percent": None,
+    "draft_visible_regions": [],
+    "draft_estimated_supported_percent": None,
+    "draft_estimated_inferred_percent": None,
 }
 
 
@@ -103,14 +121,24 @@ def image_digest_exists(database: Database, artifact_id: ObjectId, digest: str) 
     return images_collection(database).find_one({"artifact_id": artifact_id, "digest": digest}) is not None
 
 
-def create_job(database: Database, *, artifact_id: ObjectId, target_version: int, source_image_count: int) -> dict:
+def create_job(
+    database: Database,
+    *,
+    artifact_id: ObjectId,
+    target_version: int,
+    source_image_count: int,
+    generation_method: str = states.GENERATION_COLMAP,
+    initial_status: str = states.QUEUED,
+    initial_stage_message: str = "Queued for reconstruction.",
+) -> dict:
     now = utc_now()
     document = {
         "artifact_id": artifact_id,
-        "status": states.QUEUED,
-        "stage_message": "Queued for reconstruction.",
+        "status": initial_status,
+        "stage_message": initial_stage_message,
         "target_version": target_version,
         "source_image_count": source_image_count,
+        "generation_method": generation_method,
         "registered_image_count": None,
         "registered_image_ratio": None,
         "sparse_point_count": None,

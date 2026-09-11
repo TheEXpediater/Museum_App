@@ -41,6 +41,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -62,6 +64,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.museumapp.data.model.ArtifactDto
 import com.example.museumapp.data.model.ArtifactMetadataSectionIds
+import com.example.museumapp.data.model.isJobActive
 import com.example.museumapp.data.repository.AdminRepositoryContract
 import com.example.museumapp.ui.admin.components.ArtifactAiStatusChip
 
@@ -82,6 +85,11 @@ fun ArtifactDetailsScreen(
     var menuExpanded by remember { mutableStateOf(false) }
     var showAddPhotosSheet by remember { mutableStateOf(false) }
     var showRebuildConfirm by remember { mutableStateOf(false) }
+    var showAiPreviewDialog by remember { mutableStateOf(false) }
+    var showCreatePreviewDialog by remember { mutableStateOf(false) }
+    var showAdvanced3D by remember { mutableStateOf(false) }
+    var showProcessingModal by remember { mutableStateOf(false) }
+    var selectedTab by remember { mutableStateOf(0) }
 
     LaunchedEffect(uiState.deleted) {
         if (uiState.deleted) onBack()
@@ -163,26 +171,120 @@ fun ArtifactDetailsScreen(
                     .padding(padding)
                     .padding(16.dp)
             )
-            uiState.artifact != null -> ArtifactDetailsContent(
-                artifact = uiState.artifact!!,
-                uiState = uiState,
-                padding = padding,
-                onAddPhotosClick = { showAddPhotosSheet = true },
-                onRemoveModel3DImage = viewModel::remove3DImage,
-                onRunPreflight = viewModel::runPreflight,
-                onBuildModel = viewModel::buildModel,
-                onRebuildClick = { showRebuildConfirm = true },
-                onDeleteReconstructionClick = viewModel::requestDeleteReconstruction,
-                onPreviewDraft = { version, sha256, url ->
-                    onPreviewDraftModel(uiState.artifact!!.id, version, sha256, url)
-                },
-                onPreviewPublished = { version, sha256, url ->
-                    onPreviewDraftModel(uiState.artifact!!.id, version, sha256, url)
-                },
-                onAcceptModel = viewModel::acceptModel,
-                onRejectModel = viewModel::rejectModel
-            )
+            uiState.artifact != null -> {
+                val artifact = uiState.artifact!!
+                val tabTitles = listOf("Details", "Images", "3D Model")
+                Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+                    TabRow(selectedTabIndex = selectedTab) {
+                        tabTitles.forEachIndexed { index, title ->
+                            Tab(
+                                selected = selectedTab == index,
+                                onClick = { selectedTab = index },
+                                text = { Text(title) }
+                            )
+                        }
+                    }
+                    when (selectedTab) {
+                        0 -> ArtifactDetailsInfoTab(artifact = artifact, padding = PaddingValues(0.dp))
+                        1 -> ArtifactImagesTab(artifact = artifact, padding = PaddingValues(0.dp))
+                        else -> if (showAdvanced3D) {
+                            Model3DSection(
+                                state = uiState.model3D,
+                                job = uiState.model3DJob,
+                                isLoading = uiState.model3DLoading,
+                                isBusy = uiState.model3DBusy || uiState.deletingReconstruction,
+                                onAddPhotosClick = { showAddPhotosSheet = true },
+                                onRemoveImage = viewModel::remove3DImage,
+                                onRunPreflight = viewModel::runPreflight,
+                                onBuildModel = viewModel::buildModel,
+                                onRebuildClick = { showRebuildConfirm = true },
+                                onDeleteReconstructionClick = viewModel::requestDeleteReconstruction,
+                                onPreviewDraft = { version, sha256, url -> onPreviewDraftModel(artifact.id, version, sha256, url) },
+                                onPreviewPublished = { version, sha256, url -> onPreviewDraftModel(artifact.id, version, sha256, url) },
+                                onAcceptModel = viewModel::acceptModel,
+                                onRejectModel = viewModel::rejectModel,
+                                onGenerateAiPreviewClick = { showAiPreviewDialog = true }
+                            )
+                            TextButton(onClick = { showAdvanced3D = false }, modifier = Modifier.padding(horizontal = 16.dp)) {
+                                Text("Back to simple view")
+                            }
+                        } else {
+                            Model3DTabContent(
+                                artifact = artifact,
+                                model = uiState.model3D,
+                                job = uiState.model3DJob,
+                                submitStage = uiState.model3DSubmitStage,
+                                isLoading = uiState.model3DLoading,
+                                isBusy = uiState.model3DBusy || uiState.deletingReconstruction,
+                                padding = PaddingValues(0.dp),
+                                onCreatePreviewClick = { showCreatePreviewDialog = true },
+                                onViewPublished = {
+                                    val model = uiState.model3D
+                                    val sha256 = model?.sha256
+                                    val url = model?.modelUrl
+                                    if (model != null && !sha256.isNullOrBlank() && !url.isNullOrBlank()) {
+                                        onPreviewDraftModel(artifact.id, model.version, sha256, url)
+                                    }
+                                },
+                                onPreviewDraft = {
+                                    val model = uiState.model3D
+                                    val version = model?.draftVersion
+                                    val sha256 = model?.draftSha256
+                                    val url = model?.draftModelUrl
+                                    if (version != null && !sha256.isNullOrBlank() && !url.isNullOrBlank()) {
+                                        onPreviewDraftModel(artifact.id, version, sha256, url)
+                                    }
+                                },
+                                onAcceptModel = viewModel::acceptModel,
+                                onRejectModel = viewModel::rejectModel,
+                                onRetryFailed = { showCreatePreviewDialog = true },
+                                onAdvancedClick = { showAdvanced3D = true }
+                            )
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    // Visible the instant the admin confirms a photo selection (set directly below, in
+    // onConfirm) and again automatically whenever a submit/backend job is active - e.g. if the
+    // admin left and came back with a job still running. "Hide" only stops SHOWING the modal;
+    // the ViewModel's polling and the backend job are completely unaffected (see
+    // ArtifactDetailsViewModel.createOrUpdate3DPreview / startPolling).
+    LaunchedEffect(uiState.model3DSubmitStage, uiState.model3D?.status) {
+        if (uiState.model3DSubmitStage != null || uiState.model3D?.isJobActive() == true) {
+            showProcessingModal = true
+        } else {
+            showProcessingModal = false
+        }
+    }
+
+    if (showProcessingModal) {
+        ProcessingModal(
+            model = uiState.model3D,
+            job = uiState.model3DJob,
+            submitStage = uiState.model3DSubmitStage,
+            onHide = { showProcessingModal = false }
+        )
+    }
+
+    if (showCreatePreviewDialog && uiState.artifact != null) {
+        val artifact = uiState.artifact!!
+        CreateThreeDPreviewDialog(
+            images = artifact.imagePaths.mapIndexedNotNull { index, path ->
+                val url = artifact.imageUrls.getOrNull(index)
+                if (url.isNullOrBlank()) null else path to url
+            },
+            primaryImagePath = artifact.primaryImagePath,
+            aiMaxImages = uiState.model3D?.aiMaxImages,
+            onDismiss = { showCreatePreviewDialog = false },
+            onConfirm = { selectedPaths, visibleRegions ->
+                showCreatePreviewDialog = false
+                showProcessingModal = true
+                viewModel.createOrUpdate3DPreview(selectedPaths, visibleRegions)
+            }
+        )
     }
 
     if (showAddPhotosSheet && uiState.artifact != null) {
@@ -192,6 +294,18 @@ fun ArtifactDetailsScreen(
             onConfirm = { reusePaths, newImages ->
                 viewModel.add3DImages(reusePaths, newImages)
                 showAddPhotosSheet = false
+            }
+        )
+    }
+
+    if (showAiPreviewDialog) {
+        SelectAiPreviewPhotosDialog(
+            images = uiState.model3D?.images.orEmpty(),
+            maxImages = uiState.model3D?.aiMaxImages,
+            onDismiss = { showAiPreviewDialog = false },
+            onConfirm = { imageIds, visibleRegions ->
+                viewModel.buildAiModel(imageIds, visibleRegions)
+                showAiPreviewDialog = false
             }
         )
     }
@@ -300,20 +414,9 @@ fun ArtifactDetailsScreen(
 }
 
 @Composable
-private fun ArtifactDetailsContent(
+private fun ArtifactDetailsInfoTab(
     artifact: ArtifactDto,
-    uiState: ArtifactDetailsUiState,
-    padding: PaddingValues,
-    onAddPhotosClick: () -> Unit,
-    onRemoveModel3DImage: (String) -> Unit,
-    onRunPreflight: () -> Unit,
-    onBuildModel: () -> Unit,
-    onRebuildClick: () -> Unit,
-    onDeleteReconstructionClick: () -> Unit,
-    onPreviewDraft: (version: Int, sha256: String, url: String) -> Unit,
-    onPreviewPublished: (version: Int, sha256: String, url: String) -> Unit,
-    onAcceptModel: () -> Unit,
-    onRejectModel: () -> Unit
+    padding: PaddingValues
 ) {
     LazyColumn(
         modifier = Modifier
@@ -385,30 +488,25 @@ private fun ArtifactDetailsContent(
                 }
             }
         }
-        item {
-            AdditionalImagesSection(artifact)
-        }
-        item {
-            AiIndexSection(artifact)
-        }
-        item {
-            Model3DSection(
-                state = uiState.model3D,
-                job = uiState.model3DJob,
-                isLoading = uiState.model3DLoading,
-                isBusy = uiState.model3DBusy || uiState.deletingReconstruction,
-                onAddPhotosClick = onAddPhotosClick,
-                onRemoveImage = onRemoveModel3DImage,
-                onRunPreflight = onRunPreflight,
-                onBuildModel = onBuildModel,
-                onRebuildClick = onRebuildClick,
-                onDeleteReconstructionClick = onDeleteReconstructionClick,
-                onPreviewDraft = onPreviewDraft,
-                onPreviewPublished = onPreviewPublished,
-                onAcceptModel = onAcceptModel,
-                onRejectModel = onRejectModel
-            )
-        }
+    }
+}
+
+@Composable
+private fun ArtifactImagesTab(
+    artifact: ArtifactDto,
+    padding: PaddingValues
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(padding)
+            .navigationBarsPadding(),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item { AdditionalImagesSection(artifact) }
+        item { AiIndexSection(artifact) }
     }
 }
 

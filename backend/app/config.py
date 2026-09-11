@@ -8,6 +8,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ENV_FILE = BACKEND_DIR / ".env"
+# tools/triposr lives at the repository root (sibling of backend/), not under BACKEND_DIR - it is
+# a deliberately isolated runtime, never inside the FastAPI/OpenCLIP venv.
+REPO_ROOT_DIR = BACKEND_DIR.parent
 
 
 class Settings(BaseSettings):
@@ -67,6 +70,30 @@ class Settings(BaseSettings):
     model_3d_simplify_ratio: float = Field(default=0.25, alias="MODEL_3D_SIMPLIFY_RATIO")
     model_3d_max_glb_mb: int = Field(default=15, alias="MODEL_3D_MAX_GLB_MB")
 
+    # AI multi-view 3D fallback (see app/services/model3d/ai_provider.py). Entirely optional -
+    # when disabled or unconfigured, COLMAP-only operation is unaffected: existing museum
+    # features, existing published models, and the COLMAP pipeline all keep working.
+    ai_3d_enabled: bool = Field(default=False, alias="AI_3D_ENABLED")
+    ai_3d_provider: str = Field(default="meshy", alias="AI_3D_PROVIDER")
+    ai_3d_api_key: str | None = Field(default=None, alias="AI_3D_API_KEY")
+
+    # Local, free, single-image AI 3D preview (TripoSR pretrained inference). Independent of the
+    # paid ai_3d_* fallback above - this is the DEFAULT "Quick AI 3D Preview" path and does not
+    # require an API key or COLMAP. Runs as an isolated subprocess (tools/triposr/), never inside
+    # the FastAPI/OpenCLIP process or venv. See app/services/model3d/triposr_provider.py.
+    local_ai_3d_enabled: bool = Field(default=True, alias="LOCAL_AI_3D_ENABLED")
+    local_ai_3d_provider: str = Field(default="triposr", alias="LOCAL_AI_3D_PROVIDER")
+    triposr_root: str = Field(default="tools/triposr", alias="TRIPOSR_ROOT")
+    triposr_python: str = Field(default="", alias="TRIPOSR_PYTHON")
+    triposr_model_path: str = Field(default="stabilityai/TripoSR", alias="TRIPOSR_MODEL_PATH")
+    triposr_device: str = Field(default="auto", alias="TRIPOSR_DEVICE")
+    triposr_chunk_size: int = Field(default=2048, alias="TRIPOSR_CHUNK_SIZE")
+    triposr_mc_resolution: int = Field(default=192, alias="TRIPOSR_MC_RESOLUTION")
+    triposr_texture_resolution: int = Field(default=1024, alias="TRIPOSR_TEXTURE_RESOLUTION")
+    triposr_bake_texture: bool = Field(default=True, alias="TRIPOSR_BAKE_TEXTURE")
+    triposr_cpu_fallback: bool = Field(default=True, alias="TRIPOSR_CPU_FALLBACK")
+    triposr_timeout_seconds: int = Field(default=1200, alias="TRIPOSR_TIMEOUT_SECONDS")
+
     @field_validator(
         "mongodb_url",
         "mongodb_database",
@@ -83,7 +110,7 @@ class Settings(BaseSettings):
             raise ValueError("configuration value is required")
         return value.strip()
 
-    @field_validator("qdrant_api_key", mode="before")
+    @field_validator("qdrant_api_key", "ai_3d_api_key", mode="before")
     @classmethod
     def blank_secret_to_none(cls, value: Any) -> str | None:
         if value is None:
@@ -188,6 +215,33 @@ class Settings(BaseSettings):
             raise ValueError("MODEL_3D_SIMPLIFY_RATIO must be between 0 and 1")
         return value
 
+    @field_validator("ai_3d_provider")
+    @classmethod
+    def normalize_ai_3d_provider(cls, value: str) -> str:
+        normalized = (value or "").strip().lower()
+        return normalized or "meshy"
+
+    @field_validator("local_ai_3d_provider")
+    @classmethod
+    def normalize_local_ai_3d_provider(cls, value: str) -> str:
+        normalized = (value or "").strip().lower()
+        return normalized or "triposr"
+
+    @field_validator("triposr_device")
+    @classmethod
+    def validate_triposr_device(cls, value: str) -> str:
+        normalized = (value or "").strip().lower()
+        if normalized not in {"auto", "cpu", "cuda"}:
+            raise ValueError("TRIPOSR_DEVICE must be one of: auto, cpu, cuda")
+        return normalized
+
+    @field_validator("triposr_chunk_size", "triposr_mc_resolution", "triposr_texture_resolution", "triposr_timeout_seconds")
+    @classmethod
+    def triposr_positive_integer(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("value must be greater than zero")
+        return value
+
     @property
     def parsed_cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
@@ -219,6 +273,26 @@ class Settings(BaseSettings):
     @property
     def model_3d_root_path(self) -> Path:
         return self._resolved_backend_path(self.model_3d_directory)
+
+    @property
+    def triposr_root_path(self) -> Path:
+        path = Path(self.triposr_root).expanduser()
+        if not path.is_absolute():
+            path = REPO_ROOT_DIR / path
+        return path.resolve()
+
+    @property
+    def triposr_python_path(self) -> Path | None:
+        """Resolves TRIPOSR_PYTHON if configured, else the venv Python conventionally created at
+        <TRIPOSR_ROOT>/.venv/Scripts/python.exe. Returns None (not a fabricated path) if neither
+        exists - see triposr_provider.detect()."""
+        if self.triposr_python:
+            path = Path(self.triposr_python).expanduser()
+            if not path.is_absolute():
+                path = REPO_ROOT_DIR / path
+            return path.resolve()
+        candidate = self.triposr_root_path / ".venv" / "Scripts" / "python.exe"
+        return candidate if candidate.is_file() else None
 
 
 @lru_cache

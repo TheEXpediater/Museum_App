@@ -21,6 +21,7 @@ import com.example.museumapp.data.model.ArtifactListResponse
 import com.example.museumapp.data.model.DashboardSummaryResponse
 import com.example.museumapp.data.model.HealthResponse
 import com.example.museumapp.data.model.LoginRequest
+import com.example.museumapp.data.model.Model3DAiBuildRequestDto
 import com.example.museumapp.data.model.Model3DBuildResponseDto
 import com.example.museumapp.data.model.Model3DStateDto
 import com.example.museumapp.data.model.Model3DStatusResponseDto
@@ -104,6 +105,11 @@ interface AdminRepositoryContract : RecognitionRepositoryContract {
     suspend fun delete3DReconstruction(artifactId: String): RepositoryResult<Model3DStateDto>
     suspend fun run3DPreflight(artifactId: String): RepositoryResult<Model3DStateDto>
     suspend fun build3DModel(artifactId: String): RepositoryResult<Model3DBuildResponseDto>
+    suspend fun buildAi3DModel(
+        artifactId: String,
+        imageIds: List<String>,
+        visibleRegions: List<String> = emptyList()
+    ): RepositoryResult<Model3DBuildResponseDto>
     suspend fun accept3DModel(artifactId: String): RepositoryResult<Model3DStateDto>
     suspend fun reject3DModel(artifactId: String): RepositoryResult<Model3DStateDto>
     suspend fun get3DStatus(artifactId: String): RepositoryResult<Model3DStatusResponseDto>
@@ -356,6 +362,15 @@ class AdminRepository(
             api.build3DModel(artifactId)
         }
 
+    override suspend fun buildAi3DModel(
+        artifactId: String,
+        imageIds: List<String>,
+        visibleRegions: List<String>
+    ): RepositoryResult<Model3DBuildResponseDto> =
+        safeApiCall(conflictMessage = RECONSTRUCTION_BUSY_MESSAGE) {
+            api.buildAi3DModel(artifactId, Model3DAiBuildRequestDto(imageIds, visibleRegions))
+        }
+
     override suspend fun accept3DModel(artifactId: String): RepositoryResult<Model3DStateDto> =
         safeApiCall(conflictMessage = RECONSTRUCTION_BUSY_MESSAGE) {
             api.accept3DModel(artifactId)
@@ -382,13 +397,25 @@ class AdminRepository(
             if (exception.code() == 401 && clearSessionOnUnauthorized) {
                 sessionManager.clearSession()
             }
-            RepositoryResult.Error(exception.toUserMessage(unauthorizedMessage, conflictMessage))
+            RepositoryResult.Error(
+                exception.toUserMessage(unauthorizedMessage, conflictMessage),
+                // A 409 means something (quite possibly our own prior request) is already
+                // running server-side - not proof this specific call failed to do anything.
+                recoverable = exception.code() == 409
+            )
         } catch (exception: IOException) {
-            RepositoryResult.Error(NetworkErrorMessages.from(exception))
+            RepositoryResult.Error(NetworkErrorMessages.from(exception), recoverable = exception.isRecoverable())
         } catch (exception: IllegalArgumentException) {
             RepositoryResult.Error(exception.message ?: "The request could not be prepared.")
         }
     }
+
+    /** True only for a READ timeout (server accepted the request and may still be processing
+     * it), never for a connect timeout or other network failure - those mean the request never
+     * reached the server, so nothing could have started. See [NetworkErrorMessages.from] for the
+     * matching user-facing message classification this mirrors. */
+    private fun IOException.isRecoverable(): Boolean =
+        this is java.net.SocketTimeoutException && !message.orEmpty().contains("connect", ignoreCase = true)
 
     private fun HttpException.toUserMessage(unauthorizedMessage: String, conflictMessage: String? = null): String {
         val fallback = when (code()) {

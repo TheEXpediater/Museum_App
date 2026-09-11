@@ -17,6 +17,7 @@ from app.services.image_storage import validate_image_bytes
 from app.services.model3d import colmap_pipeline as pipeline
 from app.services.model3d import colmap_service, states
 from app.services.model3d.image_quality import assess_images
+from app.services.model3d.quality import assess_reconstruction_quality
 from app.utils import utc_now
 
 # Product minimum: this is a best-effort preview feature, not professional photogrammetry.
@@ -356,15 +357,31 @@ def run_preflight(database: Database, settings: Settings, artifact: dict) -> dic
     if not ready:
         guidance = _default_sparse_guidance() + guidance
 
+    # Distinct from `ready` above: a reconstruction can be usable-enough-to-attempt (ready=True)
+    # while still being low quality (e.g. 3 of 30 photos registering) - see quality.py. This
+    # never changes `status`, only adds an informational verdict for Admin UI to offer the AI
+    # fallback from.
+    rounded_ratio = round(ratio, 4)
+    quality_verdict = assess_reconstruction_quality(
+        source_image_count=len(images),
+        registered_image_count=registered,
+        registered_image_ratio=rounded_ratio,
+        sparse_point_count=stats.sparse_point_count,
+        mean_reprojection_error=stats.mean_reprojection_error,
+        min_registered_ratio=settings.model_3d_min_registered_ratio,
+    )
+
     repo.update_model_3d_state(
         database, artifact_id,
         {
             "status": states.READY_FOR_BUILD if ready else states.NEEDS_IMAGES,
             "source_image_count": len(images),
             "registered_image_count": registered,
-            "registered_image_ratio": round(ratio, 4),
+            "registered_image_ratio": rounded_ratio,
             "sparse_point_count": stats.sparse_point_count,
             "mean_reprojection_error": stats.mean_reprojection_error,
+            "quality_assessment": quality_verdict.quality if ready else None,
+            "quality_reasons": quality_verdict.reasons if ready else [],
             "guidance": guidance,
             "failure_message": None,
         },
@@ -432,7 +449,13 @@ def start_build(database: Database, settings: Settings, artifact: dict) -> dict:
         raise ReconstructionError(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Not enough reconstruction photos to build a model.")
 
     target_version = int(state.get("version") or 0) + 1
-    job = repo.create_job(database, artifact_id=artifact_id, target_version=target_version, source_image_count=len(images))
+    job = repo.create_job(
+        database,
+        artifact_id=artifact_id,
+        target_version=target_version,
+        source_image_count=len(images),
+        generation_method=states.GENERATION_COLMAP,
+    )
     # A fresh build supersedes any unreviewed draft from a previous attempt; the previously
     # *accepted* (published) model above is untouched and stays visible to visitors throughout.
     repo.update_model_3d_state(
@@ -445,6 +468,7 @@ def start_build(database: Database, settings: Settings, artifact: dict) -> dict:
             "draft_sha256": None,
             "draft_size_bytes": None,
             "draft_created_at": None,
+            "draft_generation_method": None,
         },
     )
 
@@ -469,11 +493,19 @@ def accept_draft(database: Database, settings: Settings, artifact: dict) -> None
             "sha256": state["draft_sha256"],
             "size_bytes": state["draft_size_bytes"],
             "created_at": state["draft_created_at"],
+            "generation_method": state.get("draft_generation_method"),
+            "visible_regions": state.get("draft_visible_regions") or [],
+            "estimated_supported_percent": state.get("draft_estimated_supported_percent"),
+            "estimated_inferred_percent": state.get("draft_estimated_inferred_percent"),
             "draft_version": None,
             "draft_path": None,
             "draft_sha256": None,
             "draft_size_bytes": None,
             "draft_created_at": None,
+            "draft_generation_method": None,
+            "draft_visible_regions": [],
+            "draft_estimated_supported_percent": None,
+            "draft_estimated_inferred_percent": None,
             "failure_message": None,
         },
     )
@@ -504,6 +536,10 @@ def reject_draft(database: Database, settings: Settings, artifact: dict) -> None
             "draft_sha256": None,
             "draft_size_bytes": None,
             "draft_created_at": None,
+            "draft_generation_method": None,
+            "draft_visible_regions": [],
+            "draft_estimated_supported_percent": None,
+            "draft_estimated_inferred_percent": None,
             "failure_message": None,
         },
     )

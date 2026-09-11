@@ -120,11 +120,18 @@ class FakeAdminRepository : AdminRepositoryContract {
         )
     )
     var model3DStateResult: RepositoryResult<Model3DStateDto> = RepositoryResult.Success(Model3DStateDto())
+    // Optional per-call override queues, for tests that need get3DState/buildAi3DModel to return
+    // different results on successive calls within one flow (e.g. simulating a timeout on the
+    // first call and a successful reconciliation on the recovery call) - each call consumes one
+    // entry before falling back to the single steady-state field above.
+    var get3DStateResults: ArrayDeque<RepositoryResult<Model3DStateDto>> = ArrayDeque()
+    var buildAi3DModelResults: ArrayDeque<RepositoryResult<Model3DBuildResponseDto>> = ArrayDeque()
     var add3DImagesResult: RepositoryResult<Model3DStateDto> = RepositoryResult.Success(Model3DStateDto())
     var delete3DImageResult: RepositoryResult<Model3DStateDto> = RepositoryResult.Success(Model3DStateDto())
     var delete3DReconstructionResult: RepositoryResult<Model3DStateDto> = RepositoryResult.Success(Model3DStateDto())
     var run3DPreflightResult: RepositoryResult<Model3DStateDto> = RepositoryResult.Success(Model3DStateDto())
     var build3DModelResult: RepositoryResult<Model3DBuildResponseDto> = RepositoryResult.Success(Model3DBuildResponseDto(jobId = "job-1", status = "queued"))
+    var buildAi3DModelResult: RepositoryResult<Model3DBuildResponseDto> = RepositoryResult.Success(Model3DBuildResponseDto(jobId = "ai-job-1", status = "ai_queued"))
     var accept3DModelResult: RepositoryResult<Model3DStateDto> = RepositoryResult.Success(Model3DStateDto(status = "ready", version = 1))
     var reject3DModelResult: RepositoryResult<Model3DStateDto> = RepositoryResult.Success(Model3DStateDto(status = "none"))
     // Terminal by default so a polling loop started in a test settles on the very first tick.
@@ -148,6 +155,7 @@ class FakeAdminRepository : AdminRepositoryContract {
     var feedAiLibraryCalls = 0
     var dashboardCalls = 0
     var get3DStateCalls = 0
+    var add3DImagesCalls = 0
     var lastAdd3DImagesArtifactId: String? = null
     var lastAdd3DImagesReusePaths: List<String> = emptyList()
     var lastAdd3DImagesUris: List<Uri> = emptyList()
@@ -155,6 +163,9 @@ class FakeAdminRepository : AdminRepositoryContract {
     var delete3DReconstructionCalls = 0
     var run3DPreflightCalls = 0
     var build3DModelCalls = 0
+    var buildAi3DModelCalls = 0
+    var lastBuildAi3DModelImageIds: List<String>? = null
+    var lastBuildAi3DModelVisibleRegions: List<String>? = null
     var accept3DModelCalls = 0
     var reject3DModelCalls = 0
     var get3DStatusCalls = 0
@@ -288,10 +299,11 @@ class FakeAdminRepository : AdminRepositoryContract {
 
     override suspend fun get3DState(artifactId: String): RepositoryResult<Model3DStateDto> {
         get3DStateCalls += 1
-        return model3DStateResult
+        return get3DStateResults.removeFirstOrNull() ?: model3DStateResult
     }
 
     override suspend fun add3DImages(artifactId: String, reuseImagePaths: List<String>, images: List<Uri>): RepositoryResult<Model3DStateDto> {
+        add3DImagesCalls += 1
         lastAdd3DImagesArtifactId = artifactId
         lastAdd3DImagesReusePaths = reuseImagePaths
         lastAdd3DImagesUris = images
@@ -316,6 +328,17 @@ class FakeAdminRepository : AdminRepositoryContract {
     override suspend fun build3DModel(artifactId: String): RepositoryResult<Model3DBuildResponseDto> {
         build3DModelCalls += 1
         return build3DModelResult
+    }
+
+    override suspend fun buildAi3DModel(
+        artifactId: String,
+        imageIds: List<String>,
+        visibleRegions: List<String>
+    ): RepositoryResult<Model3DBuildResponseDto> {
+        buildAi3DModelCalls += 1
+        lastBuildAi3DModelImageIds = imageIds
+        lastBuildAi3DModelVisibleRegions = visibleRegions
+        return buildAi3DModelResults.removeFirstOrNull() ?: buildAi3DModelResult
     }
 
     override suspend fun accept3DModel(artifactId: String): RepositoryResult<Model3DStateDto> {

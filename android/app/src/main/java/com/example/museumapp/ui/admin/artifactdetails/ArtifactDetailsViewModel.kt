@@ -18,6 +18,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/**
+ * Local, UI-only sub-stages that happen BEFORE a backend job exists (image preparation, the
+ * create-generation call itself). Once a job exists, [Model3DStateDto.status] /
+ * [Model3DJobDto.stageMessage] - backend-driven, polled - are the source of truth; this only
+ * covers the brief window the existing job/status model has no vocabulary for.
+ */
+enum class Model3DSubmitStage { PreparingImages, StartingGeneration }
+
 data class ArtifactDetailsUiState(
     val artifact: ArtifactDto? = null,
     val isLoading: Boolean = true,
@@ -33,6 +41,7 @@ data class ArtifactDetailsUiState(
     val model3DLoading: Boolean = false,
     val model3DBusy: Boolean = false,
     val model3DError: String? = null,
+    val model3DSubmitStage: Model3DSubmitStage? = null,
     val isPolling: Boolean = false,
     val pendingDeleteReconstruction: Boolean = false,
     val deletingReconstruction: Boolean = false
@@ -188,6 +197,139 @@ class ArtifactDetailsViewModel(
                 }
             }
         }
+    }
+
+    fun buildAiModel(imageIds: List<String>, visibleRegions: List<String> = emptyList()) {
+        val id = artifactId ?: return
+        if (imageIds.isEmpty()) return
+        if (_uiState.value.model3DBusy) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(model3DBusy = true, model3DError = null) }
+            when (val result = repository.buildAi3DModel(id, imageIds, visibleRegions)) {
+                is RepositoryResult.Success -> {
+                    _uiState.update { it.copy(model3DBusy = false) }
+                    // Refresh the full state (and start polling) now that a job is queued.
+                    load3DState()
+                }
+                is RepositoryResult.Error -> _uiState.update {
+                    it.copy(model3DBusy = false, model3DError = result.message)
+                }
+            }
+        }
+    }
+
+    /**
+     * The single entry point for the redesigned "Create 3D Preview" flow: prepares the admin's
+     * selected artifact photos as reconstruction source images (idempotent - the backend skips
+     * images it already has by content digest), then immediately starts a Local AI generation
+     * job with those images. No manual "Run Check Again" step: this deliberately never calls the
+     * synchronous COLMAP preflight endpoint (see [ArtifactDetailsScreen] root-cause notes) - Quick
+     * AI generation does not require it.
+     *
+     * [selectedImagePaths] order matters: it is used (capped to the provider's per-request image
+     * limit) to decide which resulting reconstruction images are actually submitted for
+     * generation, so callers should put the most important photo (e.g. the artifact's primary
+     * image) first.
+     */
+    fun createOrUpdate3DPreview(selectedImagePaths: List<String>, visibleRegions: List<String> = emptyList()) {
+        val id = artifactId ?: return
+        if (selectedImagePaths.isEmpty()) return
+        if (_uiState.value.model3DBusy) return
+        if (_uiState.value.model3D?.isJobActive() == true) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(model3DBusy = true, model3DError = null, model3DSubmitStage = Model3DSubmitStage.PreparingImages)
+            }
+
+            val stateAfterAdd = resolveOrRecover(id, repository.add3DImages(id, selectedImagePaths, emptyList())) ?: return@launch
+
+            if (stateAfterAdd.isJobActive()) {
+                // A prior attempt's build request actually landed despite a client-side error -
+                // resume watching it instead of starting a second one.
+                _uiState.update { it.copy(model3D = stateAfterAdd, model3DBusy = false, model3DSubmitStage = null) }
+                resumePollingIfNeeded(stateAfterAdd)
+                return@launch
+            }
+
+            val effectiveMax = stateAfterAdd.aiMaxImages?.takeIf { it > 0 } ?: 1
+            val imageIds = mapSelectedPathsToImageIds(stateAfterAdd, selectedImagePaths, effectiveMax)
+            if (imageIds.isEmpty()) {
+                failSubmit("None of the selected photos could be prepared for 3D generation.")
+                return@launch
+            }
+
+            _uiState.update { it.copy(model3D = stateAfterAdd, model3DSubmitStage = Model3DSubmitStage.StartingGeneration) }
+
+            when (val buildResult = repository.buildAi3DModel(id, imageIds, visibleRegions)) {
+                is RepositoryResult.Success -> {
+                    _uiState.update { it.copy(model3DBusy = false, model3DSubmitStage = null) }
+                    load3DState()
+                }
+                is RepositoryResult.Error -> {
+                    if (buildResult.recoverable) {
+                        // The POST may have timed out (or hit a 409) after the backend already
+                        // created the job - reconcile with real state rather than assuming
+                        // failure or letting the admin resubmit into a duplicate job.
+                        when (val recovered = repository.get3DState(id)) {
+                            is RepositoryResult.Success -> {
+                                _uiState.update {
+                                    it.copy(model3D = recovered.data, model3DBusy = false, model3DSubmitStage = null)
+                                }
+                                if (recovered.data.isJobActive()) {
+                                    resumePollingIfNeeded(recovered.data)
+                                } else {
+                                    _uiState.update {
+                                        it.copy(
+                                            model3DError = "The request timed out and no 3D generation job could be " +
+                                                "confirmed. Please try again."
+                                        )
+                                    }
+                                }
+                            }
+                            is RepositoryResult.Error -> failSubmit(recovered.message)
+                        }
+                    } else {
+                        failSubmit(buildResult.message)
+                    }
+                }
+            }
+        }
+    }
+
+    /** Resolves a possibly-recoverable [RepositoryResult.Error] by re-fetching real backend
+     * state; returns null (having already set [ArtifactDetailsUiState.model3DError]) only when
+     * the failure is non-recoverable or reconciliation itself fails. */
+    private suspend fun resolveOrRecover(
+        id: String,
+        result: RepositoryResult<Model3DStateDto>
+    ): Model3DStateDto? = when (result) {
+        is RepositoryResult.Success -> result.data
+        is RepositoryResult.Error -> {
+            if (result.recoverable) {
+                when (val recovered = repository.get3DState(id)) {
+                    is RepositoryResult.Success -> recovered.data
+                    is RepositoryResult.Error -> {
+                        failSubmit(recovered.message)
+                        null
+                    }
+                }
+            } else {
+                failSubmit(result.message)
+                null
+            }
+        }
+    }
+
+    private fun mapSelectedPathsToImageIds(state: Model3DStateDto, selectedPaths: List<String>, effectiveMax: Int): List<String> {
+        val byFilename = state.images.associateBy { it.originalFilename }
+        return selectedPaths
+            .mapNotNull { path -> byFilename[path.substringAfterLast('/')]?.id }
+            .distinct()
+            .take(effectiveMax)
+    }
+
+    private fun failSubmit(message: String) {
+        _uiState.update { it.copy(model3DBusy = false, model3DSubmitStage = null, model3DError = message) }
     }
 
     fun acceptModel() {

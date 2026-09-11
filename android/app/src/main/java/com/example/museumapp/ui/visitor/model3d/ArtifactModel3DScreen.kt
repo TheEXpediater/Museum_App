@@ -35,16 +35,31 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.museumapp.data.repository.VisitorRepositoryContract
 import com.example.museumapp.model3d.Model3DCacheRepository
+import com.google.android.filament.Skybox
+import com.google.android.filament.utils.KTX1Loader
 import io.github.sceneview.Scene
+import io.github.sceneview.SceneView
 import io.github.sceneview.math.Position
+import io.github.sceneview.math.colorOf
 import io.github.sceneview.model.ModelInstance
 import io.github.sceneview.node.ModelNode
 import io.github.sceneview.rememberCameraManipulator
 import io.github.sceneview.rememberCameraNode
 import io.github.sceneview.rememberEngine
+import io.github.sceneview.rememberEnvironment
+import io.github.sceneview.rememberEnvironmentLoader
 import io.github.sceneview.rememberModelLoader
 import io.github.sceneview.rememberNodes
+import io.github.sceneview.utils.readBuffer
 import java.io.File
+
+/**
+ * Neutral, museum-appropriate viewer background (linear color space, before Filament's
+ * tone-mapping) - a soft light gray rather than pure black or pure white, so dark/brown
+ * artifacts (woven baskets, dark wood, etc.) stay clearly visible without the scene looking
+ * blown out. Shared by both [Model3DViewerContent] call sites (Admin preview and Visitor view).
+ */
+private const val VIEWER_BACKGROUND_LINEAR_GRAY = 0.85f
 
 /**
  * Renders the visitor-facing 3D object viewer for one artifact's published GLB model, using
@@ -198,8 +213,28 @@ internal fun validateCachedModelFile(file: File): String? {
 @Composable
 private fun Model3DViewerContent(localFilePath: String) {
     var attempt by remember(localFilePath) { mutableIntStateOf(0) }
+    val context = LocalContext.current
     val engine = rememberEngine()
     val modelLoader = rememberModelLoader(engine)
+    val environmentLoader = rememberEnvironmentLoader(engine)
+    // Reuses the exact same "neutral" studio indirect-light SceneView's own default environment
+    // loads (environments/neutral/neutral_ibl.ktx, bundled in the SceneView AAR's assets) - only
+    // the skybox fill color is overridden, from SceneView's default pure black to a light,
+    // neutral gray. See SceneView.createEnvironment()'s default skybox (colorOf(rgb = 0f)) in the
+    // pinned 2.3.0 sources for the code this mirrors.
+    val environment = rememberEnvironment(environmentLoader) {
+        SceneView.createEnvironment(
+            engine = engine,
+            isOpaque = true,
+            indirectLight = KTX1Loader.createIndirectLight(
+                engine,
+                context.assets.readBuffer(fileLocation = "environments/neutral/neutral_ibl.ktx")
+            ),
+            skybox = Skybox.Builder()
+                .color(colorOf(rgb = VIEWER_BACKGROUND_LINEAR_GRAY, a = 1f).toFloatArray())
+                .build(engine)
+        )
+    }
     val cameraNode = rememberCameraNode(engine)
     var modelInstance by remember(localFilePath, attempt) { mutableStateOf<ModelInstance?>(null) }
     var loadError by remember(localFilePath, attempt) { mutableStateOf<String?>(null) }
@@ -260,6 +295,8 @@ private fun Model3DViewerContent(localFilePath: String) {
                 modifier = Modifier.fillMaxSize(),
                 engine = engine,
                 modelLoader = modelLoader,
+                environmentLoader = environmentLoader,
+                environment = environment,
                 cameraNode = cameraNode,
                 childNodes = rememberNodes { add(modelNode) },
                 cameraManipulator = rememberCameraManipulator(cameraNode.worldPosition)

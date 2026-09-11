@@ -25,6 +25,23 @@ class GlbConversionResult:
     warnings: list[str] = field(default_factory=list)
 
 
+def default_preview_material():
+    """A neutral, non-metallic, double-sided material for a mesh that otherwise has no real
+    texture/material data. See the call site in convert_to_glb() for why this is required (glTF's
+    spec default for a material-less primitive is metallicFactor=1, which renders black under
+    this app's lighting), and glb_validation.py, which applies this same material to an
+    externally-sourced GLB only in the rare case one is missing it entirely.
+    """
+    import trimesh
+
+    return trimesh.visual.material.PBRMaterial(
+        baseColorFactor=[200, 190, 170, 255],
+        metallicFactor=0.0,
+        roughnessFactor=0.9,
+        doubleSided=True,
+    )
+
+
 def _find_source_mesh(output_dir: Path) -> tuple[Path, bool]:
     """Locate the mesh COLMAP (or the mesh stage) produced.
 
@@ -96,14 +113,7 @@ def convert_to_glb(
     if not expects_uv_texture:
         import trimesh
 
-        mesh.visual = trimesh.visual.texture.TextureVisuals(
-            material=trimesh.visual.material.PBRMaterial(
-                baseColorFactor=[200, 190, 170, 255],
-                metallicFactor=0.0,
-                roughnessFactor=0.9,
-                doubleSided=True,
-            )
-        )
+        mesh.visual = trimesh.visual.texture.TextureVisuals(material=default_preview_material())
 
     # COLMAP's meshers (poisson_mesher and especially the CPU-only sparse fallback
     # delaunay_mesher) do not write NORMAL data into their output PLY, and

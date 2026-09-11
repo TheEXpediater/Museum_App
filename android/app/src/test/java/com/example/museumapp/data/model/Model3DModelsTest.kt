@@ -81,6 +81,153 @@ class Model3DModelsTest {
     }
 
     @Test
+    fun aiJobStagesAreAlsoConsideredActive() {
+        // AI generation stages must poll exactly like COLMAP stages do.
+        assertTrue(Model3DStateDto(status = Model3DStatus.AiQueued).isJobActive())
+        assertTrue(Model3DStateDto(status = Model3DStatus.AiGenerating).isJobActive())
+        assertTrue(Model3DStateDto(status = Model3DStatus.AiDownloading).isJobActive())
+        assertTrue(Model3DStateDto(status = Model3DStatus.AiValidating).isJobActive())
+    }
+
+    @Test
+    fun parsesAiFallbackAndQualityFields() {
+        val adapter = moshi.adapter(Model3DStateDto::class.java)
+        val parsed = adapter.fromJson(
+            """
+            {
+              "status": "ready_for_build",
+              "source_image_count": 30,
+              "registered_image_count": 3,
+              "registered_image_ratio": 0.1,
+              "quality_assessment": "insufficient",
+              "quality_reasons": ["Only 3 of 30 photo(s) could be matched (10% registered; 70% is the target for a complete reconstruction)."],
+              "ai_available": true,
+              "ai_max_images": 4
+            }
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        assertEquals(Model3DQuality.Insufficient, parsed!!.qualityAssessment)
+        assertEquals(1, parsed.qualityReasons.size)
+        assertTrue(parsed.aiAvailable)
+        assertEquals(4, parsed.aiMaxImages)
+    }
+
+    @Test
+    fun aiFallbackFieldsDefaultSafelyWhenAbsent() {
+        // Existing (pre-AI-fallback) backend response shape must still parse cleanly.
+        val adapter = moshi.adapter(Model3DStateDto::class.java)
+        val parsed = adapter.fromJson("""{"status": "ready_for_build"}""")
+
+        assertNotNull(parsed)
+        assertFalse(parsed!!.aiAvailable)
+        assertNull(parsed.aiMaxImages)
+        assertNull(parsed.qualityAssessment)
+        assertTrue(parsed.qualityReasons.isEmpty())
+    }
+
+    @Test
+    fun parsesGenerationMethodOnPublishedAndDraftModel() {
+        val adapter = moshi.adapter(Model3DStateDto::class.java)
+        val parsed = adapter.fromJson(
+            """
+            {
+              "status": "pending_review",
+              "generation_method": "colmap",
+              "draft_generation_method": "ai_multiview"
+            }
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        assertEquals(Model3DGenerationMethod.Colmap, parsed!!.generationMethod)
+        assertEquals(Model3DGenerationMethod.AiMultiview, parsed.draftGenerationMethod)
+    }
+
+    @Test
+    fun generationMethodLabelsAreAdminFriendlyAndNeverExposeProviderName() {
+        assertEquals("Photogrammetry", Model3DGenerationMethod.label(Model3DGenerationMethod.Colmap))
+        assertEquals("AI Preview", Model3DGenerationMethod.label(Model3DGenerationMethod.AiMultiview))
+        assertEquals("Local AI Preview", Model3DGenerationMethod.label(Model3DGenerationMethod.AiLocal))
+        assertEquals("Unknown", Model3DGenerationMethod.label(null))
+        assertEquals("Unknown", Model3DGenerationMethod.label("meshy"))
+        assertEquals("Unknown", Model3DGenerationMethod.label("triposr"))
+    }
+
+    @Test
+    fun parsesJobDtoWithGenerationMethod() {
+        val adapter = moshi.adapter(Model3DJobDto::class.java)
+        val parsed = adapter.fromJson(
+            """
+            { "id": "job-1", "status": "ai_generating", "generation_method": "ai_multiview" }
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        assertEquals("ai_generating", parsed!!.status)
+        assertEquals(Model3DGenerationMethod.AiMultiview, parsed.generationMethod)
+    }
+
+    @Test
+    fun serializesAiBuildRequest() {
+        val adapter = moshi.adapter(Model3DAiBuildRequestDto::class.java)
+        val json = adapter.toJson(Model3DAiBuildRequestDto(imageIds = listOf("img-1", "img-2")))
+
+        assertTrue(json.contains("\"image_ids\""))
+        val roundTripped = adapter.fromJson(json)
+        assertEquals(listOf("img-1", "img-2"), roundTripped!!.imageIds)
+        assertTrue(roundTripped.visibleRegions.isEmpty())
+    }
+
+    @Test
+    fun serializesAiBuildRequestWithVisibleRegions() {
+        val adapter = moshi.adapter(Model3DAiBuildRequestDto::class.java)
+        val json = adapter.toJson(Model3DAiBuildRequestDto(imageIds = listOf("img-1"), visibleRegions = listOf("front", "top")))
+
+        assertTrue(json.contains("\"visible_regions\""))
+        val roundTripped = adapter.fromJson(json)
+        assertEquals(listOf("front", "top"), roundTripped!!.visibleRegions)
+    }
+
+    @Test
+    fun parsesCoverageFieldsOnStateDto() {
+        val adapter = moshi.adapter(Model3DStateDto::class.java)
+        val parsed = adapter.fromJson(
+            """
+            {
+              "status": "ready",
+              "visible_regions": ["front", "right", "top"],
+              "estimated_supported_percent": 50,
+              "estimated_inferred_percent": 50
+            }
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        assertEquals(listOf("front", "right", "top"), parsed!!.visibleRegions)
+        assertEquals(50, parsed.estimatedSupportedPercent)
+        assertEquals(50, parsed.estimatedInferredPercent)
+    }
+
+    @Test
+    fun coverageFieldsDefaultSafelyWhenAbsent() {
+        val adapter = moshi.adapter(Model3DStateDto::class.java)
+        val parsed = adapter.fromJson("""{"status": "ready"}""")
+
+        assertNotNull(parsed)
+        assertTrue(parsed!!.visibleRegions.isEmpty())
+        assertNull(parsed.estimatedSupportedPercent)
+        assertNull(parsed.estimatedInferredPercent)
+    }
+
+    @Test
+    fun coverageRegionListMatchesTheSixCanonicalRegions() {
+        assertEquals(listOf("front", "right", "back", "left", "top", "bottom"), Model3DCoverageRegion.ALL)
+        assertEquals("Front", Model3DCoverageRegion.label("front"))
+    }
+
+    @Test
     fun readyStateCanCarryAFailedRebuildMessage() {
         // A failed rebuild attempt must not erase a previously published working model: status
         // stays "ready" while failure_message/guidance describe the failed attempt.

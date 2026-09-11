@@ -12,6 +12,7 @@ from app.repositories import reconstruction_repository as repo
 from app.services.model3d import colmap_pipeline as pipeline
 from app.services.model3d import colmap_service, states
 from app.services.model3d.glb_converter import GlbConversionError, convert_to_glb
+from app.services.model3d.quality import assess_reconstruction_quality
 from app.services.model3d.reconstruction_service import MIN_USABLE_REGISTERED_IMAGES, MIN_USABLE_SPARSE_POINTS
 from app.utils import utc_now
 
@@ -221,6 +222,22 @@ def run(database: Database, settings: Settings, artifact_id: ObjectId, job_id: O
             if not used_dense_stereo:
                 guidance.append("Built from the sparse point cloud (CPU mode). Enable COLMAP_USE_GPU for higher-fidelity dense reconstruction.")
 
+            # Refines the preflight-time verdict (sparse metrics only) now that the mesh itself
+            # exists - a low registered-image ratio that looked borderline at preflight can be
+            # confirmed either way once the actual vertex/face counts are known.
+            quality_verdict = assess_reconstruction_quality(
+                source_image_count=source_count,
+                registered_image_count=metrics["registered_image_count"],
+                registered_image_ratio=metrics["registered_image_ratio"],
+                sparse_point_count=metrics["sparse_point_count"],
+                mean_reprojection_error=metrics["mean_reprojection_error"],
+                min_registered_ratio=settings.model_3d_min_registered_ratio,
+                vertex_count=result.vertex_count,
+                face_count=result.face_count,
+            )
+            if not quality_verdict.is_sufficient:
+                guidance = quality_verdict.reasons + guidance
+
             # A successful build produces a DRAFT awaiting admin review, not an immediately
             # visible published model - the visitor-facing version/path/sha/size fields (and
             # any previously accepted model they point to) are left untouched here.
@@ -234,6 +251,9 @@ def run(database: Database, settings: Settings, artifact_id: ObjectId, job_id: O
                     "draft_sha256": result.sha256,
                     "draft_size_bytes": result.size_bytes,
                     "draft_created_at": utc_now(),
+                    "draft_generation_method": states.GENERATION_COLMAP,
+                    "quality_assessment": quality_verdict.quality,
+                    "quality_reasons": quality_verdict.reasons,
                     "failure_message": None,
                     "guidance": guidance,
                     **metrics,

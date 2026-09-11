@@ -14,6 +14,15 @@ READY = "ready"
 FAILED = "failed"
 INTERRUPTED = "interrupted"
 
+# AI multi-view job stages (see ai_generation_service.py). Kept distinct from the COLMAP stage
+# names above so job/status UI copy can tell the two pipelines apart, but they converge on the
+# same PENDING_REVIEW / READY / FAILED terminal states as COLMAP so Accept/Reject, versioning,
+# and Android polling all keep working unmodified for either generation method.
+AI_QUEUED = "ai_queued"
+AI_GENERATING = "ai_generating"
+AI_DOWNLOADING = "ai_downloading"
+AI_VALIDATING = "ai_validating"
+
 ALL_STATES = (
     NONE,
     NEEDS_IMAGES,
@@ -24,6 +33,10 @@ ALL_STATES = (
     MESHING,
     TEXTURING,
     CONVERTING,
+    AI_QUEUED,
+    AI_GENERATING,
+    AI_DOWNLOADING,
+    AI_VALIDATING,
     PENDING_REVIEW,
     READY,
     FAILED,
@@ -40,6 +53,10 @@ ACTIVE_JOB_STATES = (
     MESHING,
     TEXTURING,
     CONVERTING,
+    AI_QUEUED,
+    AI_GENERATING,
+    AI_DOWNLOADING,
+    AI_VALIDATING,
 )
 
 # Artifact-level states from which a new build may be launched (initial build or a deliberate
@@ -52,3 +69,18 @@ BUILDABLE_STATES = (
     FAILED,
     INTERRUPTED,
 )
+
+# How a published/draft model's geometry was produced. Persisted alongside version/path/sha256
+# so Admin UI can show "Photogrammetry" vs "AI Preview" without Visitor ever seeing it.
+GENERATION_COLMAP = "colmap"
+GENERATION_AI_MULTIVIEW = "ai_multiview"
+# Single-image local AI generation (TripoSR). Distinct from GENERATION_AI_MULTIVIEW (Meshy):
+# Admin UI needs to know whether the draft came from a local single-image model (show "Primary
+# source" copy) versus a remote multi-image provider (show the selected photo set).
+GENERATION_AI_LOCAL = "ai_local"
+
+# Coarse pass/fail verdict from quality.assess_reconstruction_quality(), stored alongside the
+# existing numeric metrics (registered_image_ratio, sparse_point_count, ...) so Admin UI can
+# branch on one field instead of re-deriving the threshold logic client-side.
+QUALITY_GOOD = "good"
+QUALITY_INSUFFICIENT = "insufficient"

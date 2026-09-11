@@ -1,1476 +1,1283 @@
-# Museum App — Claude Code Engineering Guide
+Museum App — Engineering Guide
 
-## Mission
+Mission
 
-Maintain and extend the existing Museum Guide System without destabilizing working functionality.
+Maintain and extend the Museum Guide System with the smallest correct changes.
 
-Current priorities, in strict order:
+The system is an Android museum guide backed by a local Windows laptop. Existing MongoDB data, Qdrant vectors, uploaded images, authentication, OpenCLIP recognition, published GLBs, Admin flows, Visitor flows, and working UI are valuable state and must be preserved.
 
-1. Recover the current development backend if it does not start.
+Current priorities:
 
-2. Preserve all existing artifact CRUD, authentication, visitor flows, MongoDB data, Qdrant vectors, uploaded images, published 3D models, and existing recognition data.
+Keep the existing backend and Android application stable.
 
-3. Make OpenCLIP recognition backend-ready by default at application startup. OpenCLIP readiness must not depend on an Admin opening the recognition screen, a Visitor starting a scan, or a particular Android device connecting first.
+Make Quick AI 3D Preview the normal, practical 3D creation path.
 
-4. Diagnose and fix the current published-3D viewing failure. An existing artifact already reports one 3D model available, but the GLB currently does not render correctly. Make the same valid published model previewable from both Admin artifact details/edit flow and Visitor artifact details.
+Use a free local pretrained image-to-3D model before paid cloud providers.
 
-5. Preserve and finish local/offline 3D artifact reconstruction using COLMAP on the Windows laptop.
+Keep COLMAP as an optional advanced photogrammetry path.
 
-6. Produce and validate mobile-ready GLB models.
+Reuse the same GLB validation, review, publication, cache, and SceneView pipeline for every generation method.
 
-7. Keep Android 3D viewing with persistent local model caching reliable across fresh devices and subsequent offline reuse.
+Move 3D management into a dedicated Admin 3D area with immediate progress feedback and automatic status polling.
 
-8. Preserve offline-capable artifact narration using Android TextToSpeech.
+Clearly disclose that AI-generated geometry can contain inferred surfaces.
 
-9. Verify the complete application before declaring the task complete.
+The selected free local model is TripoSR.
 
-This is a development task.
+TripoSR is used for inference only. Do not train or fine-tune it for this capstone.
 
-Do not redesign the handoff package or migration workflow unless a current development failure directly originates from code shared with those systems.
+Engineering Method
 
-The immediate acceptance gate is not creation of another 3D model. First prove that the already-published model can be retrieved, validated, downloaded/cached, and visibly rendered in both Admin and Visitor flows.
+Work from evidence.
 
----
+Before editing:
 
-# Working Style
+Reproduce the requirement or failure.
 
-Use a narrow, hypothesis-driven workflow.
+Find the narrowest component that owns it.
 
-Do not perform a repository-wide audit before starting.
+Read only the relevant files.
 
-Do not repeatedly rediscover architecture that is already obvious from the repository.
+Form one concrete hypothesis.
 
-Before reading a file, know why it is relevant.
+Make the smallest change that can prove it.
 
-Before editing a file, identify the concrete failure or requirement it addresses.
+Run the nearest executable verification immediately.
+
+Preserve working code outside the failure boundary.
 
 Prefer:
 
-* small diffs
+simple code
 
-* existing abstractions
+existing abstractions
 
-* existing repositories and ViewModels
+explicit state
 
-* existing Retrofit/Moshi patterns
+small diffs
 
-* existing FastAPI route/service/repository patterns
+targeted tests
 
-* targeted tests
+real integration checks
 
-* executable verification
+measured runtime behavior
 
 Avoid:
 
-* speculative refactors
+repository-wide rewrites
 
-* replacing working subsystems
+speculative refactors
 
-* creating duplicate architecture
+duplicate networking/repository/ViewModel stacks
 
-* unnecessary dependencies
+hidden background behavior
 
-* renaming unrelated classes
+invented API contracts
 
-* formatting unrelated files
+invented confidence scores
 
-* broad rewrites
+destructive troubleshooting
 
-* changing migration backups
+dependency upgrades without evidence
 
-* deleting Docker volumes
+If a command fails, investigate the first meaningful error.
 
-* rebuilding Qdrant as a troubleshooting shortcut
+Do not claim success because code compiles.
 
-If a command fails, investigate the first meaningful error rather than changing multiple unrelated components.
+Existing Architecture
 
----
+Android
 
-# Existing Architecture
+Kotlin
 
-## Android
+Jetpack Compose
 
-Language:
+Material 3
 
-* Kotlin
+minSdk 26
 
-UI:
+targetSdk 35
 
-* Jetpack Compose
+Java/Kotlin target 17
 
-* Material 3
+SceneView
 
-Important package:
+Retrofit / OkHttp / Moshi
 
-`android/app/src/main/java/com/example/museumapp/`
+existing repositories and ViewModels
+
+runtime backend discovery
+
+Important root:
+
+android/app/src/main/java/com/example/museumapp/
 
 Important areas:
 
-* `data/api/`
+data/api/
 
-* `data/model/`
+data/model/
 
-* `data/network/`
+data/network/
 
-* `data/repository/`
+data/repository/
 
-* `data/session/`
+data/session/
 
-* `ui/admin/`
+model3d/
 
-* `ui/visitor/`
+ui/admin/
 
-Visitor artifact details currently live in:
+ui/visitor/
 
-`ui/visitor/artifacts/VisitorArtifactDetailsScreen.kt`
+Do not create another networking stack.
+Do not hardcode a laptop IP.
 
-and:
+Backend
 
-`ui/visitor/artifacts/VisitorArtifactDetailsViewModel.kt`
+FastAPI
 
-Admin artifact details currently live in:
+Python
 
-`ui/admin/artifactdetails/`
+MongoDB
 
-Do not create parallel networking or repository stacks.
+Qdrant
 
-Use the existing Retrofit client, repository result model, ViewModels, navigation, Material theme, and backend connection system.
+OpenCLIP
 
-Current Android:
+local uploads
 
-* minSdk 26
+COLMAP
 
-* targetSdk 35
+reconstruction jobs
 
-* Java/Kotlin target 17
+GLB validation/versioning/publication
 
----
+Canonical startup:
 
-## Backend
-
-Framework:
-
-* FastAPI
-
-* Python
-
-Database:
-
-* MongoDB
-
-AI recognition:
-
-* OpenCLIP
-
-* Qdrant
-
-Existing images:
-
-* managed by backend image storage
-
-* ordinary artifact images participate in recognition/indexing
-
-Important paths:
-
-`backend/main.py`
-
-`backend/app/config.py`
-
-`backend/app/routes/artifacts.py`
-
-`backend/app/routes/public.py`
-
-`backend/app/routes/ai.py`
-
-`backend/app/repositories/artifact_repository.py`
-
-`backend/app/services/artifact_indexing_service.py`
-
-`backend/app/services/image_storage.py`
-
-`backend/app/schemas/artifact.py`
-
-`backend/app/schemas/public_content.py`
-
-`start_backend.py`
-
-`run.bat`
-
-`compose.yaml`
-
-The canonical development startup is:
-
-`run.bat`
+run.bat
 
 which invokes:
 
-`start_backend.py`
+start_backend.py
 
-The development FastAPI process should remain the authoritative API process.
+The Windows-host FastAPI process remains the authoritative API process.
 
-MongoDB and Qdrant may run through Docker.
+Protection Rules
 
-Do not casually start another backend instance on port 8000.
+The following must continue to work:
 
----
+Admin login
 
-OpenCLIP Startup and Recognition Readiness
+Guest flow
 
-OpenCLIP is a backend capability, not a per-device Android model.
+Student flow
 
-A new Android device, new Visitor session, Admin login, app reinstall, or first recognition attempt must not be responsible for loading the OpenCLIP model.
+artifact CRUD
 
-When AI is enabled, the backend startup path must initialize or warm OpenCLIP automatically and expose readiness through the existing AI health/status path.
+categories
 
-Required behavior:
+artifact gallery
 
-* backend startup triggers OpenCLIP warmup when AI_ENABLED=true
+Admin artifact details
 
-* default development/setup configuration keeps AI_WARMUP_ON_STARTUP=true
+Visitor artifact details
 
-* recognition readiness is shared by Admin and Visitor flows
+backend discovery
 
-* Admin Recognition must not be the hidden trigger that makes Visitor recognition start working
+OpenCLIP recognition
 
-* Visitor recognition must not require an Admin to visit any screen first
+Qdrant recognition
 
-* a fresh Android device should only connect to the backend and use recognition; it should not download or initialize OpenCLIP itself
+Visitor scanning
 
-* if OpenCLIP loading is still in progress, return an explicit warming/loading state rather than behaving as if recognition is unavailable or unconfigured
+existing uploads
 
-* if warmup fails, preserve the rest of the museum application and expose a concrete backend diagnostic
+existing reconstruction jobs
 
-* do not re-download model weights on every startup when a valid local cache already exists
+existing accepted/published GLBs
 
-* do not rebuild Qdrant merely to make OpenCLIP load
+Admin 3D Preview
 
-Investigate the complete startup path when recognition is not ready:
+Visitor View 3D
 
-* backend/.env
+model cache
 
-* backend/.env.example
+SHA verification
 
-* backend/main.py
+narration
 
-* backend/app/config.py
+Never delete as a shortcut:
 
-* OpenCLIP model manager / embedding service
+MongoDB volumes
 
-* OpenCLIP warmup service
+Qdrant volumes
 
-* /api/v1/ai/health
+existing artifact images
 
-* start_backend.py
+published GLBs
 
-* Admin and Visitor recognition repositories/ViewModels only to confirm neither client flow incorrectly owns backend model initialization
+valid model history
 
-Success gate:
+A failed new generation must leave the currently published model unchanged.
 
-* start backend without opening the Android app
+Do not rebuild Qdrant unless corruption is proven.
 
-* wait for startup/warmup to settle
+OpenCLIP
 
-* call /api/v1/ai/health
+OpenCLIP is a backend service, not a per-device Android model.
 
-* prove OpenCLIP is ready and Qdrant is reachable
+When recognition AI is enabled, backend startup must warm OpenCLIP automatically.
 
-* launch a fresh/new Android device or cleared app session
+A new Android device must not require an Admin to open Recognition first.
 
-* prove Visitor recognition works without first opening Admin Recognition
+Required:
 
-* prove Admin recognition also works using the same already-ready backend model
+local startup warmup enabled
 
----
+cached weights reused
 
-# PHASE 0 — Recover Current Backend First
+/api/v1/ai/health exposes loading / ready / failed
 
-Do not implement 3D or narration while the current backend is broken.
+Qdrant remains independent of Android device state
 
-Reproduce the current failure.
+no re-index as a model-loading workaround
 
-Run from repository root:
+OpenCLIP recognition and AI 3D generation are separate subsystems.
 
-```powershell
+3D Product Definition
 
-py start_backend.py --status
+There are two creation modes.
 
-py start_backend.py --check
+Quick AI 3D Preview — default
 
-docker compose -f compose.yaml ps
+Purpose:
 
-netstat -ano | findstr :8000
+Create a recognizable, approximate 3D visualization quickly from a good photograph.
 
-py start_backend.py
+Use for normal museum Admin workflow.
 
-```
+Missing or unseen surfaces can be inferred by AI.
 
-If `py` is unavailable, use the working Python command detected by the repository.
+This is not metrically exact archival reconstruction.
 
-Then verify:
+Photogrammetry — advanced
 
-```text
+Engine:
 
-GET http://localhost:8000/api/v1/health
+COLMAP
 
-GET http://localhost:8000/api/v1/ai/health
+Purpose:
 
-```
+Create geometry from matched overlapping photographs.
 
-Investigate only the files relevant to the observed error.
+Use when source images have enough overlap, texture, and viewpoint diversity.
 
-Likely startup scope:
+COLMAP failure must not block Quick AI Preview or ordinary museum use.
 
-* `run.bat`
+Free Local Model
 
-* `start_backend.py`
+TripoSR
 
-* `backend/.env`
+Use the official TripoSR implementation as the default free local image-to-3D provider.
 
-* `backend/.env.example`
+Reasons:
 
-* `backend/main.py`
+pretrained
 
-* `backend/app/config.py`
+MIT license
 
-* `backend/requirements.txt`
+no paid API
 
-* `backend/requirements-ai.txt`
+no project-specific training
 
-* `compose.yaml`
+local inference
 
-Do not touch migration backups merely because startup is failing.
+CPU fallback
 
-Do not delete MongoDB or Qdrant volumes.
+evaluation chunking to reduce VRAM
 
-Do not reset the database.
+GLB output support
 
-Do not rebuild Qdrant unless corruption is actually proven.
+optional texture baking
 
-Success gate:
+Important:
 
-* FastAPI starts.
+TripoSR is a single-image generator.
 
-* `/api/v1/health` returns healthy.
+Its CLI can receive more than one image path, but those images are processed as separate generation inputs. It does not fuse arbitrary front/left/back/right photographs into one model.
 
-* MongoDB connects.
+Never represent TripoSR as true multi-view fusion.
 
-* existing artifact API works.
+Optional cloud or future local multi-view providers may continue to exist behind the provider abstraction.
 
-* existing authentication works.
+Do not make a much heavier model the default when it cannot realistically run on the deployment machine.
 
-* existing artifact data remains present.
+Runtime Isolation
 
-Only after this gate passes may feature work begin.
+Do not install TripoSR's PyTorch/runtime dependencies into the main FastAPI environment unless compatibility is proven.
 
----
+Use a separate local runtime, for example:
 
-# 3D ARCHITECTURE
+tools/triposr/
 
-## Core Principle
+with its own environment and model cache.
 
-COLMAP runs on the Windows backend/laptop.
+Architecture:
 
-COLMAP must never execute on Android.
+FastAPI
+   |
+   | creates local 3D job
+   v
+TripoSR subprocess
+   |
+   v
+staged candidate GLB
+   |
+   v
+existing GLB validator
+   |
+   v
+Admin review
 
-Android receives only the final mobile model.
+Reasons:
 
-Final distribution format:
+avoid OpenCLIP/PyTorch dependency conflicts
 
-`.glb`
+isolate OOM/crashes
 
-The 3D pipeline is:
+allow CPU fallback
 
-```text
+release model memory after generation
 
-reconstruction photos
+keep normal backend startup lightweight
 
-    ->
+One local generation at a time is acceptable.
 
-quality/preflight
+Do not introduce Redis or Celery.
 
-    ->
+Provider Boundary
 
-COLMAP feature extraction
+Keep process execution outside FastAPI routes.
 
-    ->
+Use the existing model3d service architecture.
 
+Conceptual interface:
+
+LocalAi3DProvider
+    detect()
+    health()
+    generate()
+
+Implementation:
+
+TripoSrProvider
+
+Detection should verify:
+
+runtime folder
+
+Python executable
+
+imports
+
+model/weights availability
+
+output folder
+
+usable device configuration
+
+If TripoSR is unavailable:
+
+backend still starts
+
+MongoDB still works
+
+OpenCLIP still works
+
+Qdrant still works
+
+COLMAP still works
+
+existing GLBs remain viewable
+
+Only new local AI generation is disabled.
+
+Configuration
+
+Keep machine configuration in backend/.env.
+
+Suggested keys:
+
+LOCAL_AI_3D_ENABLED=true
+LOCAL_AI_3D_PROVIDER=triposr
+TRIPOSR_ROOT=
+TRIPOSR_PYTHON=
+TRIPOSR_MODEL_PATH=
+TRIPOSR_DEVICE=auto
+TRIPOSR_CHUNK_SIZE=
+TRIPOSR_MC_RESOLUTION=
+TRIPOSR_TEXTURE_RESOLUTION=
+TRIPOSR_BAKE_TEXTURE=true
+TRIPOSR_CPU_FALLBACK=true
+
+Update .env.example with safe placeholders.
+
+Do not commit local paths or secrets.
+
+Low-Resource Policy
+
+The current target may not have enough VRAM for TripoSR defaults.
+
+Do not assume the GPU will work.
+
+TripoSR's default single-image inference is documented at about 6 GB VRAM, so a 4 GB GPU must be treated as constrained.
+
+Policy:
+
+detect CUDA
+
+use configured conservative settings
+
+if GPU inference fails with OOM or unsupported CUDA behavior, terminate the worker
+
+retry once on CPU when fallback is enabled
+
+record which device actually generated the model
+
+never crash FastAPI because a 3D worker OOMs
+
+Smaller TripoSR evaluation chunks reduce VRAM but increase runtime.
+
+Do not invent one magic chunk size.
+
+Benchmark the actual machine and persist the working profile.
+
+Admin may show:
+
+Generating locally on CPU. This can take several minutes.
+
+That is acceptable.
+
+Quick AI Input
+
+Do not require 30–200 photos.
+
+For TripoSR choose one primary generation image.
+
+Recommended primary image:
+
+entire artifact visible
+
+sharp
+
+strong foreground/background separation
+
+minimal occlusion
+
+soft even light
+
+little glare
+
+no motion blur
+
+preferably a three-quarter angle that reveals depth
+
+Admin UI:
+
+Quick AI 3D Preview
+
+Primary image
+[ thumbnail ]
+
+[ Change Primary Image ]
+
+Reference photos: 27
+
+Generator:
+Local AI
+
+[ Generate Preview ]
+
+Other artifact photos can remain reference material for Admin review.
+
+Do not claim those extra images were used by TripoSR if they were not.
+
+Estimated Photo Support vs AI Inference
+
+The product may show a percentage, but it must be honest.
+
+Do not claim:
+
+exact model confidence
+
+exact percentage of hallucinated polygons
+
+scientific coverage
+
+Use:
+
+Estimated photo-supported coverage
+
+Estimated AI-inferred coverage
+
+Always show Estimated.
+
+Canonical major view regions:
+
+Front
+
+Right
+
+Back
+
+Left
+
+Top
+
+Bottom
+
+For the image(s) actually consumed by the generator, record which major regions are visibly represented.
+
+Example:
+
+Visible in generation input
+
+[x] Front
+[x] Right
+[x] Top
+[ ] Back
+[ ] Left
+[ ] Bottom
+
+Coverage:
+
+supported regions / 6
+
+Inference:
+
+100 - supported
+
+Example:
+
+3 of 6 regions represented:
+
+Estimated photo-supported coverage: 50%
+
+Estimated AI-inferred coverage: 50%
+
+Round to whole percentages.
+
+Do not create false precision.
+
+If the visible regions cannot be determined, show:
+
+Coverage estimate unavailable
+
+For TripoSR, only its primary input image counts as generation evidence.
+
+Reference photos not sent to the model do not reduce the inferred percentage.
+
+A future true multi-view provider may count every view it actually consumes.
+
+AI Disclosure
+
+Every AI candidate must show:
+
+AI-generated 3D preview
+
+and:
+
+Areas not visible in the generation input may have been estimated by AI and may not exactly match the physical artifact.
+
+Before Accept, display:
+
+generation method
+
+primary source image
+
+estimated photo-supported coverage
+
+estimated AI-inferred coverage
+
+model validation
+
+model size
+
+Preview
+
+Accept
+
+Reject
+
+Never present AI Preview as archival measurement data.
+
+Generation Metadata
+
+Persist typed generation method:
+
+colmap
+triposr
+ai_multiview
+
+Admin labels:
+
+Photogrammetry
+
+Local AI Preview
+
+AI Multi-View Preview
+
+Persist generation method on draft and published model.
+
+Do not expose provider internals unnecessarily to Visitor DTOs.
+
+One Shared GLB Pipeline
+
+Every generator must converge here:
+
+generator
+    |
+    v
+staged GLB
+    |
+    v
+validate
+    |
+    v
+SHA-256
+    |
+    v
+Admin Preview
+    |
+    +-- Reject -> keep current published model
+    |
+    +-- Accept
+          |
+          v
+      publish version
+          |
+          v
+      Visitor API
+          |
+          v
+      Android cache
+          |
+          v
+       SceneView
+
+Never build a provider-specific Android renderer.
+
+Android consumes validated GLB.
+
+Staging / Validation
+
+Never overwrite a published model during generation.
+
+Use staging.
+
+Example:
+
+backend/uploads/reconstruction/<artifact_id>/
+    source/
+    workspace/
+    ai_staging/
+    output/
+
+backend/uploads/models3d/<artifact_id>/
+    model-v1.glb
+    model-v2.glb
+
+Validate:
+
+file exists
+
+size > 0
+
+within configured limit
+
+valid GLB
+
+geometry exists
+
+finite bounds
+
+vertices > 0
+
+faces > 0 where applicable
+
+materials/textures inspected
+
+SHA-256 generated
+
+Do not re-export a valid textured AI model unnecessarily.
+
+Only repair missing normals/materials when they are genuinely absent.
+
+Admin 3D UX
+
+Move 3D management into a dedicated Admin area.
+
+Prefer:
+
+Artifact Details
+
+[ Details ] [ Images ] [ 3D Model ]
+
+or equivalent Material 3 navigation.
+
+Do not cram full reconstruction controls into the normal Details content.
+
+3D Model tab
+
+Published Model
+
+Status: Ready
+Generation: Local AI Preview
+Version: 5
+
+[ Preview ]
+
+Create New Preview
+
+(*) Quick AI Preview
+( ) Photogrammetry
+
+[ Continue ]
+
+Quick AI is default.
+
+COLMAP is advanced.
+
+Quick AI Flow
+
+3D Model tab
+   |
+   v
+Quick AI Preview
+   |
+   v
+select primary image
+   |
+   v
+mark visible regions
+   |
+   v
+Generate
+   |
+   v
+background job
+   |
+   v
+TripoSR
+   |
+   v
+validate
+   |
+   v
+pending_review
+   |
+   v
+Preview
+   |
+   +-- Reject
+   |
+   +-- Accept
+
+Do not require COLMAP preflight before Quick AI generation.
+
+Photogrammetry Flow
+
+COLMAP remains available.
+
+For source selection:
+
+all eligible images selected by default
+
+Select All
+
+Clear
+
+Selected X / Y
+
+Show readable counts:
+
+Source photos
+
+Selected
+
+Usable
+
+Registered
+
+Registration %
+
+Flow:
+
+select photos
+   ->
+Run Check
+   ->
+feature extraction
+   ->
 matching
-
-    ->
-
+   ->
 sparse reconstruction
+   ->
+quality result
+   ->
+build if suitable
 
-    ->
+If quality is insufficient:
 
-sparse quality gate
+Try Quick AI Preview
 
-    ->
+Do not force hundreds of photos.
 
-dense reconstruction
+Progress UX
 
-    ->
+Any long operation must produce immediate feedback.
 
-fusion
+Never let a button appear to do nothing.
 
-    ->
+AI example:
 
-meshing
+Generating 3D Preview
 
-    ->
+Preparing image...
+Removing background...
+Loading local model...
+Generating geometry...
+Baking texture...
+Validating GLB...
 
-mesh simplification
+This may take several minutes.
 
-    ->
+[ progress ]
 
-texture atlas
+COLMAP example:
 
-    ->
+Checking Photos
 
-textured PLY
+Extracting features...
+Matching photographs...
+Building sparse reconstruction...
+Assessing quality...
 
-    ->
+Android automatically polls active jobs.
 
-GLB conversion
+No manual refresh.
+No leave-and-return requirement.
+No duplicate job from Compose recomposition.
 
-    ->
+Polling stops on terminal state.
 
-mobile validation
+Job States
 
-    ->
+Use MongoDB-backed job state and existing worker patterns.
 
-published model
+Possible local-AI states:
 
-```
-
----
-
-# Reconstruction Images Must Be Separate
-
-DO NOT store all reconstruction photographs in normal artifact `image_paths`.
-
-Ordinary artifact images already participate in OpenCLIP/Qdrant indexing.
-
-Create a separate reconstruction source system.
-
-Suggested storage:
-
-```text
-
-backend/uploads/reconstruction/
-
-    <artifact_id>/
-
-        source/
-
-        workspace/
-
-        output/
-
-```
-
-Published models:
-
-```text
-
-backend/uploads/models3d/
-
-    <artifact_id>/
-
-        model-v1.glb
-
-        model-v2.glb
-
-```
-
-The artifact may reference reconstruction images without exposing them in the visitor gallery.
-
-Existing artifact photos may be copied or referenced into the reconstruction source set when appropriate.
-
-Additional photogrammetry photos must not automatically become visitor-gallery images or OpenCLIP recognition vectors.
-
----
-
-# Suggested 3D State
-
-Persist 3D state with the artifact or an associated reconstruction-job record.
-
-Suggested states:
-
-```text
-
-none
-
-needs_images
-
-ready_for_build
-
-queued
-
-sparse_reconstruction
-
-dense_reconstruction
-
-meshing
-
-texturing
-
-converting
-
-ready
-
+ai_queued
+ai_preparing
+ai_loading_model
+ai_generating
+ai_texturing
+ai_validating
+pending_review
 failed
-
 interrupted
 
-```
+Map them to human UI.
 
-Suggested stored information:
+Keep technical stack traces in logs.
 
-```text
+Do not hold one HTTP request open through full inference.
 
-model_3d_status
+Image Selection Rules
 
-model_3d_path
+COLMAP
 
-model_3d_version
+All eligible images checked by default.
 
-model_3d_sha256
+Buttons:
 
-model_3d_size_bytes
+Select All
+Clear
 
-reconstruction_source_count
+Show selected count.
 
-registered_image_count
+Do not preselect backend-marked unreadable files.
 
-registered_image_ratio
+TripoSR
 
-sparse_point_count
+One primary generation image.
 
-mean_reprojection_error
+Allow replacing the primary.
 
-reconstruction_error
+Other images are references.
 
-reconstruction_guidance
+Do not pretend they are fused.
 
-model_3d_created_at
+SceneView
 
-```
+The existing renderer remains the shared viewer.
 
-Use typed Pydantic/Kotlin models rather than unstructured maps where practical.
+Do not rewrite it while integrating TripoSR unless an actual regression proves it is involved.
 
----
+It must:
 
-# Admin 3D Workflow
+download published GLB
 
-On an existing artifact, provide:
+verify SHA
 
-`Create 3D Model`
+atomically persist cache
 
-Flow:
+load Filament/SceneView on correct thread
 
-1. Show currently selected reconstruction images.
+frame actual bounds
 
-2. Allow eligible existing artifact images to be selected.
+provide usable lighting
 
-3. Allow many additional reconstruction-only photographs to be uploaded.
+show the object
 
-4. Run preflight.
+support orbit/zoom
 
-5. If inadequate, do NOT run the expensive dense pipeline.
+show actionable errors instead of blank black/gray canvas
 
-6. Return actionable guidance.
+Admin Preview and Visitor use the same fundamental renderer.
 
-7. Allow the admin to add more images.
+Publication
 
-8. Re-run preflight.
+No generated model is automatically public.
 
-9. When suitable, enable `Build 3D Model`.
+Required:
 
-10. Show reconstruction progress.
+generated
+  ->
+validated
+  ->
+Admin review
+  ->
+Accept / Reject
 
-11. When complete, show model status and preview.
+Accept promotes version/path/SHA/size/generation method/coverage metadata.
 
-12. Allow deliberate rebuild/replacement.
+Reject preserves the current published model.
 
-Never silently replace a working model after a failed rebuild.
+Failure preserves the current published model.
 
-Build a new version first.
+Offline Behavior
 
-Switch the published model reference only after validation succeeds.
+Normal museum operation remains local after setup.
 
----
+OpenCLIP, Qdrant, MongoDB, backend, existing models, cached GLBs, and SceneView must not require a cloud API.
 
-# Image Quality Gate
+TripoSR should work offline after its runtime and weights are installed.
 
-Do not use only a fixed image-count rule.
+First-time dependency/model download may require internet unless bundled.
 
-Image count is only an initial heuristic.
+Setup / Handoff
 
-Recommended implementation defaults may be configurable, but they are not universal photogrammetry laws.
+Do not immediately modify the main handoff installer.
 
-Perform inexpensive preflight checks such as:
+First prove TripoSR separately:
 
-* valid image format
+isolated environment installs
 
-* readable image
+official test image generates GLB
 
-* sufficient resolution
+real museum artifact generates GLB
 
-* duplicates / near duplicates
+GLB validates
 
-* obviously unusable images
+SceneView renders it
 
-* source count
+measure runtime
 
-Then run COLMAP sparse reconstruction as the important quality gate.
+measure memory where practical
 
-Collect at least:
+establish a safe GPU/CPU profile
 
-* source image count
+Then make optional installer support.
 
-* registered image count
+A failed TripoSR install must not break normal museum use.
 
-* registered-image ratio
+Real Acceptance Gate
 
-* sparse 3D point count
+Before claiming local AI 3D is complete:
 
-* reprojection statistics when available
+use a real museum photo
 
-If sparse registration is poor, return:
+run actual TripoSR, not a mock
 
-`needs_images`
+produce GLB
 
-with useful guidance such as:
+texture/appearance is generated when enabled
 
-* add more overlapping photographs
+validate
 
-* photograph additional sides/angles
+compute SHA
 
-* avoid large jumps between viewpoints
+preview in Admin
 
-* reduce blur
+object is recognizable
 
-* keep lighting consistent
+show Estimated coverage
 
-* avoid reflections/glare where possible
+show AI disclosure
 
-Do not claim a specific missing physical angle unless reconstruction data actually supports that conclusion.
+Reject preserves current model
 
----
+Accept a usable model
 
-# COLMAP Integration
+Visitor downloads it
 
-Do not hardcode a Program Files location.
+Visitor visibly renders it
 
-Resolve COLMAP in this order:
+reopen uses cache
 
-1. configured `COLMAP_BIN`
+Compilation and unit tests are not enough.
 
-2. PATH
+Testing
 
-3. known installation candidates only when necessary
+Backend
 
-Expose COLMAP availability in system status.
+Keep existing tests.
 
-Before assuming command-line flags, use the installed version's help output when necessary.
+Add targeted tests for:
 
-Support CPU operation.
+provider disabled
 
-GPU acceleration is optional.
+provider unavailable
 
-The system must not require NVIDIA/CUDA.
+detection
 
-For CPU systems, configure feature extraction and matching appropriately rather than failing because CUDA is unavailable.
+command construction
 
-Keep COLMAP execution outside the FastAPI request thread.
+timeout
 
----
+subprocess failure
 
-# 3D Job Execution
+CUDA OOM
 
-3D reconstruction may take a long time.
+configured CPU fallback
 
-Do not block a FastAPI HTTP request until the entire dense reconstruction finishes.
+missing result
 
-Create a job.
+invalid GLB
 
-Recommended architecture for this local system:
+valid GLB
 
-* MongoDB stores job state.
+staging
 
-* FastAPI creates/controls jobs.
+SHA
 
-* a dedicated Python worker/subprocess performs COLMAP.
+published-model preservation
 
-* worker logs are written per job.
+generation-method persistence
 
-* worker updates job status/progress.
+coverage calculation
 
-* Android polls a status endpoint.
+coverage unavailable
 
-Do not introduce Redis/Celery unless there is a demonstrated requirement.
+job transitions
 
-One reconstruction worker at a time is acceptable for this capstone/local-lab system.
+interrupted job
 
-On application restart, detect abandoned `running` jobs and mark them `interrupted` rather than pretending they are still running.
+Accept
 
----
+Reject
 
-# GLB Conversion
+Visitor hidden before Accept
 
-COLMAP's textured output is not the final Android delivery asset.
+Visitor exposed after Accept
 
-Convert the textured mesh and texture atlas to GLB.
+Mock heavy inference in normal tests.
 
-Preferred lightweight conversion path:
+Create a separate explicit integration test for real TripoSR inference.
 
-* `trimesh`
+Android
 
-* `Pillow`
+Test:
 
-Validate that UV coordinates and textures survive conversion.
+dedicated 3D navigation
 
-Write a focused converter test.
+Quick AI default
 
-Final model must be a self-contained GLB suitable for SceneView.
+COLMAP advanced option
 
-Generate:
+primary-image selection
 
-* SHA-256
+region selection
 
-* file size
+Estimated coverage labels
 
-* model version
+AI disclosure
 
-Do not publish a zero-byte or unreadable GLB.
+immediate progress
 
----
+polling active/terminal behavior
 
-# Mobile Optimization
+no duplicate job on recomposition
 
-A museum artifact model should be optimized before Android delivery.
+failure
 
-Use mesh simplification.
+pending review
 
-Keep the original reconstruction workspace separate from the mobile result.
+Preview
 
-Use configurable quality settings rather than deleting the highest-quality intermediate result.
+Accept
 
-Reject or warn about unreasonably large mobile models.
+Reject
 
-Prefer a practical mobile GLB over maximum polygon count.
-
----
-
-# Backend 3D API
-
-Follow existing FastAPI route/service/repository architecture.
-
-A reasonable API shape is:
-
-```text
-
-POST   /api/v1/artifacts/{id}/3d/images
-
-GET    /api/v1/artifacts/{id}/3d
-
-POST   /api/v1/artifacts/{id}/3d/preflight
-
-POST   /api/v1/artifacts/{id}/3d/build
-
-GET    /api/v1/artifacts/{id}/3d/status
-
-DELETE /api/v1/artifacts/{id}/3d/images/{image_id}
-
-DELETE /api/v1/artifacts/{id}/3d
-
-```
-
-Admin-only operations must remain admin protected.
-
-Visitor artifact responses should expose only what visitors require, for example:
-
-```text
-
-model_3d_available
-
-model_3d_url
-
-model_3d_version
-
-model_3d_sha256
-
-model_3d_size_bytes
-
-```
-
-Do not expose filesystem paths, COLMAP workspace paths, command lines, or internal reconstruction logs to visitors.
-
----
-
-# Android 3D Viewer and Admin Preview
-
-Use SceneView for the Android 3D renderer.
-
-Add/fix it through the existing Android Gradle module and existing navigation/repository/ViewModel architecture.
-
-Do not build a custom OpenGL renderer.
-
-The current priority is to diagnose an existing published model that is already reported as available but renders as a blank/black view.
-
-Do not generate another model as the first troubleshooting step.
-
-First trace the existing model end-to-end:
-
-MongoDB published 3D state
-
-->
-
-visitor/admin API DTO
-
-->
-
-model_3d_url/version/sha256/size
-
-->
-
-backend static file response
-
-->
-
-Android download
-
-->
-
-checksum
-
-->
-
-persistent local cache
-
-->
-
-SceneView model loading
-
-->
-
-camera / transform / lighting / visible rendered object
-
-The same published model must be usable from both:
-
-* Admin artifact details/edit flow: Preview 3D Model
-
-* Visitor artifact details: View 3D Model
-
-Do not create two unrelated rendering implementations. Prefer one reusable model-loading/rendering component with Admin and Visitor wrappers/navigation as needed.
-
-## Existing-model diagnostic gate
-
-Before changing COLMAP or reconstruction logic, prove all of the following for the already-existing model:
-
-* the artifact points to a published/ready model record
-
-* the referenced GLB file exists on disk
-
-* file size is greater than zero and agrees with stored metadata where applicable
-
-* SHA-256 metadata is present and matches the actual file
-
-* the GLB is structurally readable by the backend/converter validation path
-
-* the backend URL returns HTTP 200
-
-* the URL is reachable from the Android device through the dynamically discovered backend host
-
-* the response is the actual GLB bytes, not JSON/HTML/error text
-
-* Admin and Visitor DTOs expose the correct model metadata
-
-* Android downloads the complete file
-
-* checksum verification succeeds
-
-* the final cached file path exists before rendering begins
-
-* SceneView receives the local GLB URI/path expected by the installed SceneView version
-
-* model loading exceptions are surfaced in logs/UI state instead of producing a silent black screen
-
-* the model is framed visibly by the camera
-
-* model scale, bounds, center/origin, near/far clipping, and transforms do not place it outside the view
-
-* basic environment/light configuration makes the mesh visible
-
-* renderer lifecycle is retained correctly through Compose recomposition and screen navigation
-
-If the GLB itself is malformed, fix the publication/conversion path and validate the corrected GLB. Do not hide a bad GLB by adding UI workarounds.
-
-## Visitor flow
-
-Visitor artifact details should show:
-
-View 3D Model
-
-only when a valid published model exists or a previously validated cached version exists.
-
-Flow:
-
-user taps View 3D
-    ->
-read published model metadata
-    ->
-check app-private persistent cache
-    ->
-matching version + SHA exists?
-    | yes
-    -> validate/use local GLB
-    |
-    no
-    ->
-download from dynamically discovered backend
-    ->
-show download progress
-    ->
-verify HTTP success and content
-    ->
-verify SHA-256
-    ->
-atomically move temp file into persistent model storage
-    ->
-load local GLB into SceneView
-    ->
-frame camera from actual model bounds
-    ->
-show visible model or actionable error
-
-Never render directly from a partially downloaded file.
-
-Store models in app-private persistent storage, not temporary cache if offline reuse is required.
-
-Suggested structure:
-
-filesDir/
-    models3d/
-        <artifact_id>/
-            <version>.glb
-
-When a new server version is published:
-
-* download new version
-
-* verify it
-
-* switch to it only after successful validation
-
-* remove obsolete version after success
-
-A previously downloaded valid model should remain viewable without internet access.
-
-## Admin preview flow
-
-Admin artifact details/edit flow must provide a 3D preview whenever a valid published model exists.
-
-Required behavior:
-
-* show published model status/version
-
-* show Preview 3D Model
-
-* reuse the same download/cache/checksum/render path as Visitor whenever practical
-
-* allow Admin to verify the exact model Visitors will receive
-
-* preview must not require publishing a second copy of the model
-
-* failed reconstruction drafts must not replace the last valid published model
-
-* if the published GLB is invalid, show a concrete error rather than an empty black canvas
-
-## SceneView implementation rules
-
-Use the currently pinned SceneView dependency unless an actual compatibility error proves it must change.
-
-Before changing the SceneView version, inspect the API actually available in the pinned version and the current implementation.
-
-Do not copy sample code from a different major SceneView API without verifying compatibility.
-
-Capture/log at least:
-
-* model download result
-
-* local file path
-
-* file size
-
-* checksum result
-
-* SceneView/model-loader success/failure
-
-* model bounds when available
-
-* final scale/position used for framing
-
-The production UI should remain clean; detailed diagnostics may stay in debug logging and explicit error state.
-
----
-
-# NARRATION ARCHITECTURE
-
-Use Android native:
-
-`android.speech.tts.TextToSpeech`
-
-Do not create a Python TTS server for the first implementation.
-
-Do not require an online API.
-
-Create a reusable Android narration component/service, e.g.:
-
-`ArtifactNarrationController`
-
-Responsibilities:
-
-* initialize TTS
-
-* discover voices
-
-* prefer the required locale
-
-* prefer a voice where network connection is not required
-
-* expose ready/error state
-
-* speak
-
-* stop
-
-* track utterance/chunk progress
-
-* release TTS resources
-
----
-
-# Narration Text
-
-Build narration from the visitor-visible artifact information.
-
-Suggested order:
-
-1. artifact name
-
-2. historical description
-
-3. origin
-
-4. historical period
-
-5. material
-
-6. dimensions
-
-7. condition
-
-8. metadata sections
-
-9. visitor-visible custom fields
-
-10. optional visitor narration notes
-
-Do not expose private administrator-only notes through narration.
-
-If the product requires administrator-authored narration text, add a clearly visitor-visible field such as:
-
-`narration_notes`
-
-instead of leaking internal notes.
-
-Skip:
-
-* empty strings
-
-* placeholder text
-
-* internal IDs
-
-* URLs
-
-* image filenames
-
-* AI status fields
-
-* backend diagnostics
-
-Do not attempt OCR on artifact photographs merely because narration exists.
-
-Only narrate image captions if actual caption text exists.
-
----
-
-# Long TTS Content
-
-Android TTS has an input-length limit.
-
-Do not send an arbitrarily large artifact document as one utterance.
-
-Split narration into semantic chunks or sentences below the platform limit.
-
-Use unique utterance IDs and `UtteranceProgressListener`.
-
-Implement:
-
-* Play
-
-* Pause-like behavior using stop + remembered chunk
-
-* Resume
-
-* Stop
-
-* restart from beginning
-
-Clean up TextToSpeech resources correctly.
-
-If no suitable offline voice exists, display a useful message instead of silently switching to a network-required voice.
-
----
-
-# UI Placement
-
-Visitor artifact details:
-
-```text
-
-[ Listen ]
-
-[ View 3D Model ]
-
-```
-
-Buttons must respect feature availability.
-
-Listen:
-
-* enabled when narratable visitor text exists and TTS is ready.
-
-View 3D:
-
-* visible/enabled only when the model is available or cached.
-
-Use existing Material 3 styling.
-
-Do not redesign the entire artifact details page.
-
----
-
-# Testing Requirements
-
-## Backend recovery
-
-Verify:
-
-* startup
-
-* health
-
-* MongoDB
-
-* authentication
-
-* existing artifacts
-
-* existing AI health
-
-## OpenCLIP startup
-
-Add/adjust targeted tests where practical for:
-
-* AI_WARMUP_ON_STARTUP=true startup path
-
-* warmup does not depend on an Android request
-
-* AI health distinguishes loading/ready/failure states
-
-* Admin and Visitor recognition use the same backend-ready OpenCLIP service
-
-* cached model weights are reused
-
-* AI warmup failure does not destroy MongoDB/Qdrant data or prevent unrelated museum features from operating
-
-Perform one executable integration verification in which the backend starts before any Android client is opened and /api/v1/ai/health becomes ready.
-
-## 3D backend
-
-Add tests for:
-
-* reconstruction upload separation
-
-* unauthorized access
-
-* nonexistent artifact
-
-* preflight state transitions
-
-* job creation
-
-* failure persistence
-
-* safe paths
-
-* GLB publication
-
-* model versioning
-
-* SHA generation
-
-* visitor exposure only after ready
-
-* published GLB URL returns the expected file
-
-* stored SHA/size agree with the published file
-
-Mock external COLMAP execution in normal unit tests.
-
-Do not make the main backend test suite perform a full photogrammetry reconstruction.
-
-Add a separate optional integration test for a tiny controlled COLMAP dataset.
-
-## Android 3D
-
-Add/adjust tests for:
-
-* Admin and Visitor API DTO model fields
-
-* model cache decision logic
-
-* checksum verification
-
-* download failure
-
-* HTTP error / wrong response body
-
-* cached model reuse
-
-* stale-version replacement behavior
-
-* invalid/zero-byte local model rejection
-
-* model-viewer UI state: loading / ready / error
-
-* Admin preview availability for a published model
-
-* Visitor view availability for a published model
-
-Keep SceneView rendering itself covered by executable device/emulator verification because JVM unit tests cannot prove a GLB is visibly rendered.
-
-## Android narration
-
-Add tests for:
-
-* narration text construction
-
-* empty fields
-
-* metadata ordering
-
-* TTS state logic where testable
+existing published Preview remains available
 
 Run:
 
 backend pytest
+.\\gradlew.bat :android:app:testDebugUnitTest
+.\\gradlew.bat :android:app:assembleDebug
 
-Android unit tests
+Git Discipline
 
-Gradle assembleDebug
+Before substantial work:
 
-Do not claim success merely because code compiles.
+git status
+git branch --show-current
+git log -5 --oneline
 
-For this phase, visual 3D success requires actually opening the known existing model in both Admin preview and Visitor view and confirming a visible object rather than a black/blank surface.
+Do not destroy uncommitted work.
+Do not push unless explicitly requested.
+Do not commit backend/.env, local.properties, machine paths, secrets, or large model weights casually.
 
----
+Final Verification
 
-# Existing-System Protection
+Prove:
 
-The following must continue to work:
+backend starts
 
-* admin login
+MongoDB healthy
 
-* guest flow
+OpenCLIP ready without Admin priming
 
-* student flow
+Qdrant intact
 
-* artifact CRUD
+artifacts intact
 
-* artifact gallery
+existing GLBs intact
 
-* artifact categories
+dedicated Admin 3D screen works
 
-* OpenCLIP indexing
+Quick AI does not depend on COLMAP
 
-* Qdrant recognition
+TripoSR real inference works on the real machine, or an exact resource/runtime limitation is proven
 
-* visitor camera recognition
+candidate GLB validates
 
-* visitor artifact details
+Admin visibly previews it
 
-* backend auto-discovery
+Estimated coverage is displayed honestly
 
-* existing uploaded artifact images
+AI disclosure is present
 
-Do not feed reconstruction-only photos into Qdrant.
+Reject preserves old model
 
-Do not make COLMAP availability a prerequisite for ordinary museum operation.
+Accept publishes candidate
 
-If COLMAP is unavailable:
+Visitor renders published model
 
-* existing museum system must still start
+second open uses cache
 
-* artifact CRUD must still work
+COLMAP still works as advanced mode
 
-* recognition must still work
+Android unit tests pass
 
-* narration must still work
+APK builds
 
-* existing ready GLB models must still be viewable
+Reporting
 
-* only creation/rebuilding of 3D models should be unavailable
+Report evidence only.
 
----
+Local AI
 
-# Final Verification Gate
+detected runtime
 
-Before completion, prove:
+model
 
-1. current backend starts normally
+license
 
-2. health endpoint works
+execution device
 
-3. existing artifact is retrievable
+runtime
 
-4. OpenCLIP warmup begins automatically when AI is enabled
+measured memory if available
 
-5. /api/v1/ai/health reaches a ready state without opening Admin Recognition or Visitor Scan first
+actual settings
 
-6. a fresh/new Android device can use Visitor recognition without an Admin priming the AI model
+Quick AI
 
-7. Admin recognition works against the same already-ready backend OpenCLIP instance
+primary source image
 
-8. existing Qdrant vectors remain intact; no rebuild was used as a shortcut
+represented regions
 
-9. the known existing published GLB file exists and passes size/checksum/basic validity checks
+Estimated coverage
 
-10. the published model URL returns the correct GLB to Android
+job states
 
-11. Android downloads and persistently caches the GLB
+output
 
-12. checksum validation succeeds
+GLB
 
-13. Admin artifact details/edit flow can open Preview 3D Model
+size
 
-14. SceneView visibly renders the known existing model in Admin preview
+vertices
 
-15. Visitor artifact details can open View 3D Model
+faces
 
-16. SceneView visibly renders the same known existing model in Visitor view
+geometry
 
-17. subsequent view uses the validated cached model
+materials/textures
 
-18. a broken/missing/invalid model produces an actionable error instead of a silent black screen
+bounds
 
-19. admin can create/manage a reconstruction image set
+SHA
 
-20. insufficient reconstruction reports useful guidance
+validation
 
-21. reconstruction job can complete on a valid sample when integration testing is intentionally run
+Admin
 
-22. final newly generated GLB is valid before publication
+3D navigation
 
-23. narration reads visitor-visible artifact information
+progress UX
 
-24. offline-capable TTS voice is preferred
+visible Preview
 
-25. Android unit tests pass
+Accept/Reject
 
-26. APK builds successfully
+Visitor
 
-Do not mark the 3D viewer complete based only on model metadata, successful download, or absence of a crash. The object must actually be visible in both Admin and Visitor rendering flows.
+published version
 
----
+visible model
 
-# Reporting
+cache reuse
 
-When finished, report only:
+COLMAP
 
-## Backend failure
+advanced path remains functional
 
-* root cause
+Verification
 
-* exact fix
+backend tests
 
-* proof it now starts
+Android tests
 
-## OpenCLIP startup
+assembleDebug
 
-* previous reason recognition was not ready on a fresh device/session
+real TripoSR integration test
 
-* startup/warmup files changed
+Use PASS/FAIL.
 
-* proof OpenCLIP becomes ready before any Admin/Visitor recognition screen is opened
-
-* /api/v1/ai/health result
-
-* proof Admin and Visitor both use the same backend-ready model
-
-## Existing 3D viewer failure
-
-* root cause of the black/blank/non-rendering existing model
-
-* whether the GLB itself, backend delivery, cache/checksum path, or SceneView rendering was responsible
-
-* exact fix
-
-* proof of visible Admin preview
-
-* proof of visible Visitor rendering
-
-## 3D implementation
-
-* files changed
-
-* pipeline implemented
-
-* COLMAP detection/status
-
-* API endpoints
-
-* storage locations
-
-* GLB conversion
-
-## Android 3D
-
-* SceneView integration
-
-* download/cache behavior
-
-* viewer behavior
-
-## Narration
-
-* narrated fields
-
-* offline voice behavior
-
-* controls
-
-## Verification
-
-* commands/tests run
-
-* pass/fail results
-
-* remaining limitations
-
-Do not provide a giant repository audit.
-
-Do not report speculative issues that were not encountered.
+Do not report speculative issues.
+Do not say the feature works when only mocks passed.

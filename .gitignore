@@ -38,6 +38,21 @@ migration/uploads/*
 migration/openclip-backup/*
 !migration/openclip-backup/.gitkeep
 
+# Local AI 3D (TripoSR) isolated runtime - large/machine-specific, never committed. See
+# tools/triposr/requirements.txt for how to reproduce this on another machine.
+tools/triposr/repo/
+tools/triposr/model_cache/
+tools/triposr/jobs/
+tools/triposr/profile.json
+tools/triposr/.venv/
+tools/triposr/output/
+tools/triposr/test_output/
+tools/triposr/cache/
+
+# TripoSR manual verification artifacts (emulator screenshots / UIAutomator dumps) - not source.
+tools/triposr/*.png
+tools/triposr/*.xml
+
 # Android / Gradle
 .gradle/
 **/.gradle/

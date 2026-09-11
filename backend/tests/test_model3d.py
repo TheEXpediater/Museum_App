@@ -36,6 +36,12 @@ def model3d_context(tmp_path):
         model_3d_directory=str(tmp_path / "uploads" / "models3d"),
         max_image_size_mb=1,
         ai_enabled=False,
+        # Deterministic baseline regardless of what happens to be installed on the machine
+        # running these tests: this dev machine has a real tools/triposr/ runtime set up (see
+        # LOCAL_AI_3D_ENABLED's class default), which would otherwise make
+        # triposr_provider.detect() return available=True purely by filesystem coincidence.
+        # Tests that want the local-AI-available path use _mock_triposr_available(monkeypatch).
+        local_ai_3d_enabled=False,
         cors_origins="http://testserver",
         _env_file=None,
     )
@@ -275,6 +281,53 @@ def test_preflight_ready_for_build_from_a_partial_low_ratio_reconstruction(model
     assert body["status"] == "ready_for_build"
     assert body["registered_image_count"] == 3
     assert body["registered_image_ratio"] == 0.3
+    # Status is unaffected (asserted above), but the new quality gate must still flag this as
+    # low quality so Admin UI can offer the AI fallback - see quality.py.
+    assert body["quality_assessment"] == "insufficient"
+    assert body["quality_reasons"]
+
+
+def test_thirty_source_three_registered_is_classified_insufficient_quality(model3d_context, monkeypatch):
+    """The exact real-world scenario this quality gate exists for: COLMAP successfully produces
+    a loadable GLB from 3 of 30 registered photos, but that must not be treated as a complete
+    reconstruction merely because a GLB exists - see CLAUDE.MD's Salakot example."""
+    client, database, settings = model3d_context
+    headers = auth_headers(client)
+    artifact = create_artifact(client, headers)
+    artifact_id = artifact["id"]
+    _add_reconstruction_images(client, headers, artifact_id, count=30)
+
+    _mock_colmap_available(monkeypatch)
+    _patch_pipeline_success(monkeypatch, registered_ratio=3 / 30, point_count=418)
+
+    response = client.post(f"/api/v1/artifacts/{artifact_id}/3d/preflight", headers=headers)
+    assert response.status_code == 200
+    body = response.json()
+    # Still attemptable (existing sanity gate: 3 registered >= MIN_USABLE_REGISTERED_IMAGES) -
+    # this must not regress.
+    assert body["status"] == "ready_for_build"
+    assert body["registered_image_count"] == 3
+    assert body["source_image_count"] == 30
+    # But NOT good quality - this is the actual new behavior under test.
+    assert body["quality_assessment"] == "insufficient"
+    assert any("3 of 30" in reason for reason in body["quality_reasons"])
+
+
+def test_high_registration_ratio_is_classified_good_quality(model3d_context, monkeypatch):
+    client, database, settings = model3d_context
+    headers = auth_headers(client)
+    artifact = create_artifact(client, headers)
+    artifact_id = artifact["id"]
+    _add_reconstruction_images(client, headers, artifact_id, count=10)
+
+    _mock_colmap_available(monkeypatch)
+    _patch_pipeline_success(monkeypatch, registered_ratio=1.0, point_count=1500)
+
+    response = client.post(f"/api/v1/artifacts/{artifact_id}/3d/preflight", headers=headers)
+    body = response.json()
+    assert body["status"] == "ready_for_build"
+    assert body["quality_assessment"] == "good"
+    assert body["quality_reasons"] == []
 
 
 def test_preflight_needs_images_when_too_few_images_registered(model3d_context, monkeypatch):
@@ -375,6 +428,33 @@ def test_full_build_reaches_pending_review_not_immediately_published(model3d_con
     assert body["state"]["draft_model_url"] is not None
     assert body["job"]["status"] == "pending_review"
 
+    draft_path = settings.model_3d_root_path / artifact_id / "model-v1.glb"
+    assert draft_path.is_file()
+
+
+def test_full_build_from_weak_reconstruction_is_flagged_insufficient_quality(model3d_context, monkeypatch):
+    client, database, settings = model3d_context
+    headers = auth_headers(client)
+    artifact = create_artifact(client, headers, with_image=True)
+    artifact_id = artifact["id"]
+    _add_reconstruction_images(client, headers, artifact_id, count=30)
+    _mock_colmap_available(monkeypatch)
+    _patch_pipeline_success(monkeypatch, registered_ratio=3 / 30, point_count=418)
+
+    preflight = client.post(f"/api/v1/artifacts/{artifact_id}/3d/preflight", headers=headers)
+    assert preflight.json()["status"] == "ready_for_build"
+
+    _run_worker_synchronously()
+    build = client.post(f"/api/v1/artifacts/{artifact_id}/3d/build", headers=headers)
+    assert build.status_code == 202
+
+    state = client.get(f"/api/v1/artifacts/{artifact_id}/3d", headers=headers).json()
+    assert state["status"] == "pending_review"  # draft is NOT deleted/hidden - kept for review
+    assert state["draft_version"] == 1
+    assert state["draft_generation_method"] == "colmap"
+    assert state["quality_assessment"] == "insufficient"
+    assert state["quality_reasons"]
+    # Diagnostics remain available: the draft GLB is still a real, downloadable file.
     draft_path = settings.model_3d_root_path / artifact_id / "model-v1.glb"
     assert draft_path.is_file()
 

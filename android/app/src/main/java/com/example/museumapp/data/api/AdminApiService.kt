@@ -19,6 +19,7 @@ import com.example.museumapp.data.model.GuestSessionRequestDto
 import com.example.museumapp.data.model.HealthResponse
 import com.example.museumapp.data.model.LoginRequest
 import com.example.museumapp.data.model.LoginResponse
+import com.example.museumapp.data.model.Model3DAiBuildRequestDto
 import com.example.museumapp.data.model.Model3DBuildResponseDto
 import com.example.museumapp.data.model.Model3DStateDto
 import com.example.museumapp.data.model.Model3DStatusResponseDto
@@ -242,6 +243,12 @@ interface AdminApiService {
 
     @POST("api/v1/artifacts/{artifactId}/3d/build")
     suspend fun build3DModel(@Path("artifactId") artifactId: String): Model3DBuildResponseDto
+
+    @POST("api/v1/artifacts/{artifactId}/3d/build-ai")
+    suspend fun buildAi3DModel(
+        @Path("artifactId") artifactId: String,
+        @Body request: Model3DAiBuildRequestDto
+    ): Model3DBuildResponseDto
 
     @POST("api/v1/artifacts/{artifactId}/3d/accept")
     suspend fun accept3DModel(@Path("artifactId") artifactId: String): Model3DStateDto

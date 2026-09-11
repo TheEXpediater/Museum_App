@@ -9,6 +9,7 @@ from app.auth.dependencies import require_admin
 from app.repositories import reconstruction_repository as repo
 from app.routes.artifacts import get_existing_artifact_or_404
 from app.schemas.model3d import (
+    Model3DAiBuildRequest,
     Model3DBuildResponse,
     Model3DJobResponse,
     Model3DStateResponse,
@@ -16,7 +17,7 @@ from app.schemas.model3d import (
 )
 from app.services.artifact_validation import parse_image_path_list
 from app.services.image_storage import image_url_for_path
-from app.services.model3d import colmap_service
+from app.services.model3d import ai_generation_service, ai_provider_service, colmap_service
 from app.services.model3d import reconstruction_service as service
 from app.services.model3d import states
 from app.utils import to_object_id
@@ -32,17 +33,24 @@ def _state_response(database, settings, artifact: dict, request: Request) -> Mod
     state = service.get_state(database, artifact)
     base_url = str(request.base_url)
     model_url = None
-    if state["status"] == states.READY and state.get("path"):
+    # A published model's `path` persists independently of `status` (e.g. a new draft reaching
+    # pending_review while a prior version stays published) - gate this on `path` actually being
+    # present, not on the CURRENT status, so Admin/Visitor can still reference the published
+    # model while a newer draft is in review, generating, or failed.
+    if state.get("path"):
         model_url = image_url_for_path(base_url, state["path"])
     draft_model_url = None
     if state["status"] == states.PENDING_REVIEW and state.get("draft_path"):
         draft_model_url = image_url_for_path(base_url, state["draft_path"])
     availability = colmap_service.detect_colmap(settings)
+    ai_availability = ai_provider_service.detect_ai_availability(settings)
     return Model3DStateResponse(
         **{k: v for k, v in state.items() if k not in ("path", "draft_path")},
         model_url=model_url,
         draft_model_url=draft_model_url,
         colmap_available=availability.available,
+        ai_available=ai_availability.available,
+        ai_max_images=ai_availability.max_images,
     )
 
 
@@ -109,6 +117,17 @@ def build(artifact_id: str, request: Request) -> Model3DBuildResponse:
     settings = request.app.state.settings
     _, artifact = get_existing_artifact_or_404(database, artifact_id)
     job = service.start_build(database, settings, artifact)
+    return Model3DBuildResponse(job_id=str(job["_id"]), status=job["status"])
+
+
+@router.post("/build-ai", response_model=Model3DBuildResponse, status_code=status.HTTP_202_ACCEPTED)
+def build_ai(artifact_id: str, request: Request, payload: Model3DAiBuildRequest) -> Model3DBuildResponse:
+    database = request.app.state.database
+    settings = request.app.state.settings
+    _, artifact = get_existing_artifact_or_404(database, artifact_id)
+    job = ai_generation_service.start_ai_build(
+        database, settings, artifact, image_ids=payload.image_ids, visible_regions=payload.visible_regions
+    )
     return Model3DBuildResponse(job_id=str(job["_id"]), status=job["status"])
 
 
