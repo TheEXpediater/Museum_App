@@ -176,6 +176,9 @@ fun ArtifactDetailsScreen(
                 onPreviewDraft = { version, sha256, url ->
                     onPreviewDraftModel(uiState.artifact!!.id, version, sha256, url)
                 },
+                onPreviewPublished = { version, sha256, url ->
+                    onPreviewDraftModel(uiState.artifact!!.id, version, sha256, url)
+                },
                 onAcceptModel = viewModel::acceptModel,
                 onRejectModel = viewModel::rejectModel
             )
@@ -308,6 +311,7 @@ private fun ArtifactDetailsContent(
     onRebuildClick: () -> Unit,
     onDeleteReconstructionClick: () -> Unit,
     onPreviewDraft: (version: Int, sha256: String, url: String) -> Unit,
+    onPreviewPublished: (version: Int, sha256: String, url: String) -> Unit,
     onAcceptModel: () -> Unit,
     onRejectModel: () -> Unit
 ) {
@@ -400,6 +404,7 @@ private fun ArtifactDetailsContent(
                 onRebuildClick = onRebuildClick,
                 onDeleteReconstructionClick = onDeleteReconstructionClick,
                 onPreviewDraft = onPreviewDraft,
+                onPreviewPublished = onPreviewPublished,
                 onAcceptModel = onAcceptModel,
                 onRejectModel = onRejectModel
             )

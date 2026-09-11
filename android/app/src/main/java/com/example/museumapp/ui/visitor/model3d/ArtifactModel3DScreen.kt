@@ -1,5 +1,6 @@
 package com.example.museumapp.ui.visitor.model3d
 
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,8 +44,6 @@ import io.github.sceneview.rememberCameraNode
 import io.github.sceneview.rememberEngine
 import io.github.sceneview.rememberModelLoader
 import io.github.sceneview.rememberNodes
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -196,9 +195,14 @@ private fun Model3DViewerContent(localFilePath: String) {
         modelInstance = null
         loadError = null
         try {
-            modelInstance = withContext(Dispatchers.IO) {
-                modelLoader.createModelInstance(File(localFilePath))
-            }
+            // Must run on the same thread that owns the Filament engine (rememberEngine() creates
+            // it on this composition's thread, i.e. Main) -- Filament's asset/resource loading
+            // panics with a native SIGABRT ("This thread has not been adopted") when called from
+            // another thread such as Dispatchers.IO, since only the owning thread is "adopted"
+            // into the engine's rendering context. The GLB itself is a small mobile-optimized
+            // model, so a brief synchronous read here is an accepted trade-off, same as SceneView's
+            // own samples.
+            modelInstance = modelLoader.createModelInstance(File(localFilePath))
         } catch (throwable: Throwable) {
             loadError = throwable.message?.takeIf { it.isNotBlank() } ?: "Could not display this 3D model."
         }
@@ -213,9 +217,28 @@ private fun Model3DViewerContent(localFilePath: String) {
                 ModelNode(
                     modelInstance = instance,
                     autoAnimate = true,
-                    scaleToUnits = 1f,
-                    centerOrigin = Position(0f, 0f, 0f)
-                )
+                    scaleToUnits = 1f
+                ).also { node ->
+                    // COLMAP's reconstructed geometry is not centered at its own local origin -
+                    // the local (0,0,0) pivot can sit far outside the actual point cloud entirely.
+                    // ModelNode.centerOrigin(Position(0,0,0)) (used previously here) computes
+                    // `position += origin * size`, which is a no-op whenever origin is zero, so it
+                    // never actually recentered a mesh like this one. Compute the model's real
+                    // world-space bounds (local bounding-box center/extent scaled by the uniform
+                    // scaleToUnits factor applied above, since position/rotation are left at
+                    // identity) and frame the CAMERA at that point instead of fighting the node's
+                    // transform - this is the "normalize only the view transform" approach for
+                    // arbitrary reconstructed meshes that aren't authored with a conventional pivot.
+                    val worldCenter = node.center * node.scale
+                    Log.d(
+                        "Model3DViewer",
+                        "model bounds: localCenter=${node.center} localExtents=${node.extents} " +
+                            "scale=${node.scale} worldCenter=$worldCenter vertexCount=" +
+                            "${node.renderableNodes.size} nodes"
+                    )
+                    cameraNode.position = worldCenter + Position(x = 0.9f, y = 0.6f, z = 1.6f)
+                    cameraNode.lookAt(worldCenter)
+                }
             }
             Scene(
                 modifier = Modifier.fillMaxSize(),

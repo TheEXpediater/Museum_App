@@ -81,6 +81,19 @@ def convert_to_glb(
         getattr(mesh.visual, "vertex_colors", None) is not None
     )
 
+    # COLMAP's meshers (poisson_mesher and especially the CPU-only sparse fallback
+    # delaunay_mesher) do not write NORMAL data into their output PLY, and
+    # simplify_quadric_decimation above produces a fresh mesh object with no cached normals
+    # either way. trimesh's glTF exporter only includes the NORMAL accessor when
+    # `vertex_normals` is already present in the mesh's attribute cache - it does not compute
+    # them during export - so an untouched mesh silently produces a GLB with bare
+    # POSITION/indices and no material. Without surface normals, no glTF-compliant PBR renderer
+    # (including Filament/SceneView) can light the mesh, so it renders as solid black. Simply
+    # accessing the property computes and caches it (with a pure-numpy fallback when scipy's
+    # sparse module isn't installed), which is what actually makes the exported GLB visible.
+    # Must run last, right before export.
+    _ = mesh.vertex_normals
+
     destination.parent.mkdir(parents=True, exist_ok=True)
     temp_path = destination.with_suffix(".part")
     glb_bytes = mesh.export(file_type="glb")

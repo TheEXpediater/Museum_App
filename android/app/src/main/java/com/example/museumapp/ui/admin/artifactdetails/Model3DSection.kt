@@ -64,6 +64,7 @@ fun Model3DSection(
     onRebuildClick: () -> Unit,
     onDeleteReconstructionClick: () -> Unit,
     onPreviewDraft: (version: Int, sha256: String, url: String) -> Unit,
+    onPreviewPublished: (version: Int, sha256: String, url: String) -> Unit,
     onAcceptModel: () -> Unit,
     onRejectModel: () -> Unit
 ) {
@@ -161,6 +162,14 @@ fun Model3DSection(
                     LastRebuildFailedNotice(model.failureMessage)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val sha256 = model.sha256
+                    val url = model.modelUrl
+                    Button(
+                        onClick = { onPreviewPublished(model.version, sha256!!, url!!) },
+                        enabled = !isBusy && !sha256.isNullOrBlank() && !url.isNullOrBlank()
+                    ) {
+                        Text("Preview 3D Model")
+                    }
                     OutlinedButton(onClick = onAddPhotosClick, enabled = !isBusy) {
                         Text("Add Photos")
                     }
