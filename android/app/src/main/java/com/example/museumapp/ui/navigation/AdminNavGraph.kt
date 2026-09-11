@@ -109,7 +109,8 @@ fun AdminNavGraph(repository: AdminRepository, onBackToVisitor: () -> Unit) {
                     repository = repository,
                     padding = padding,
                     onAddArtifact = { navController.navigate(AdminRoutes.ArtifactCreate) },
-                    onEditArtifact = { navController.navigate(AdminRoutes.editArtifact(it)) }
+                    onEditArtifact = { navController.navigate(AdminRoutes.editArtifact(it)) },
+                    onViewDetails = { navController.navigate(AdminRoutes.artifactDetails(it)) { launchSingleTop = true } }
                 )
             }
         }
@@ -123,6 +124,7 @@ fun AdminNavGraph(repository: AdminRepository, onBackToVisitor: () -> Unit) {
                     padding = padding,
                     onAddArtifact = { navController.navigate(AdminRoutes.ArtifactCreate) },
                     onEditArtifact = { navController.navigate(AdminRoutes.editArtifact(it)) },
+                    onViewDetails = { navController.navigate(AdminRoutes.artifactDetails(it)) { launchSingleTop = true } },
                     initialDestination = "categories",
                     onCategoryCreated = { categoryName ->
                         navController.previousBackStackEntry

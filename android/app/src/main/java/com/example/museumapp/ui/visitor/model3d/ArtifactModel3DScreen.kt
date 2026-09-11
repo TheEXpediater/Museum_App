@@ -43,8 +43,6 @@ import io.github.sceneview.rememberCameraNode
 import io.github.sceneview.rememberEngine
 import io.github.sceneview.rememberModelLoader
 import io.github.sceneview.rememberNodes
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -183,6 +181,19 @@ private fun ErrorContent(message: String, onRetry: () -> Unit) {
     }
 }
 
+/**
+ * Cheap filesystem checks that must pass before a cached model file is handed to Filament.
+ * A missing/empty file fed into the engine is not a recoverable Kotlin exception - it is a
+ * native abort - so this is deliberately a plain, unit-testable function checked up front
+ * rather than left for [io.github.sceneview.loaders.ModelLoader] to discover.
+ */
+internal fun validateCachedModelFile(file: File): String? {
+    if (!file.isFile || file.length() <= 0L) {
+        return "Downloaded 3D model is missing or empty."
+    }
+    return null
+}
+
 @Composable
 private fun Model3DViewerContent(localFilePath: String) {
     var attempt by remember(localFilePath) { mutableIntStateOf(0) }
@@ -196,11 +207,18 @@ private fun Model3DViewerContent(localFilePath: String) {
         modelInstance = null
         loadError = null
         try {
-            modelInstance = withContext(Dispatchers.IO) {
-                modelLoader.createModelInstance(File(localFilePath))
-            }
+            val file = File(localFilePath)
+            validateCachedModelFile(file)?.let { error(it) }
+
+            // Filament's Engine/ModelLoader are bound to the thread that created them (here, the
+            // Compose/Main thread via rememberEngine()/rememberModelLoader() above). Calling
+            // createModelInstance from a background dispatcher violates that precondition and
+            // crashes the whole process with a native SIGABRT that no try/catch can intercept -
+            // this previously reproduced as a real crash on a physical device. LaunchedEffect
+            // already runs on Main by default, so no dispatcher switch is needed or safe here.
+            modelInstance = modelLoader.createModelInstance(file)
         } catch (throwable: Throwable) {
-            loadError = throwable.message?.takeIf { it.isNotBlank() } ?: "Could not display this 3D model."
+            loadError = throwable.message?.takeIf { it.isNotBlank() } ?: "Could not display this 3D preview."
         }
     }
 
