@@ -81,6 +81,30 @@ def convert_to_glb(
         getattr(mesh.visual, "vertex_colors", None) is not None
     )
 
+    # COLMAP's CPU-only sparse fallback (delaunay_mesher) writes an untextured, uncolored PLY
+    # (position/faces only - see _find_source_mesh), so trimesh loads it with a synthetic
+    # default ColorVisuals that exists only for trimesh's own preview convenience and is never
+    # actually written to the export (no material, no COLOR_0 - confirmed by inspecting real
+    # exported GLBs). A primitive with no material falls back to glTF's own spec default
+    # (metallicFactor=1, roughnessFactor=1), which under a real-time renderer's directional
+    # light + limited IBL (no dedicated environment map here) has almost no diffuse response -
+    # it reads as solid black except thin specular highlights along edges catching the light at
+    # a grazing angle. This reproduced exactly on device. Assigning an explicit non-metallic
+    # material guarantees predictable, visible Lambertian-ish shading regardless of renderer
+    # defaults. Skipped only on the real UV+image texture path, which already carries its own
+    # material from the OBJ/MTL load.
+    if not expects_uv_texture:
+        import trimesh
+
+        mesh.visual = trimesh.visual.texture.TextureVisuals(
+            material=trimesh.visual.material.PBRMaterial(
+                baseColorFactor=[200, 190, 170, 255],
+                metallicFactor=0.0,
+                roughnessFactor=0.9,
+                doubleSided=True,
+            )
+        )
+
     # COLMAP's meshers (poisson_mesher and especially the CPU-only sparse fallback
     # delaunay_mesher) do not write NORMAL data into their output PLY, and
     # simplify_quadric_decimation above produces a fresh mesh object with no cached normals
