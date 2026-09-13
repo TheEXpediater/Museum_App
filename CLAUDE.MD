@@ -1,1233 +1,951 @@
-Museum App — Engineering Guide
+Museum App — 3D Quality Engineering Guide
 
 Mission
 
-Maintain and extend the Museum Guide System with the smallest correct changes.
+Improve the quality of the Museum App's 3D artifact models without destabilizing the working system.
 
-The system is an Android museum guide backed by a local Windows laptop. Existing MongoDB data, Qdrant vectors, uploaded images, authentication, OpenCLIP recognition, published GLBs, Admin flows, Visitor flows, and working UI are valuable state and must be preserved.
+The app already has a functioning end-to-end 3D pipeline. This phase is not about rebuilding architecture. It is about making generated models more recognizable, visually faithful, consistently textured, and efficient for Android.
 
-Current priorities:
+Current priorities, in order:
 
-Keep the existing backend and Android application stable.
+Preserve the working Museum App.
 
-Make Quick AI 3D Preview the normal, practical 3D creation path.
+Establish a measurable 3D-quality baseline.
 
-Use a free local pretrained image-to-3D model before paid cloud providers.
+Improve source-image capture and selection before changing models or architecture.
 
-Keep COLMAP as an optional advanced photogrammetry path.
+Improve TripoSR output quality with controlled, evidence-based parameter experiments.
 
-Reuse the same GLB validation, review, publication, cache, and SceneView pipeline for every generation method.
+Keep COLMAP as the advanced photogrammetry path and improve its input guidance rather than brute-forcing image count.
 
-Move 3D management into a dedicated Admin 3D area with immediate progress feedback and automatic status polling.
+Optimize accepted GLBs for Android without destroying visible quality.
 
-Clearly disclose that AI-generated geometry can contain inferred surfaces.
+Improve Admin guidance so a non-technical museum user can provide better source images.
 
-The selected free local model is TripoSR.
+Verify every claimed improvement on a real artifact in the actual Admin and Visitor viewer.
 
-TripoSR is used for inference only. Do not train or fine-tune it for this capstone.
+Do not switch to another 3D model merely because another repository looks more impressive.
+
+Do not add complexity before proving the current bottleneck.
 
 Engineering Method
 
 Work from evidence.
 
+The loop is:
+
+observe
+-> define one hypothesis
+-> change one variable
+-> measure
+-> compare against baseline
+-> keep or revert
+
 Before editing:
 
-Reproduce the requirement or failure.
+Reproduce the current output.
 
-Find the narrowest component that owns it.
+Save baseline metrics and screenshots.
 
-Read only the relevant files.
+Identify the likely quality bottleneck.
 
-Form one concrete hypothesis.
+Change one factor at a time.
 
-Make the smallest change that can prove it.
+Run the smallest meaningful experiment.
 
-Run the nearest executable verification immediately.
+Compare against the same artifact and source image.
 
-Preserve working code outside the failure boundary.
+Keep only changes that clearly improve the result.
 
-Prefer:
+Prefer small diffs, measurable experiments, existing abstractions, real artifact tests, reproducible settings, simple capture guidance, explicit tradeoffs, and visual verification.
 
-simple code
+Avoid repository-wide audits, speculative refactors, changing several quality variables at once, replacing TripoSR before benchmarking it properly, assuming more photos always means better quality, assuming white background is always better, fake confidence scores, huge models that make Android rendering worse, and quality claims based only on file size or triangle count.
 
-existing abstractions
+If a result looks better but is slower or much larger, record the tradeoff.
 
-explicit state
+If a result is technically valid but visually worse, it is worse.
 
-small diffs
+Current Working System
 
-targeted tests
-
-real integration checks
-
-measured runtime behavior
-
-Avoid:
-
-repository-wide rewrites
-
-speculative refactors
-
-duplicate networking/repository/ViewModel stacks
-
-hidden background behavior
-
-invented API contracts
-
-invented confidence scores
-
-destructive troubleshooting
-
-dependency upgrades without evidence
-
-If a command fails, investigate the first meaningful error.
-
-Do not claim success because code compiles.
-
-Existing Architecture
-
-Android
-
-Kotlin
-
-Jetpack Compose
-
-Material 3
-
-minSdk 26
-
-targetSdk 35
-
-Java/Kotlin target 17
-
-SceneView
-
-Retrofit / OkHttp / Moshi
-
-existing repositories and ViewModels
-
-runtime backend discovery
-
-Important root:
-
-android/app/src/main/java/com/example/museumapp/
-
-Important areas:
-
-data/api/
-
-data/model/
-
-data/network/
-
-data/repository/
-
-data/session/
-
-model3d/
-
-ui/admin/
-
-ui/visitor/
-
-Do not create another networking stack.
-Do not hardcode a laptop IP.
-
-Backend
+The following already work and must remain working:
 
 FastAPI
-
-Python
 
 MongoDB
 
 Qdrant
 
-OpenCLIP
+OpenCLIP startup/readiness
 
-local uploads
+Admin authentication
 
-COLMAP
-
-reconstruction jobs
-
-GLB validation/versioning/publication
-
-Canonical startup:
-
-run.bat
-
-which invokes:
-
-start_backend.py
-
-The Windows-host FastAPI process remains the authoritative API process.
-
-Protection Rules
-
-The following must continue to work:
-
-Admin login
-
-Guest flow
-
-Student flow
+Visitor flow
 
 artifact CRUD
 
-categories
-
-artifact gallery
-
-Admin artifact details
-
-Visitor artifact details
-
-backend discovery
-
-OpenCLIP recognition
-
-Qdrant recognition
-
-Visitor scanning
-
-existing uploads
-
-existing reconstruction jobs
-
-existing accepted/published GLBs
-
-Admin 3D Preview
-
-Visitor View 3D
-
-model cache
-
-SHA verification
-
-narration
-
-Never delete as a shortcut:
-
-MongoDB volumes
-
-Qdrant volumes
-
-existing artifact images
-
-published GLBs
-
-valid model history
-
-A failed new generation must leave the currently published model unchanged.
-
-Do not rebuild Qdrant unless corruption is proven.
-
-OpenCLIP
-
-OpenCLIP is a backend service, not a per-device Android model.
-
-When recognition AI is enabled, backend startup must warm OpenCLIP automatically.
-
-A new Android device must not require an Admin to open Recognition first.
-
-Required:
-
-local startup warmup enabled
-
-cached weights reused
-
-/api/v1/ai/health exposes loading / ready / failed
-
-Qdrant remains independent of Android device state
-
-no re-index as a model-loading workaround
-
-OpenCLIP recognition and AI 3D generation are separate subsystems.
-
-3D Product Definition
-
-There are two creation modes.
-
-Quick AI 3D Preview — default
-
-Purpose:
-
-Create a recognizable, approximate 3D visualization quickly from a good photograph.
-
-Use for normal museum Admin workflow.
-
-Missing or unseen surfaces can be inferred by AI.
-
-This is not metrically exact archival reconstruction.
-
-Photogrammetry — advanced
-
-Engine:
-
-COLMAP
-
-Purpose:
-
-Create geometry from matched overlapping photographs.
-
-Use when source images have enough overlap, texture, and viewpoint diversity.
-
-COLMAP failure must not block Quick AI Preview or ordinary museum use.
-
-Free Local Model
-
-TripoSR
-
-Use the official TripoSR implementation as the default free local image-to-3D provider.
-
-Reasons:
-
-pretrained
-
-MIT license
-
-no paid API
-
-no project-specific training
-
-local inference
-
-CPU fallback
-
-evaluation chunking to reduce VRAM
-
-GLB output support
-
-optional texture baking
-
-Important:
-
-TripoSR is a single-image generator.
-
-Its CLI can receive more than one image path, but those images are processed as separate generation inputs. It does not fuse arbitrary front/left/back/right photographs into one model.
-
-Never represent TripoSR as true multi-view fusion.
-
-Optional cloud or future local multi-view providers may continue to exist behind the provider abstraction.
-
-Do not make a much heavier model the default when it cannot realistically run on the deployment machine.
-
-Runtime Isolation
-
-Do not install TripoSR's PyTorch/runtime dependencies into the main FastAPI environment unless compatibility is proven.
-
-Use a separate local runtime, for example:
-
-tools/triposr/
-
-with its own environment and model cache.
-
-Architecture:
-
-FastAPI
-   |
-   | creates local 3D job
-   v
-TripoSR subprocess
-   |
-   v
-staged candidate GLB
-   |
-   v
-existing GLB validator
-   |
-   v
-Admin review
-
-Reasons:
-
-avoid OpenCLIP/PyTorch dependency conflicts
-
-isolate OOM/crashes
-
-allow CPU fallback
-
-release model memory after generation
-
-keep normal backend startup lightweight
-
-One local generation at a time is acceptable.
-
-Do not introduce Redis or Celery.
-
-Provider Boundary
-
-Keep process execution outside FastAPI routes.
-
-Use the existing model3d service architecture.
-
-Conceptual interface:
-
-LocalAi3DProvider
-    detect()
-    health()
-    generate()
-
-Implementation:
-
-TripoSrProvider
-
-Detection should verify:
-
-runtime folder
-
-Python executable
-
-imports
-
-model/weights availability
-
-output folder
-
-usable device configuration
-
-If TripoSR is unavailable:
-
-backend still starts
-
-MongoDB still works
-
-OpenCLIP still works
-
-Qdrant still works
-
-COLMAP still works
-
-existing GLBs remain viewable
-
-Only new local AI generation is disabled.
-
-Configuration
-
-Keep machine configuration in backend/.env.
-
-Suggested keys:
-
-LOCAL_AI_3D_ENABLED=true
-LOCAL_AI_3D_PROVIDER=triposr
-TRIPOSR_ROOT=
-TRIPOSR_PYTHON=
-TRIPOSR_MODEL_PATH=
-TRIPOSR_DEVICE=auto
-TRIPOSR_CHUNK_SIZE=
-TRIPOSR_MC_RESOLUTION=
-TRIPOSR_TEXTURE_RESOLUTION=
-TRIPOSR_BAKE_TEXTURE=true
-TRIPOSR_CPU_FALLBACK=true
-
-Update .env.example with safe placeholders.
-
-Do not commit local paths or secrets.
-
-Low-Resource Policy
-
-The current target may not have enough VRAM for TripoSR defaults.
-
-Do not assume the GPU will work.
-
-TripoSR's default single-image inference is documented at about 6 GB VRAM, so a 4 GB GPU must be treated as constrained.
-
-Policy:
-
-detect CUDA
-
-use configured conservative settings
-
-if GPU inference fails with OOM or unsupported CUDA behavior, terminate the worker
-
-retry once on CPU when fallback is enabled
-
-record which device actually generated the model
-
-never crash FastAPI because a 3D worker OOMs
-
-Smaller TripoSR evaluation chunks reduce VRAM but increase runtime.
-
-Do not invent one magic chunk size.
-
-Benchmark the actual machine and persist the working profile.
-
-Admin may show:
-
-Generating locally on CPU. This can take several minutes.
-
-That is acceptable.
-
-Quick AI Input
-
-Do not require 30–200 photos.
-
-For TripoSR choose one primary generation image.
-
-Recommended primary image:
-
-entire artifact visible
-
-sharp
-
-strong foreground/background separation
-
-minimal occlusion
-
-soft even light
-
-little glare
-
-no motion blur
-
-preferably a three-quarter angle that reveals depth
-
-Admin UI:
+artifact images
 
 Quick AI 3D Preview
 
-Primary image
-[ thumbnail ]
+TripoSR local generation
 
-[ Change Primary Image ]
+COLMAP advanced photogrammetry
 
-Reference photos: 27
+GLB validation
 
-Generator:
-Local AI
+SHA-256
 
-[ Generate Preview ]
+model versioning
 
-Other artifact photos can remain reference material for Admin review.
+Admin 3D Preview
 
-Do not claim those extra images were used by TripoSR if they were not.
+Accept / Reject
 
-Estimated Photo Support vs AI Inference
+Visitor View 3D
 
-The product may show a percentage, but it must be honest.
+Android persistent model cache
 
-Do not claim:
+SceneView rendering
 
-exact model confidence
+light neutral viewer background
 
-exact percentage of hallucinated polygons
+current working orbit / zoom behavior
 
-scientific coverage
+Do not rewrite these systems for this phase.
 
-Use:
+A failed experiment must never replace the current published model.
+
+Current 3D Product Architecture
+
+Quick AI Preview — default
+
+one primary artifact image
+-> TripoSR
+-> candidate GLB
+-> validation
+-> Admin Preview
+-> Accept / Reject
+-> Visitor
+
+Use when the goal is a fast, recognizable 3D representation.
+
+AI may infer unseen surfaces.
+
+It is not an archival or metrically exact reconstruction.
+
+Advanced Photogrammetry
+
+many overlapping artifact photos
+-> COLMAP
+-> reconstruction quality gate
+-> candidate GLB
+-> validation
+-> Admin Preview
+-> Accept / Reject
+-> Visitor
+
+Use when the source photo set is strong enough for geometric reconstruction.
+
+COLMAP is not the default Quick AI workflow.
+
+Phase Goal: Better 3D Models
+
+"Better" must be explicit.
+
+A better model should improve one or more of:
+
+recognizability
+
+silhouette accuracy
+
+front/side/top shape consistency
+
+texture/color similarity
+
+visible detail
+
+absence of holes or broken geometry
+
+absence of obvious AI distortions
+
+stable camera framing
+
+practical GLB size
+
+smooth Android rendering
+
+generation reliability
+
+Do not optimize triangle count for its own sake.
+
+Do not optimize texture resolution for its own sake.
+
+The goal is the best useful visitor-facing artifact model for the available hardware.
+
+Baseline First
+
+Before changing TripoSR or capture behavior, establish a baseline using one real artifact.
+
+Prefer an artifact that already generated successfully, such as the accepted woven basket / salikap artifact.
+
+Record:
+
+artifact
+primary input image
+input dimensions
+background type
+view angle
+lighting description
+TripoSR device
+chunk size
+marching-cubes resolution
+texture resolution
+texture enabled
+generation runtime
+GLB size
+vertex count
+face count
+material count
+texture count
+bounds
+Admin screenshot
+Visitor screenshot
+
+Also record a simple engineering quality score:
+
+recognizability: 1-5
+shape fidelity: 1-5
+texture fidelity: 1-5
+unseen-side plausibility: 1-5
+viewer usability: 1-5
+
+These are comparison scores, not scientific confidence values.
+
+Keep the baseline artifact and screenshots for comparison.
+
+Capture Quality Comes Before Model Complexity
+
+Do not conclude that TripoSR is inadequate until the input image has been optimized.
+
+For Quick AI Preview, the input should usually be:
+
+one artifact only
+
+entire object visible
+
+sharp
+
+no motion blur
+
+soft, even lighting
+
+minimal harsh shadow
+
+minimal reflection/glare
+
+high foreground/background contrast
+
+little background clutter
+
+object not touching frame edges
+
+enough empty margin for background removal
+
+useful three-quarter perspective when possible
+
+A good three-quarter view often provides more 3D information than a straight front photograph.
+
+Example:
+
+camera
+   \
+    \
+     [artifact]
+
+roughly 30-45 degrees off the front
+
+Do not assume pure white is always correct.
+
+Choose a matte background that contrasts with the artifact.
+
+Examples:
+
+light beige artifact -> medium/dark neutral background
+dark brown artifact -> light gray/off-white background
+white artifact -> gray/blue-gray background
+
+Avoid glossy backgrounds, reflective tables, hard flash, patterned cloth, clutter, cropped edges, and strong backlighting.
+
+Quick AI Capture Experiment
+
+Before touching model architecture, test source-view quality.
+
+For the same artifact, capture or choose:
+
+A. straight front
+B. 30-degree three-quarter
+C. 45-degree three-quarter
+D. slightly elevated three-quarter
+E. slightly lower three-quarter
+
+Generate each with the same TripoSR settings.
+
+Only the source image changes.
+
+Compare the outputs side by side.
+
+Do not change texture resolution, chunk size, or marching-cubes resolution during this experiment.
+
+Choose the best view empirically.
+
+Persist capture guidance in the Admin UI only after this test.
+
+Recommended Capture Guidance in Admin
+
+Keep guidance short:
+
+For a better AI 3D preview:
+
+• Show the whole artifact.
+• Use a sharp photo.
+• Use even lighting.
+• Use a plain contrasting background.
+• Prefer a three-quarter angle that shows depth.
+• Avoid glare, blur, and cropped edges.
+
+Do not overwhelm Quick AI users with photogrammetry terminology.
+
+Background Removal / Object Isolation
+
+TripoSR quality may depend strongly on foreground extraction.
+
+Inspect the actual preprocessing used by the installed TripoSR implementation and current tools/triposr/infer.py.
+
+Do not invent preprocessing flags.
+
+Determine:
+
+whether background removal is enabled
+
+what performs it
+
+whether alpha/mask quality is good
+
+whether artifact edges are being cut
+
+whether shadows become foreground
+
+whether transparent output is handled correctly
+
+Test background removal separately on the baseline artifact.
+
+Save the processed foreground used by inference in an ignored debug/test output directory.
+
+If edge masking damages the artifact, fix preprocessing rather than compensating with more mesh resolution.
+
+TripoSR Quality Experiments
+
+Do not change all parameters at once.
+
+Inspect the installed TripoSR version and actual supported parameters.
+
+Never invent CLI flags.
+
+Experiment 1 — Source View
+
+Keep all model settings fixed.
+
+Change only the source image/view.
+
+Select the best source image.
+
+Experiment 2 — Mesh Resolution
+
+Using the best source image, test a small number of practical supported marching-cubes/mesh resolutions.
+
+For each, record:
+
+runtime
+
+RAM/VRAM
+
+vertices/faces
+
+GLB size
+
+silhouette/detail quality
+
+Android render smoothness
+
+Do not select the highest value automatically.
+
+Choose the lowest setting that preserves visibly useful geometry.
+
+Experiment 3 — Texture Resolution
+
+Using the selected mesh setting, test a small number of practical supported texture resolutions.
+
+Measure:
+
+texture clarity
+
+artifact color fidelity
+
+seams
+
+GLB size
+
+Android loading/render behavior
+
+Choose the smallest texture that still looks good on the target device.
+
+Experiment 4 — Chunk Size
+
+Chunk size is primarily a memory/performance setting.
+
+Do not treat it as a visual-quality setting unless the implementation proves otherwise.
+
+Choose a value that is stable on the generation PC.
+
+Experiment 5 — Device
+
+GPU and CPU output should be compared only if there is evidence they differ.
+
+Prefer the stable execution profile.
+
+Do not force GPU merely because it is faster.
+
+One Variable At A Time
+
+Every experiment records:
+
+baseline
+changed variable
+old value
+new value
+result
+decision
+
+Example:
+
+Experiment: texture resolution
+
+baseline: 512
+candidate: 1024
+
+result:
+- texture visibly clearer
+- GLB 3.4 MB -> 5.8 MB
+- Android still smooth
+
+decision:
+KEEP 1024
+
+If the difference is not visibly meaningful:
+
+REVERT.
+
+3D Quality Scorecard
+
+For each candidate:
+
+Artifact: Salikap #4
+
+Input quality:
+4/5
+
+Shape:
+4/5
+
+Texture:
+4/5
+
+Silhouette:
+4/5
+
+Unseen-side plausibility:
+3/5
+
+GLB size:
+3.4 MB
+
+Generation:
+2m 14s
+
+Android:
+smooth
+
+Decision:
+KEEP / REJECT
+
+These are engineering comparison scores, not scientific measurements.
+
+TripoSR Constraints
+
+TripoSR remains a single-image generator.
+
+Do not pretend it fuses multiple arbitrary views.
+
+Additional images may be reference images for Admin comparison, but they are not generation evidence unless the model actually consumes them.
+
+If a future provider supports true multi-view conditioning, add it behind the existing provider abstraction.
+
+Do not replace the current provider in this phase.
+
+AI Disclosure
+
+Continue showing:
+
+AI-generated 3D preview.
+
+Areas not visible in the generation input may have been estimated by AI and may not exactly match the physical artifact.
+
+Continue using:
 
 Estimated photo-supported coverage
 
 Estimated AI-inferred coverage
 
-Always show Estimated.
+Do not convert this into a fake confidence metric.
 
-Canonical major view regions:
+COLMAP Quality Phase
 
-Front
+COLMAP remains valuable for higher-fidelity geometry when capture is correct.
 
-Right
+Do not judge COLMAP from datasets where only a few photographs registered.
 
-Back
+For a controlled COLMAP test, keep the artifact stationary and move the camera around it.
 
-Left
+Do not rotate the object against a stationary background unless the pipeline deliberately masks the background.
 
-Top
+Capture concept:
 
-Bottom
+high ring:
+  camera positions around artifact
 
-For the image(s) actually consumed by the generator, record which major regions are visibly represented.
+middle ring:
+  camera positions around artifact
 
-Example:
+low ring:
+  camera positions around artifact
 
-Visible in generation input
+plus top/detail views
 
-[x] Front
-[x] Right
-[x] Top
-[ ] Back
-[ ] Left
-[ ] Bottom
+Use strong overlap between adjacent views.
 
-Coverage:
+Do not prescribe hundreds of images.
 
-supported regions / 6
+A smaller set of high-quality overlapping images is better than many blurred or redundant images.
 
-Inference:
+Record:
 
-100 - supported
+source count
 
-Example:
+usable count
 
-3 of 6 regions represented:
+registered count
 
-Estimated photo-supported coverage: 50%
+registered ratio
 
-Estimated AI-inferred coverage: 50%
+sparse points
 
-Round to whole percentages.
+reprojection error
 
-Do not create false precision.
+dense/sparse output type
 
-If the visible regions cannot be determined, show:
+final mesh
 
-Coverage estimate unavailable
+texture quality
 
-For TripoSR, only its primary input image counts as generation evidence.
+COLMAP Capture Guidance
 
-Reference photos not sent to the model do not reduce the inferred percentage.
+Admin guidance for Photogrammetry must differ from Quick AI guidance:
 
-A future true multi-view provider may count every view it actually consumes.
+For photogrammetry:
 
-AI Disclosure
+• Keep the artifact still.
+• Walk the camera around it.
+• Keep neighboring photos highly overlapping.
+• Capture low, middle, and high angles.
+• Keep lighting consistent.
+• Avoid blur and glare.
+• Do not make large jumps between viewpoints.
 
-Every AI candidate must show:
+Do not claim any fixed photo count guarantees success.
 
-AI-generated 3D preview
+GLB Optimization
 
-and:
+A visually better source model can still be a poor mobile asset.
 
-Areas not visible in the generation input may have been estimated by AI and may not exactly match the physical artifact.
+After selecting a good candidate, measure:
 
-Before Accept, display:
+GLB size
 
-generation method
+vertices
 
-primary source image
+faces
 
-estimated photo-supported coverage
+texture dimensions
 
-estimated AI-inferred coverage
+material count
 
-model validation
+Android load time
 
-model size
+Android render smoothness
 
-Preview
+Optimize only after the best-looking source model is selected.
 
-Accept
+Do not optimize a poor model.
 
-Reject
+Any simplification must preserve:
 
-Never present AI Preview as archival measurement data.
+silhouette
 
-Generation Metadata
+recognizable details
 
-Persist typed generation method:
+texture readability
 
-colmap
-triposr
-ai_multiview
+normals
 
-Admin labels:
+UVs
 
-Photogrammetry
+materials
 
-Local AI Preview
+Keep the original candidate before optimization.
 
-AI Multi-View Preview
+Mobile Target
 
-Persist generation method on draft and published model.
-
-Do not expose provider internals unnecessarily to Visitor DTOs.
-
-One Shared GLB Pipeline
-
-Every generator must converge here:
-
-generator
-    |
-    v
-staged GLB
-    |
-    v
-validate
-    |
-    v
-SHA-256
-    |
-    v
-Admin Preview
-    |
-    +-- Reject -> keep current published model
-    |
-    +-- Accept
-          |
-          v
-      publish version
-          |
-          v
-      Visitor API
-          |
-          v
-      Android cache
-          |
-          v
-       SceneView
-
-Never build a provider-specific Android renderer.
-
-Android consumes validated GLB.
-
-Staging / Validation
-
-Never overwrite a published model during generation.
-
-Use staging.
-
-Example:
-
-backend/uploads/reconstruction/<artifact_id>/
-    source/
-    workspace/
-    ai_staging/
-    output/
-
-backend/uploads/models3d/<artifact_id>/
-    model-v1.glb
-    model-v2.glb
-
-Validate:
-
-file exists
-
-size > 0
-
-within configured limit
-
-valid GLB
-
-geometry exists
-
-finite bounds
-
-vertices > 0
-
-faces > 0 where applicable
-
-materials/textures inspected
-
-SHA-256 generated
-
-Do not re-export a valid textured AI model unnecessarily.
-
-Only repair missing normals/materials when they are genuinely absent.
-
-Admin 3D UX
-
-Move 3D management into a dedicated Admin area.
+The final asset is for Android SceneView, not desktop rendering.
 
 Prefer:
 
-Artifact Details
+recognizable
++
+clean
++
+small enough
++
+fast enough
 
-[ Details ] [ Images ] [ 3D Model ]
+over:
 
-or equivalent Material 3 navigation.
+maximum polygons
++
+maximum texture size
 
-Do not cram full reconstruction controls into the normal Details content.
+A model that looks only slightly better but loads much slower may be a worse product.
 
-3D Model tab
+Measure on the actual Android test device/emulator.
 
-Published Model
+Shared GLB Pipeline
 
-Status: Ready
-Generation: Local AI Preview
-Version: 5
+Do not change the working publication path:
 
-[ Preview ]
+TripoSR or COLMAP
+-> staged GLB
+-> validate
+-> SHA-256
+-> Admin Preview
+-> Accept / Reject
+-> publish
+-> Visitor API
+-> Android persistent cache
+-> SceneView
 
-Create New Preview
+No provider-specific Android renderer.
 
-(*) Quick AI Preview
-( ) Photogrammetry
+No direct publication before Admin review.
 
-[ Continue ]
+Viewer
 
-Quick AI is default.
+The viewer is already functional.
 
-COLMAP is advanced.
+Do not change viewer interaction during model-quality experiments unless a reproduced viewer problem prevents evaluation.
 
-Quick AI Flow
+Preserve:
 
-3D Model tab
-   |
-   v
-Quick AI Preview
-   |
-   v
-select primary image
-   |
-   v
-mark visible regions
-   |
-   v
-Generate
-   |
-   v
-background job
-   |
-   v
-TripoSR
-   |
-   v
-validate
-   |
-   v
-pending_review
-   |
-   v
-Preview
-   |
-   +-- Reject
-   |
-   +-- Accept
+light neutral background
 
-Do not require COLMAP preflight before Quick AI generation.
+neutral lighting
 
-Photogrammetry Flow
+camera framing
 
-COLMAP remains available.
+model centering
 
-For source selection:
+orbit
 
-all eligible images selected by default
+zoom
 
-Select All
+shared Admin/Visitor renderer
 
-Clear
+Viewer UX experiments are a separate phase from generation-quality experiments.
 
-Selected X / Y
+This prevents confusing a better camera with a better model.
 
-Show readable counts:
+Experiment Files
 
-Source photos
+Do not commit experiment screenshots, generated GLBs, model weights, caches, or virtual environments by default.
 
-Selected
+Keep reproducible scripts and settings.
 
-Usable
+Generated comparison assets belong in ignored development/test directories.
 
-Registered
+Before any commit:
 
-Registration %
+git status
+git diff --stat
 
-Flow:
+Verify no large generated artifacts are accidentally staged.
 
-select photos
-   ->
-Run Check
-   ->
-feature extraction
-   ->
-matching
-   ->
-sparse reconstruction
-   ->
-quality result
-   ->
-build if suitable
+Experiment Records
 
-If quality is insufficient:
+Create a small local report for each experiment.
 
-Try Quick AI Preview
+Example ignored path:
 
-Do not force hundreds of photos.
+tools/triposr/experiments/<artifact>/<run-id>/metrics.json
 
-Progress UX
+Record:
 
-Any long operation must produce immediate feedback.
+timestamp
+artifact
+source image
+source dimensions
+source view label
+device
+TripoSR settings
+runtime
+GLB metrics
+quality scores
+decision
 
-Never let a button appear to do nothing.
+Do not introduce a new database subsystem for experiments.
 
-AI example:
+Keep it simple.
 
-Generating 3D Preview
+Optional Recommended-Photo Heuristic
 
-Preparing image...
-Removing background...
-Loading local model...
-Generating geometry...
-Baking texture...
-Validating GLB...
+Only after controlled experiments, consider a lightweight recommendation heuristic.
 
-This may take several minutes.
+It may consider:
 
-[ progress ]
+image sharpness
 
-COLMAP example:
+useful object size in frame
 
-Checking Photos
+resolution
 
-Extracting features...
-Matching photographs...
-Building sparse reconstruction...
-Assessing quality...
+foreground/background separation
 
-Android automatically polls active jobs.
+orientation
 
-No manual refresh.
-No leave-and-return requirement.
-No duplicate job from Compose recomposition.
+obvious clipping
 
-Polling stops on terminal state.
+Do not introduce another large AI model merely to choose the source image.
 
-Job States
+Do not claim the heuristic guarantees the best 3D result.
 
-Use MongoDB-backed job state and existing worker patterns.
+Admin can always choose another image.
 
-Possible local-AI states:
+Real Acceptance Test
 
-ai_queued
-ai_preparing
-ai_loading_model
-ai_generating
-ai_texturing
-ai_validating
-pending_review
-failed
-interrupted
+This phase is complete only after a real before/after comparison.
 
-Map them to human UI.
-
-Keep technical stack traces in logs.
-
-Do not hold one HTTP request open through full inference.
-
-Image Selection Rules
-
-COLMAP
-
-All eligible images checked by default.
-
-Buttons:
-
-Select All
-Clear
-
-Show selected count.
-
-Do not preselect backend-marked unreadable files.
-
-TripoSR
-
-One primary generation image.
-
-Allow replacing the primary.
-
-Other images are references.
-
-Do not pretend they are fused.
-
-SceneView
-
-The existing renderer remains the shared viewer.
-
-Do not rewrite it while integrating TripoSR unless an actual regression proves it is involved.
-
-It must:
-
-download published GLB
-
-verify SHA
-
-atomically persist cache
-
-load Filament/SceneView on correct thread
-
-frame actual bounds
-
-provide usable lighting
-
-show the object
-
-support orbit/zoom
-
-show actionable errors instead of blank black/gray canvas
-
-Admin Preview and Visitor use the same fundamental renderer.
-
-Publication
-
-No generated model is automatically public.
+Use the same artifact.
 
 Required:
 
-generated
-  ->
-validated
-  ->
-Admin review
-  ->
-Accept / Reject
+regenerate or establish the current baseline
 
-Accept promotes version/path/SHA/size/generation method/coverage metadata.
+save baseline metrics
 
-Reject preserves the current published model.
+optimize source capture/view
 
-Failure preserves the current published model.
+select best source view
 
-Offline Behavior
+optimize one TripoSR parameter at a time
 
-Normal museum operation remains local after setup.
+choose best practical settings
 
-OpenCLIP, Qdrant, MongoDB, backend, existing models, cached GLBs, and SceneView must not require a cloud API.
+generate final candidate
 
-TripoSR should work offline after its runtime and weights are installed.
-
-First-time dependency/model download may require internet unless bundled.
-
-Setup / Handoff
-
-Do not immediately modify the main handoff installer.
-
-First prove TripoSR separately:
-
-isolated environment installs
-
-official test image generates GLB
-
-real museum artifact generates GLB
-
-GLB validates
-
-SceneView renders it
-
-measure runtime
-
-measure memory where practical
-
-establish a safe GPU/CPU profile
-
-Then make optional installer support.
-
-A failed TripoSR install must not break normal museum use.
-
-Real Acceptance Gate
-
-Before claiming local AI 3D is complete:
-
-use a real museum photo
-
-run actual TripoSR, not a mock
-
-produce GLB
-
-texture/appearance is generated when enabled
-
-validate
-
-compute SHA
+validate GLB
 
 preview in Admin
 
-object is recognizable
+compare baseline vs optimized model visually
 
-show Estimated coverage
+Accept only if visibly better
 
-show AI disclosure
+open as Visitor
 
-Reject preserves current model
+verify cache reuse
 
-Accept a usable model
+verify Android performance remains acceptable
 
-Visitor downloads it
+Do not call the phase complete because tests pass.
 
-Visitor visibly renders it
+The optimized model must visibly improve on the baseline.
 
-reopen uses cache
+Regression Protection
 
-Compilation and unit tests are not enough.
+After quality changes verify:
 
-Testing
+backend starts
 
-Backend
+MongoDB intact
 
-Keep existing tests.
+OpenCLIP ready
 
-Add targeted tests for:
+Qdrant intact
 
-provider disabled
+Quick AI works
 
-provider unavailable
+COLMAP works
 
-detection
+existing published GLBs remain valid
 
-command construction
+Admin Preview works
 
-timeout
+Accept/Reject works
 
-subprocess failure
+Visitor model works
 
-CUDA OOM
+cache works
 
-configured CPU fallback
+Do not rebuild Qdrant.
 
-missing result
+Do not re-index artifacts as a shortcut.
 
-invalid GLB
+Do not delete existing models.
 
-valid GLB
+Tests
 
-staging
+Keep automated tests focused.
 
-SHA
+Backend tests cover changed logic only, for example:
 
-published-model preservation
+preprocessing
 
-generation-method persistence
+parameter selection/configuration
 
-coverage calculation
+safe output paths
 
-coverage unavailable
+GLB validation
 
-job transitions
+publication protection
 
-interrupted job
+Android tests cover UI only if capture guidance or quality metadata changes.
 
-Accept
+Do not make normal unit tests run full TripoSR inference.
 
-Reject
-
-Visitor hidden before Accept
-
-Visitor exposed after Accept
-
-Mock heavy inference in normal tests.
-
-Create a separate explicit integration test for real TripoSR inference.
-
-Android
-
-Test:
-
-dedicated 3D navigation
-
-Quick AI default
-
-COLMAP advanced option
-
-primary-image selection
-
-region selection
-
-Estimated coverage labels
-
-AI disclosure
-
-immediate progress
-
-polling active/terminal behavior
-
-no duplicate job on recomposition
-
-failure
-
-pending review
-
-Preview
-
-Accept
-
-Reject
-
-existing published Preview remains available
+Use one explicit real-inference integration test.
 
 Run:
 
 backend pytest
-.\\gradlew.bat :android:app:testDebugUnitTest
-.\\gradlew.bat :android:app:assembleDebug
+.\gradlew.bat :android:app:testDebugUnitTest
+.\gradlew.bat :android:app:assembleDebug
 
-Git Discipline
+Final Decision Rules
 
-Before substantial work:
+Keep a change only when at least one is true:
 
-git status
-git branch --show-current
-git log -5 --oneline
+model is visibly more recognizable
 
-Do not destroy uncommitted work.
-Do not push unless explicitly requested.
-Do not commit backend/.env, local.properties, machine paths, secrets, or large model weights casually.
+texture is visibly more faithful
 
-Final Verification
+geometry is visibly cleaner
 
-Prove:
+same quality is achieved with less runtime
 
-backend starts
+same quality is achieved with smaller GLB
 
-MongoDB healthy
+generation becomes more reliable
 
-OpenCLIP ready without Admin priming
+Admin can more reliably provide good inputs
 
-Qdrant intact
+Reject a change when:
 
-artifacts intact
+complexity increases without visible benefit
 
-existing GLBs intact
+only triangle count increases
 
-dedicated Admin 3D screen works
+only file size increases
 
-Quick AI does not depend on COLMAP
+one angle improves while others degrade
 
-TripoSR real inference works on the real machine, or an exact resource/runtime limitation is proven
+Android becomes noticeably slower
 
-candidate GLB validates
+it depends on fragile hardware behavior
 
-Admin visibly previews it
-
-Estimated coverage is displayed honestly
-
-AI disclosure is present
-
-Reject preserves old model
-
-Accept publishes candidate
-
-Visitor renders published model
-
-second open uses cache
-
-COLMAP still works as advanced mode
-
-Android unit tests pass
-
-APK builds
+it requires replacing working architecture without evidence
 
 Reporting
 
-Report evidence only.
+Report evidence, not effort.
 
-Local AI
+Baseline
 
-detected runtime
+artifact
 
-model
+source image
 
-license
+source view
 
-execution device
+model settings
 
 runtime
 
-measured memory if available
+GLB metrics
 
-actual settings
+quality score
 
-Quick AI
+Experiments
 
-primary source image
+For each:
 
-represented regions
+hypothesis
 
-Estimated coverage
+one variable changed
 
-job states
+baseline value
 
-output
+candidate value
 
-GLB
+measured result
+
+KEEP / REVERT
+
+Best Capture
+
+background
+
+lighting
+
+source angle
+
+distance/framing
+
+reason selected
+
+Best TripoSR Profile
+
+device
+
+chunk size
+
+mesh resolution
+
+texture resolution
+
+texture enabled
+
+runtime
+
+memory observations
+
+Final GLB
 
 size
 
@@ -1235,49 +953,52 @@ vertices
 
 faces
 
-geometry
+materials
 
-materials/textures
+textures
 
 bounds
 
 SHA
 
-validation
+Before / After
 
-Admin
+recognizability
 
-3D navigation
+shape
 
-progress UX
+texture
 
-visible Preview
+unseen-side plausibility
 
-Accept/Reject
+Android performance
 
-Visitor
+Regression
 
-published version
+backend
 
-visible model
+OpenCLIP
 
-cache reuse
+Qdrant
 
 COLMAP
 
-advanced path remains functional
+Admin Preview
 
-Verification
+Visitor
 
-backend tests
+cache
 
-Android tests
+Tests
+
+backend pytest
+
+Android unit tests
 
 assembleDebug
 
-real TripoSR integration test
+real TripoSR integration
 
-Use PASS/FAIL.
+Use PASS / FAIL.
 
-Do not report speculative issues.
-Do not say the feature works when only mocks passed.
+Do not claim "better" unless the before/after comparison supports it.

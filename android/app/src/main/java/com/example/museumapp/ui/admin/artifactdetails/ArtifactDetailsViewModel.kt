@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.museumapp.data.model.ArtifactDto
 import com.example.museumapp.data.model.Model3DJobDto
 import com.example.museumapp.data.model.Model3DStateDto
+import com.example.museumapp.data.model.Model3DStatus
 import com.example.museumapp.data.model.isJobActive
 import com.example.museumapp.data.repository.AdminRepositoryContract
 import com.example.museumapp.data.repository.RepositoryResult
@@ -26,6 +27,21 @@ import kotlinx.coroutines.launch
  */
 enum class Model3DSubmitStage { PreparingImages, StartingGeneration }
 
+/**
+ * Fired exactly once when polling observes a job go from an active generation state (see
+ * [Model3DStatus.ActiveJobStatuses]) to [Model3DStatus.PendingReview] - i.e. a genuine completion
+ * that happened while this screen was watching it, not an old draft merely discovered on load.
+ * Consumed (cleared back to null) by [ArtifactDetailsViewModel.consumePreviewReadyEvent] once the
+ * admin has acted on the "3D Preview Ready" modal, so it never reappears on recomposition/rotation
+ * and is never fired a second time for the same completion.
+ */
+data class PreviewReadyEvent(
+    val version: Int,
+    val sha256: String,
+    val url: String,
+    val generationMethod: String?
+)
+
 data class ArtifactDetailsUiState(
     val artifact: ArtifactDto? = null,
     val isLoading: Boolean = true,
@@ -42,6 +58,7 @@ data class ArtifactDetailsUiState(
     val model3DBusy: Boolean = false,
     val model3DError: String? = null,
     val model3DSubmitStage: Model3DSubmitStage? = null,
+    val previewReadyEvent: PreviewReadyEvent? = null,
     val isPolling: Boolean = false,
     val pendingDeleteReconstruction: Boolean = false,
     val deletingReconstruction: Boolean = false
@@ -417,10 +434,35 @@ class ArtifactDetailsViewModel(
                 delay(POLL_INTERVAL_MS)
                 when (val result = repository.get3DStatus(id)) {
                     is RepositoryResult.Success -> {
-                        _uiState.update {
-                            it.copy(model3D = result.data.state, model3DJob = result.data.job)
+                        val newState = result.data.state
+                        _uiState.update { current ->
+                            // "current.model3D" here is the state as of the PREVIOUS tick (or the
+                            // state that kicked off this polling session) - comparing it against
+                            // the just-fetched newState is what makes this an edge/transition
+                            // check rather than a level check, so an old pending_review draft
+                            // simply loaded on screen-open never fires this (polling never even
+                            // starts for a non-active status - see resumePollingIfNeeded).
+                            val justReachedPendingReview = current.model3D?.isJobActive() == true &&
+                                newState.status == Model3DStatus.PendingReview
+                            current.copy(
+                                model3D = newState,
+                                model3DJob = result.data.job,
+                                previewReadyEvent = if (justReachedPendingReview) {
+                                    PreviewReadyEvent(
+                                        version = newState.draftVersion ?: newState.version,
+                                        sha256 = newState.draftSha256.orEmpty(),
+                                        url = newState.draftModelUrl.orEmpty(),
+                                        generationMethod = newState.draftGenerationMethod
+                                    )
+                                } else {
+                                    current.previewReadyEvent
+                                }
+                            )
                         }
-                        if (!result.data.state.isJobActive()) break
+                        // The loop stops the instant the job leaves an active state, so a
+                        // pending_review status can only ever be observed here once per polling
+                        // session - there is no path that re-emits this event on repeated ticks.
+                        if (!newState.isJobActive()) break
                     }
                     is RepositoryResult.Error -> {
                         _uiState.update { it.copy(model3DError = result.message) }
@@ -431,6 +473,13 @@ class ArtifactDetailsViewModel(
             pollingJob = null
             _uiState.update { it.copy(isPolling = false) }
         }
+    }
+
+    /** Dismisses the "3D Preview Ready" modal - called both when the admin taps "View 3D Preview"
+     * (after navigating) and "Review Later" (no navigation). Never Accepts, Rejects, or deletes
+     * the draft; the Pending Review card in the 3D tab is unaffected either way. */
+    fun consumePreviewReadyEvent() {
+        _uiState.update { it.copy(previewReadyEvent = null) }
     }
 
     private fun stopPolling() {

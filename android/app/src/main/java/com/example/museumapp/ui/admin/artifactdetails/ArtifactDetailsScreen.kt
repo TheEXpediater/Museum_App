@@ -269,6 +269,20 @@ fun ArtifactDetailsScreen(
         )
     }
 
+    uiState.previewReadyEvent?.let { event ->
+        val artifactId = uiState.artifact?.id
+        PreviewReadyDialog(
+            event = event,
+            onViewPreview = {
+                viewModel.consumePreviewReadyEvent()
+                if (artifactId != null && event.sha256.isNotBlank() && event.url.isNotBlank()) {
+                    onPreviewDraftModel(artifactId, event.version, event.sha256, event.url)
+                }
+            },
+            onReviewLater = viewModel::consumePreviewReadyEvent
+        )
+    }
+
     if (showCreatePreviewDialog && uiState.artifact != null) {
         val artifact = uiState.artifact!!
         CreateThreeDPreviewDialog(

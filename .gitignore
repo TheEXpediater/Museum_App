@@ -52,6 +52,10 @@ tools/triposr/cache/
 # TripoSR manual verification artifacts (emulator screenshots / UIAutomator dumps) - not source.
 tools/triposr/*.png
 tools/triposr/*.xml
+tools/triposr/*.log
+
+# TripoSR quality experiments (generated GLBs, renders, preprocessed images) - reproducible, not source.
+tools/triposr/experiments/
 
 # Android / Gradle
 .gradle/

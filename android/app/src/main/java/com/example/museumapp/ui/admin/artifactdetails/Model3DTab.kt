@@ -304,6 +304,43 @@ fun ProcessingModal(model: Model3DStateDto?, job: Model3DJobDto?, submitStage: M
     }
 }
 
+/**
+ * Shown automatically, exactly once, when [ArtifactDetailsViewModel] observes a generation job go
+ * from active to [com.example.museumapp.data.model.Model3DStatus.PendingReview] (see
+ * [PreviewReadyEvent] / [ArtifactDetailsViewModel.consumePreviewReadyEvent]) - the admin no longer
+ * has to notice the Pending Review card appearing on their own. Deliberately does not Accept,
+ * Reject, or open SceneView by itself: either button is a distinct, explicit admin action.
+ */
+@Composable
+fun PreviewReadyDialog(
+    event: PreviewReadyEvent,
+    onViewPreview: () -> Unit,
+    onReviewLater: () -> Unit
+) {
+    Dialog(onDismissRequest = onReviewLater) {
+        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface) {
+            Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("3D Preview Ready", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Your 3D preview was generated successfully and is ready for review.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    "Generation: ${Model3DGenerationMethod.label(event.generationMethod)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Button(onClick = onViewPreview, modifier = Modifier.fillMaxWidth()) {
+                    Text("View 3D Preview")
+                }
+                TextButton(onClick = onReviewLater, modifier = Modifier.fillMaxWidth()) {
+                    Text("Review Later")
+                }
+            }
+        }
+    }
+}
+
 private enum class CreatePreviewMode { Initial, Choosing }
 
 /**

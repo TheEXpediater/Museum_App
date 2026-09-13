@@ -4,32 +4,42 @@ import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -43,7 +53,6 @@ import io.github.sceneview.math.Position
 import io.github.sceneview.math.colorOf
 import io.github.sceneview.model.ModelInstance
 import io.github.sceneview.node.ModelNode
-import io.github.sceneview.rememberCameraManipulator
 import io.github.sceneview.rememberCameraNode
 import io.github.sceneview.rememberEngine
 import io.github.sceneview.rememberEnvironment
@@ -52,6 +61,9 @@ import io.github.sceneview.rememberModelLoader
 import io.github.sceneview.rememberNodes
 import io.github.sceneview.utils.readBuffer
 import java.io.File
+import kotlin.math.atan2
+import kotlin.math.asin
+import kotlin.math.sqrt
 
 /**
  * Neutral, museum-appropriate viewer background (linear color space, before Filament's
@@ -269,38 +281,162 @@ private fun Model3DViewerContent(localFilePath: String) {
                     modelInstance = instance,
                     autoAnimate = true,
                     scaleToUnits = 1f
-                ).also { node ->
-                    // COLMAP's reconstructed geometry is not centered at its own local origin -
-                    // the local (0,0,0) pivot can sit far outside the actual point cloud entirely.
-                    // ModelNode.centerOrigin(Position(0,0,0)) (used previously here) computes
-                    // `position += origin * size`, which is a no-op whenever origin is zero, so it
-                    // never actually recentered a mesh like this one. Compute the model's real
-                    // world-space bounds (local bounding-box center/extent scaled by the uniform
-                    // scaleToUnits factor applied above, since position/rotation are left at
-                    // identity) and frame the CAMERA at that point instead of fighting the node's
-                    // transform - this is the "normalize only the view transform" approach for
-                    // arbitrary reconstructed meshes that aren't authored with a conventional pivot.
-                    val worldCenter = node.center * node.scale
-                    Log.d(
-                        "Model3DViewer",
-                        "model bounds: localCenter=${node.center} localExtents=${node.extents} " +
-                            "scale=${node.scale} worldCenter=$worldCenter vertexCount=" +
-                            "${node.renderableNodes.size} nodes"
+                )
+            }
+            // COLMAP's reconstructed geometry is not centered at its own local origin - the local
+            // (0,0,0) pivot can sit far outside the actual point cloud entirely.
+            // ModelNode.centerOrigin(Position(0,0,0)) (used previously here) computes
+            // `position += origin * size`, which is a no-op whenever origin is zero, so it never
+            // actually recentered a mesh like this one. Compute the model's real world-space
+            // bounds (local bounding-box center scaled by the uniform scaleToUnits factor applied
+            // above, since position/rotation are left at identity) and orbit the CAMERA around
+            // that point instead of fighting the node's transform - this is the "normalize only
+            // the view transform" approach for arbitrary reconstructed meshes that aren't
+            // authored with a conventional pivot.
+            val orbitCameraState = remember(modelNode) {
+                val worldCenter = modelNode.center * modelNode.scale
+                Log.d(
+                    "Model3DViewer",
+                    "model bounds: localCenter=${modelNode.center} localExtents=${modelNode.extents} " +
+                        "scale=${modelNode.scale} worldCenter=$worldCenter vertexCount=" +
+                        "${modelNode.renderableNodes.size} nodes"
+                )
+                // The exact same eye offset the fixed camera used to use, decomposed into
+                // yaw/pitch/radius - Reset restores this identical default framing, it does not
+                // invent a new one.
+                val defaultOffset = Position(x = 0.9f, y = 0.6f, z = 1.6f)
+                val defaultRadius = sqrt(
+                    (defaultOffset.x * defaultOffset.x +
+                        defaultOffset.y * defaultOffset.y +
+                        defaultOffset.z * defaultOffset.z).toDouble()
+                ).toFloat()
+                val defaultPitchDegrees = Math.toDegrees(
+                    asin((defaultOffset.y / defaultRadius).toDouble())
+                ).toFloat()
+                val defaultYawDegrees = Math.toDegrees(
+                    atan2(defaultOffset.x.toDouble(), defaultOffset.z.toDouble())
+                ).toFloat()
+                OrbitCameraState(
+                    target = worldCenter,
+                    baseYawDegrees = defaultYawDegrees,
+                    basePitchDegrees = defaultPitchDegrees,
+                    baseRadius = defaultRadius
+                ).also { state -> cameraNode.transform = state.getTransform() }
+            }
+            var pitchSliderFraction by remember(orbitCameraState) {
+                mutableFloatStateOf(pitchToSliderFraction(orbitCameraState.pitchDegrees))
+            }
+
+            fun applyPitchFraction(fraction: Float) {
+                pitchSliderFraction = fraction
+                orbitCameraState.setPitchDegrees(sliderFractionToPitch(fraction))
+                cameraNode.transform = orbitCameraState.getTransform()
+                Log.d("Model3DViewer", "elevation pitch=${orbitCameraState.pitchDegrees}")
+            }
+
+            Box(modifier = Modifier.fillMaxSize()) {
+                Scene(
+                    modifier = Modifier.fillMaxSize(),
+                    engine = engine,
+                    modelLoader = modelLoader,
+                    environmentLoader = environmentLoader,
+                    environment = environment,
+                    cameraNode = cameraNode,
+                    childNodes = rememberNodes { add(modelNode) },
+                    cameraManipulator = orbitCameraState
+                )
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight(0.55f)
+                        .padding(end = 6.dp, top = 12.dp, bottom = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "Top",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    cameraNode.position = worldCenter + Position(x = 0.9f, y = 0.6f, z = 1.6f)
-                    cameraNode.lookAt(worldCenter)
+                    VerticalElevationSlider(
+                        value = pitchSliderFraction,
+                        onValueChange = ::applyPitchFraction,
+                        modifier = Modifier
+                            .weight(1f)
+                            .width(28.dp)
+                    )
+                    Text(
+                        "Low",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                FilledTonalIconButton(
+                    onClick = {
+                        orbitCameraState.reset()
+                        cameraNode.transform = orbitCameraState.getTransform()
+                        pitchSliderFraction = pitchToSliderFraction(orbitCameraState.pitchDegrees)
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(16.dp)
+                ) {
+                    Icon(Icons.Outlined.RestartAlt, contentDescription = "Reset view")
                 }
             }
-            Scene(
-                modifier = Modifier.fillMaxSize(),
-                engine = engine,
-                modelLoader = modelLoader,
-                environmentLoader = environmentLoader,
-                environment = environment,
-                cameraNode = cameraNode,
-                childNodes = rememberNodes { add(modelNode) },
-                cameraManipulator = rememberCameraManipulator(cameraNode.worldPosition)
-            )
         }
     }
+}
+
+internal fun pitchToSliderFraction(pitchDegrees: Float): Float =
+    ((pitchDegrees - OrbitCameraState.PITCH_MIN_DEGREES) /
+        (OrbitCameraState.PITCH_MAX_DEGREES - OrbitCameraState.PITCH_MIN_DEGREES))
+        .coerceIn(0f, 1f)
+
+internal fun sliderFractionToPitch(fraction: Float): Float =
+    OrbitCameraState.PITCH_MIN_DEGREES +
+        fraction.coerceIn(0f, 1f) * (OrbitCameraState.PITCH_MAX_DEGREES - OrbitCameraState.PITCH_MIN_DEGREES)
+
+/**
+ * A Material 3 [Slider] rotated into a vertical track (no vertical slider exists in Material 3).
+ * [value]/[onValueChange] follow the same 0f..1f contract as [Slider]; 1f renders at the TOP of
+ * the composable's height and 0f at the bottom, matching the "Top" / "Low" labels this is placed
+ * between (see [Model3DViewerContent]).
+ */
+@Composable
+private fun VerticalElevationSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Slider(
+        // The rotate-into-vertical trick below places the underlying horizontal Slider's value=0
+        // end at the visual TOP of the track and value=1 at the visual BOTTOM (verified on
+        // device - it does not match the more commonly cited orientation for this snippet), so
+        // value is inverted here to keep this composable's own contract ("1f renders at the top")
+        // correct without leaking that detail to callers.
+        value = 1f - value,
+        onValueChange = { onValueChange(1f - it) },
+        modifier = modifier
+            .graphicsLayer {
+                rotationZ = 270f
+                transformOrigin = TransformOrigin(0f, 0f)
+            }
+            .layout { measurable, constraints ->
+                // Swap width/height constraints before measuring the (visually unrotated) child,
+                // then report the rotated footprint back to the parent - the standard technique
+                // for turning a horizontal-only Slider into a vertical one in Compose.
+                val placeable = measurable.measure(
+                    Constraints(
+                        minWidth = constraints.minHeight,
+                        maxWidth = constraints.maxHeight,
+                        minHeight = constraints.minWidth,
+                        maxHeight = constraints.maxWidth
+                    )
+                )
+                layout(placeable.height, placeable.width) {
+                    placeable.place(-placeable.width, 0)
+                }
+            }
+    )
 }

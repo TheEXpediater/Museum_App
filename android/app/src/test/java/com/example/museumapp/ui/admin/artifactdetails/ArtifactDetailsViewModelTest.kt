@@ -430,6 +430,116 @@ class ArtifactDetailsViewModelTest {
         assertEquals(Model3DStatus.None, viewModel.uiState.value.model3D?.status)
     }
 
+    // --- "3D Preview Ready" modal event ------------------------------------------------------
+
+    @Test
+    fun activeJobTransitioningToPendingReviewEmitsPreviewReadyEventOnce() = runTest {
+        val repository = FakeAdminRepository()
+        repository.model3DStateResult = RepositoryResult.Success(
+            Model3DStateDto(status = Model3DStatus.AiGenerating, activeJobId = "ai-job-1")
+        )
+        repository.get3DStatusResult = RepositoryResult.Success(
+            Model3DStatusResponseDto(
+                state = Model3DStateDto(
+                    status = Model3DStatus.PendingReview,
+                    draftVersion = 2,
+                    draftSha256 = "abc123",
+                    draftModelUrl = "http://testserver/uploads/models3d/artifact-1/model-v2.glb",
+                    draftGenerationMethod = "ai_local"
+                )
+            )
+        )
+
+        val viewModel = ArtifactDetailsViewModel(repository, "artifact-1")
+        advanceUntilIdle()
+
+        val event = viewModel.uiState.value.previewReadyEvent
+        assertNotNull(event)
+        assertEquals(2, event!!.version)
+        assertEquals("abc123", event.sha256)
+        assertEquals("http://testserver/uploads/models3d/artifact-1/model-v2.glb", event.url)
+        assertEquals("ai_local", event.generationMethod)
+        // Polling must have actually stopped at pending_review - there is no path left that could
+        // observe (and re-fire on) another "still pending_review" tick.
+        assertFalse(viewModel.uiState.value.isPolling)
+        assertEquals(1, repository.get3DStatusCalls)
+    }
+
+    @Test
+    fun pendingReviewAlreadyPresentOnInitialLoadDoesNotShowPreviewReadyEvent() = runTest {
+        val repository = FakeAdminRepository()
+        repository.model3DStateResult = RepositoryResult.Success(
+            Model3DStateDto(status = Model3DStatus.PendingReview, draftVersion = 1, draftSha256 = "old-draft")
+        )
+
+        val viewModel = ArtifactDetailsViewModel(repository, "artifact-1")
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.previewReadyEvent)
+        assertFalse(viewModel.uiState.value.isPolling)
+        assertEquals(0, repository.get3DStatusCalls)
+    }
+
+    @Test
+    fun failedGenerationDoesNotEmitPreviewReadyEvent() = runTest {
+        val repository = FakeAdminRepository()
+        repository.model3DStateResult = RepositoryResult.Success(
+            Model3DStateDto(status = Model3DStatus.Queued, activeJobId = "job-1")
+        )
+        repository.get3DStatusResult = RepositoryResult.Success(
+            Model3DStatusResponseDto(state = Model3DStateDto(status = Model3DStatus.Failed, failureMessage = "no usable geometry"))
+        )
+
+        val viewModel = ArtifactDetailsViewModel(repository, "artifact-1")
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.previewReadyEvent)
+        assertEquals(Model3DStatus.Failed, viewModel.uiState.value.model3D?.status)
+    }
+
+    @Test
+    fun interruptedGenerationDoesNotEmitPreviewReadyEvent() = runTest {
+        val repository = FakeAdminRepository()
+        repository.model3DStateResult = RepositoryResult.Success(
+            Model3DStateDto(status = Model3DStatus.AiQueued, activeJobId = "ai-job-1")
+        )
+        repository.get3DStatusResult = RepositoryResult.Success(
+            Model3DStatusResponseDto(state = Model3DStateDto(status = Model3DStatus.Interrupted))
+        )
+
+        val viewModel = ArtifactDetailsViewModel(repository, "artifact-1")
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.previewReadyEvent)
+        assertEquals(Model3DStatus.Interrupted, viewModel.uiState.value.model3D?.status)
+    }
+
+    @Test
+    fun consumePreviewReadyEventClearsItWithoutTouchingTheDraft() = runTest {
+        val repository = FakeAdminRepository()
+        repository.model3DStateResult = RepositoryResult.Success(
+            Model3DStateDto(status = Model3DStatus.AiGenerating, activeJobId = "ai-job-1")
+        )
+        repository.get3DStatusResult = RepositoryResult.Success(
+            Model3DStatusResponseDto(
+                state = Model3DStateDto(status = Model3DStatus.PendingReview, draftVersion = 3, draftSha256 = "sha-3")
+            )
+        )
+
+        val viewModel = ArtifactDetailsViewModel(repository, "artifact-1")
+        advanceUntilIdle()
+        assertNotNull(viewModel.uiState.value.previewReadyEvent)
+
+        // "Review Later": dismiss only the modal - never Accept, Reject, or drop the draft.
+        viewModel.consumePreviewReadyEvent()
+
+        assertNull(viewModel.uiState.value.previewReadyEvent)
+        assertEquals(Model3DStatus.PendingReview, viewModel.uiState.value.model3D?.status)
+        assertEquals(3, viewModel.uiState.value.model3D?.draftVersion)
+        assertEquals(0, repository.accept3DModelCalls)
+        assertEquals(0, repository.reject3DModelCalls)
+    }
+
     @Test
     fun getStatusErrorDuringPollingSurfacesAsModel3DError() = runTest {
         val repository = FakeAdminRepository()
