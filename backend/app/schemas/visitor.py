@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import re
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
@@ -176,6 +177,13 @@ class StudentProfile(BaseModel):
     course: str
     email: EmailStr
     role: str = "student"
+
+
+class StudentRegistrationResponse(BaseModel):
+    id: str
+    student_id: str
+    status: Literal["pending"] = "pending"
+    message: str = "Your student account has been submitted for approval."
 
 
 class VisitorTokenResponse(BaseModel):

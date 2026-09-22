@@ -1,5 +1,8 @@
 package com.example.museumapp.data.api
 
+import com.example.museumapp.data.model.AdminStudentDetailDto
+import com.example.museumapp.data.model.AdminStudentListItemDto
+import com.example.museumapp.data.model.AdminStudentStatusUpdateRequestDto
 import com.example.museumapp.data.model.AiHealthResponse
 import com.example.museumapp.data.model.AiIndexAllResponse
 import com.example.museumapp.data.model.AiIndexResultResponse
@@ -33,6 +36,7 @@ import com.example.museumapp.data.model.PublicHomeResponseDto
 import com.example.museumapp.data.model.RecognitionResponseDto
 import com.example.museumapp.data.model.StudentLoginRequestDto
 import com.example.museumapp.data.model.StudentRegisterRequestDto
+import com.example.museumapp.data.model.StudentRegistrationResponseDto
 import com.example.museumapp.data.model.UserDto
 import com.example.museumapp.data.model.VisitorLogoutResponseDto
 import com.example.museumapp.data.model.VisitorMeResponseDto
@@ -70,7 +74,7 @@ interface AdminApiService {
     suspend fun createGuestSession(@Body request: GuestSessionRequestDto): VisitorTokenResponseDto
 
     @POST("api/v1/student/register")
-    suspend fun registerStudent(@Body request: StudentRegisterRequestDto): VisitorTokenResponseDto
+    suspend fun registerStudent(@Body request: StudentRegisterRequestDto): StudentRegistrationResponseDto
 
     @POST("api/v1/student/login")
     suspend fun loginStudent(@Body request: StudentLoginRequestDto): VisitorTokenResponseDto
@@ -125,6 +129,21 @@ interface AdminApiService {
 
     @GET("api/v1/admin/dashboard")
     suspend fun dashboardSummary(): DashboardSummaryResponse
+
+    @GET("api/v1/admin/students")
+    suspend fun listStudentAccounts(
+        @Query("status") status: String,
+        @Query("search") search: String?
+    ): List<AdminStudentListItemDto>
+
+    @GET("api/v1/admin/students/{studentId}")
+    suspend fun getStudentAccount(@Path("studentId") studentId: String): AdminStudentDetailDto
+
+    @PATCH("api/v1/admin/students/{studentId}/status")
+    suspend fun updateStudentAccountStatus(
+        @Path("studentId") studentId: String,
+        @Body request: AdminStudentStatusUpdateRequestDto
+    ): AdminStudentDetailDto
 
     @GET("api/v1/artifacts")
     suspend fun listArtifacts(

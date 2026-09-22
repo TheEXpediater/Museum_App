@@ -106,10 +106,34 @@ def student_payload(**overrides) -> dict:
     return payload
 
 
-def create_student(client: TestClient, **overrides) -> tuple[dict, dict[str, str]]:
+def create_student(client: TestClient, **overrides) -> dict:
     response = client.post("/api/v1/student/register", json=student_payload(**overrides))
     assert response.status_code == 201, response.text
-    body = response.json()
+    return response.json()
+
+
+def activate_student(client: TestClient, student_id: str) -> dict:
+    response = client.patch(
+        f"/api/v1/admin/students/{student_id}/status",
+        json={"account_status": "active"},
+        headers=admin_headers(client),
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def create_active_student(client: TestClient, **overrides) -> tuple[dict, dict[str, str]]:
+    payload = student_payload(**overrides)
+    response = client.post("/api/v1/student/register", json=payload)
+    assert response.status_code == 201, response.text
+    registration = response.json()
+    activate_student(client, registration["id"])
+    login = client.post(
+        "/api/v1/student/login",
+        json={"identifier": payload["student_id"], "password": payload["password"]},
+    )
+    assert login.status_code == 200, login.text
+    body = login.json()
     return body, {"Authorization": f"Bearer {body['access_token']}"}
 
 
@@ -184,9 +208,36 @@ def test_guest_session_creation_and_validation(test_context):
     assert other.json()["profile"]["relationship_detail"] == "Community partner"
 
 
-def test_student_registration_login_and_password_hashing(test_context):
+def test_student_registration_is_pending_and_hashes_password(test_context):
     client, database, _, _ = test_context
-    body, headers = create_student(client)
+    body = create_student(client)
+
+    assert body["status"] == "pending"
+    assert body["student_id"] == "PSAU-2026-001"
+    assert "message" in body
+    assert "access_token" not in body
+    assert "password_hash" not in str(body)
+
+    stored = database.students.find_one({"student_id_normalized": "PSAU-2026-001"})
+    assert stored is not None
+    assert stored["account_status"] == "pending"
+    assert stored["is_active"] is False
+    assert stored["last_login_at"] is None
+    assert stored["password_hash"] != "Student123"
+    assert verify_password("Student123", stored["password_hash"])
+
+    # A pending account cannot log in yet, even with the correct password.
+    pending_login = client.post(
+        "/api/v1/student/login",
+        json={"identifier": "psau-2026-001", "password": "Student123"},
+    )
+    assert pending_login.status_code == 403
+    assert "awaiting administrator approval" in pending_login.json()["detail"]
+
+
+def test_activated_student_can_login_by_id_or_email_and_updates_last_login(test_context):
+    client, database, _, _ = test_context
+    body, headers = create_active_student(client)
 
     assert body["account_type"] == "student"
     assert body["profile"]["student_id"] == "PSAU-2026-001"
@@ -196,16 +247,7 @@ def test_student_registration_login_and_password_hashing(test_context):
 
     stored = database.students.find_one({"student_id_normalized": "PSAU-2026-001"})
     assert stored is not None
-    assert stored["password_hash"] != "Student123"
-    assert verify_password("Student123", stored["password_hash"])
-    assert "password_hash" not in str(body)
-
-    by_student_id = client.post(
-        "/api/v1/student/login",
-        json={"identifier": "psau-2026-001", "password": "Student123"},
-    )
-    assert by_student_id.status_code == 200
-    assert by_student_id.json()["profile"]["student_id"] == "PSAU-2026-001"
+    assert stored["last_login_at"] is not None
 
     by_email = client.post(
         "/api/v1/student/login",
@@ -252,16 +294,25 @@ def test_student_duplicate_and_password_validation(test_context):
 def test_invalid_student_login_is_safe(test_context):
     client, _, _, _ = test_context
     create_student(client)
-    response = client.post("/api/v1/student/login", json={"identifier": "PSAU-2026-001", "password": "wrong"})
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid student ID, email, or password."
-    assert "password_hash" not in response.text
+
+    # Wrong password on a still-pending account must stay a generic 401 - the
+    # password check runs before the status is ever inspected, so a bad
+    # password never leaks that the account exists or what state it is in.
+    wrong_password = client.post("/api/v1/student/login", json={"identifier": "PSAU-2026-001", "password": "wrong"})
+    assert wrong_password.status_code == 401
+    assert wrong_password.json()["detail"] == "Invalid student ID, email, or password."
+    assert "password_hash" not in wrong_password.text
+
+    # Correct password on a still-pending account is a distinct, non-generic 403.
+    pending = client.post("/api/v1/student/login", json={"identifier": "PSAU-2026-001", "password": "Student123"})
+    assert pending.status_code == 403
+    assert "awaiting administrator approval" in pending.json()["detail"]
 
 
 def test_role_boundaries_for_admin_visitor_and_recognition(test_context, monkeypatch):
     client, database, _, _ = test_context
     _, guest_headers = create_guest(client)
-    _, student_headers = create_student(client)
+    _, student_headers = create_active_student(client)
 
     assert client.get("/api/v1/admin/dashboard", headers=guest_headers).status_code == 403
     assert client.get("/api/v1/admin/dashboard", headers=student_headers).status_code == 403
@@ -330,7 +381,7 @@ def test_expired_tokens_and_role_tampering_are_rejected(test_context):
     )
     assert client.get("/api/v1/visitor/me", headers={"Authorization": f"Bearer {expired_guest_token}"}).status_code == 401
 
-    student, _ = create_student(client)
+    student, _ = create_active_student(client)
     expired_student_token = jwt.encode(
         {
             "sub": student["profile"]["id"],
@@ -346,6 +397,159 @@ def test_expired_tokens_and_role_tampering_are_rejected(test_context):
 
     tampered_role_token, _ = create_access_token(student["profile"]["id"], student["profile"]["email"], "admin", settings)
     assert client.get("/api/v1/admin/dashboard", headers={"Authorization": f"Bearer {tampered_role_token}"}).status_code == 401
+
+
+def test_admin_can_list_and_search_students_and_non_admin_is_rejected(test_context):
+    client, _, _, _ = test_context
+    pending = create_student(client)
+    active_body, _ = create_active_student(client, student_id="PSAU-2026-002", email="active@example.com")
+    _, guest_headers = create_guest(client)
+
+    assert client.get("/api/v1/admin/students", headers=guest_headers).status_code == 403
+    assert client.get("/api/v1/admin/students").status_code == 401
+
+    headers = admin_headers(client)
+    default_list = client.get("/api/v1/admin/students", headers=headers)
+    assert default_list.status_code == 200
+    assert [item["student_id"] for item in default_list.json()] == [pending["student_id"]]
+
+    active_list = client.get("/api/v1/admin/students", params={"status": "active"}, headers=headers)
+    assert [item["student_id"] for item in active_list.json()] == [active_body["profile"]["student_id"]]
+
+    all_list = client.get("/api/v1/admin/students", params={"status": "all"}, headers=headers)
+    assert len(all_list.json()) == 2
+
+    search = client.get("/api/v1/admin/students", params={"status": "all", "search": "Reyes"}, headers=headers)
+    assert len(search.json()) == 2
+    for item in default_list.json() + active_list.json():
+        assert "password_hash" not in item
+
+
+def test_admin_student_detail_hides_password_hash(test_context):
+    client, _, _, _ = test_context
+    registration = create_student(client)
+    headers = admin_headers(client)
+
+    response = client.get(f"/api/v1/admin/students/{registration['id']}", headers=headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["account_status"] == "pending"
+    assert body["student_id"] == registration["student_id"]
+    assert "password_hash" not in body
+    assert "password_hash" not in response.text
+
+
+def test_admin_activate_deactivate_reactivate_lifecycle(test_context):
+    client, database, _, _ = test_context
+    registration = create_student(client)
+    headers = admin_headers(client)
+    payload = student_payload()
+
+    # Still pending: login is rejected.
+    still_pending = client.post(
+        "/api/v1/student/login",
+        json={"identifier": payload["student_id"], "password": payload["password"]},
+    )
+    assert still_pending.status_code == 403
+
+    # Admin activates: student can now log in, and last_login_at updates.
+    activated = activate_student(client, registration["id"])
+    assert activated["account_status"] == "active"
+    assert activated["approved_at"] is not None
+
+    login = client.post(
+        "/api/v1/student/login",
+        json={"identifier": payload["student_id"], "password": payload["password"]},
+    )
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    stored_after_login = database.students.find_one({"student_id_normalized": "PSAU-2026-001"})
+    assert stored_after_login["last_login_at"] is not None
+
+    # Admin deactivates: the *existing* token immediately stops working, and login is rejected.
+    deactivate = client.patch(
+        f"/api/v1/admin/students/{registration['id']}/status",
+        json={"account_status": "inactive"},
+        headers=headers,
+    )
+    assert deactivate.status_code == 200
+    assert deactivate.json()["account_status"] == "inactive"
+
+    assert client.get("/api/v1/visitor/me", headers={"Authorization": f"Bearer {token}"}).status_code == 401
+
+    rejected_login = client.post(
+        "/api/v1/student/login",
+        json={"identifier": payload["student_id"], "password": payload["password"]},
+    )
+    assert rejected_login.status_code == 403
+    assert "inactive" in rejected_login.json()["detail"].lower()
+
+    # Admin reactivates: login works again, and the original approval timestamp is preserved.
+    reactivated = client.patch(
+        f"/api/v1/admin/students/{registration['id']}/status",
+        json={"account_status": "active"},
+        headers=headers,
+    )
+    assert reactivated.status_code == 200
+    assert reactivated.json()["account_status"] == "active"
+    assert reactivated.json()["approved_at"] == activated["approved_at"]
+
+    relogin = client.post(
+        "/api/v1/student/login",
+        json={"identifier": payload["student_id"], "password": payload["password"]},
+    )
+    assert relogin.status_code == 200
+
+
+def test_legacy_student_records_without_account_status_still_work(test_context):
+    client, database, _, _ = test_context
+    now = utc_now()
+
+    def insert_legacy_student(student_id: str, email: str, is_active: bool) -> dict:
+        document = {
+            "student_id": student_id,
+            "student_id_normalized": student_id.upper(),
+            "first_name": "Legacy",
+            "last_name": "Student",
+            "display_name": "Legacy Student",
+            "year_level": "Third Year",
+            "course": "Bachelor of Science in Agriculture",
+            "email": email,
+            "email_normalized": email.lower(),
+            "password_hash": hash_password("LegacyPass123"),
+            "role": "student",
+            "is_active": is_active,
+            "created_at": now,
+            "updated_at": now,
+            "last_login_at": None,
+        }
+        inserted_id = database.students.insert_one(document).inserted_id
+        return str(inserted_id)
+
+    active_id = insert_legacy_student("PSAU-LEGACY-ACTIVE", "legacy.active@example.com", True)
+    inactive_id = insert_legacy_student("PSAU-LEGACY-INACTIVE", "legacy.inactive@example.com", False)
+
+    headers = admin_headers(client)
+    active_detail = client.get(f"/api/v1/admin/students/{active_id}", headers=headers)
+    assert active_detail.status_code == 200
+    assert active_detail.json()["account_status"] == "active"
+
+    inactive_detail = client.get(f"/api/v1/admin/students/{inactive_id}", headers=headers)
+    assert inactive_detail.status_code == 200
+    assert inactive_detail.json()["account_status"] == "inactive"
+
+    active_login = client.post(
+        "/api/v1/student/login",
+        json={"identifier": "PSAU-LEGACY-ACTIVE", "password": "LegacyPass123"},
+    )
+    assert active_login.status_code == 200
+
+    inactive_login = client.post(
+        "/api/v1/student/login",
+        json={"identifier": "PSAU-LEGACY-INACTIVE", "password": "LegacyPass123"},
+    )
+    assert inactive_login.status_code == 403
+    assert "inactive" in inactive_login.json()["detail"].lower()
 
 
 def test_public_content_filters_and_museum_information(test_context):

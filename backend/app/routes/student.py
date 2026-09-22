@@ -6,10 +6,19 @@ from pymongo.errors import DuplicateKeyError
 from app.auth.jwt_handler import create_access_token
 from app.auth.password import hash_password, verify_password
 from app.repositories import visitor_repository
-from app.schemas.visitor import StudentLoginRequest, StudentProfile, StudentRegisterRequest, VisitorTokenResponse
+from app.schemas.visitor import (
+    StudentLoginRequest,
+    StudentProfile,
+    StudentRegisterRequest,
+    StudentRegistrationResponse,
+    VisitorTokenResponse,
+)
 
 
 router = APIRouter(prefix="/student", tags=["Student"])
+
+PENDING_LOGIN_MESSAGE = "Your student account is awaiting administrator approval. Please allow up to 24 hours for review."
+INACTIVE_LOGIN_MESSAGE = "Your student account is inactive. Please contact the museum administrator."
 
 
 def student_profile(document: dict) -> StudentProfile:
@@ -42,8 +51,8 @@ def _duplicate_response(field: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A student account with this email already exists.")
 
 
-@router.post("/register", response_model=VisitorTokenResponse, status_code=status.HTTP_201_CREATED)
-def register_student(payload: StudentRegisterRequest, request: Request) -> VisitorTokenResponse:
+@router.post("/register", response_model=StudentRegistrationResponse, status_code=status.HTTP_201_CREATED)
+def register_student(payload: StudentRegisterRequest, request: Request) -> StudentRegistrationResponse:
     _ensure_course_allowed(request, payload.course)
     duplicate = visitor_repository.student_duplicate_field(
         request.app.state.database,
@@ -75,12 +84,10 @@ def register_student(payload: StudentRegisterRequest, request: Request) -> Visit
         )
         raise _duplicate_response(duplicate or "email") from exc
 
-    token, expires_in = create_access_token(str(student["_id"]), student["email"], "student", request.app.state.settings)
-    return VisitorTokenResponse(
-        access_token=token,
-        expires_in=expires_in,
-        account_type="student",
-        profile=student_profile(student),
+    return StudentRegistrationResponse(
+        id=str(student["_id"]),
+        student_id=student["student_id"],
+        status="pending",
     )
 
 
@@ -89,11 +96,16 @@ def login_student(payload: StudentLoginRequest, request: Request) -> VisitorToke
     student = visitor_repository.find_student_by_id_or_email(request.app.state.database, payload.identifier)
     if (
         student is None
-        or not student.get("is_active", False)
         or student.get("role") != "student"
         or not verify_password(payload.password, student.get("password_hash", ""))
     ):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid student ID, email, or password.")
+
+    account_status = visitor_repository.normalize_account_status(student)
+    if account_status == "pending":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=PENDING_LOGIN_MESSAGE)
+    if account_status == "inactive":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=INACTIVE_LOGIN_MESSAGE)
 
     visitor_repository.update_student_last_login(request.app.state.database, student["_id"])
     student = request.app.state.database.students.find_one({"_id": student["_id"]}) or student

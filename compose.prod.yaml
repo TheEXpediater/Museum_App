@@ -1,0 +1,212 @@
+# Production Compose file for the Hostinger VPS deployment.
+#
+# Differences from the local compose.yaml (which is preserved and untouched):
+#   - MongoDB and Qdrant are NOT published to the host - internal Docker network only.
+#   - The backend does not publish :8000 to the host - Caddy reaches it over the Docker network.
+#   - Caddy terminates HTTPS for https://api.museuma7k9x3.tech and reverse-proxies to backend:8000.
+#   - No "frontend" (Android build) service - the APK is built on the developer workstation.
+#   - The "openclip" utility container stays profile-gated (ai-tools) and does not run by default;
+#     OpenCLIP itself runs inside the backend process via AI_WARMUP_ON_STARTUP, same as local dev.
+#
+# Run all commands from this file's directory (/opt/museum-app/deploy) so Docker Compose picks up
+# the sibling .env file automatically.
+
+name: museum_app_prod
+
+x-backend-environment: &backend-environment
+  APP_NAME: ${APP_NAME:-Museum Guide System}
+  APP_ENV: ${APP_ENV:-production}
+  MONGODB_URL: ${MONGODB_URL:-mongodb://mongodb:27017}
+  MONGODB_DATABASE: ${MONGODB_DATABASE:-museum_guide}
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set in deploy/.env}
+  JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+  JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+  GUEST_SESSION_EXPIRE_HOURS: ${GUEST_SESSION_EXPIRE_HOURS:-24}
+  UPLOAD_DIRECTORY: ${UPLOAD_DIRECTORY:-/app/uploads/images}
+  MAX_IMAGE_SIZE_MB: ${MAX_IMAGE_SIZE_MB:-10}
+  ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+  ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-Museum Administrator}
+  CORS_ORIGINS: ${CORS_ORIGINS:-https://api.museuma7k9x3.tech}
+  AI_ENABLED: ${AI_ENABLED:-true}
+  QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+  QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+  QDRANT_COLLECTION: ${QDRANT_COLLECTION:-artifact_images}
+  QDRANT_DISTANCE: ${QDRANT_DISTANCE:-cosine}
+  OPENCLIP_MODEL_NAME: ${OPENCLIP_MODEL_NAME:-ViT-B-32}
+  OPENCLIP_PRETRAINED: ${OPENCLIP_PRETRAINED:-laion2b_s34b_b79k}
+  OPENCLIP_DEVICE: ${OPENCLIP_DEVICE:-cpu}
+  AI_MODEL_DOWNLOAD_ALLOWED: ${AI_MODEL_DOWNLOAD_ALLOWED:-true}
+  AI_WARMUP_ON_STARTUP: ${AI_WARMUP_ON_STARTUP:-true}
+  AI_RECOGNITION_STRONG_THRESHOLD: ${AI_RECOGNITION_STRONG_THRESHOLD:-0.45}
+  AI_RECOGNITION_POSSIBLE_THRESHOLD: ${AI_RECOGNITION_POSSIBLE_THRESHOLD:-0.32}
+  AI_RECOGNITION_MAX_RESULTS: ${AI_RECOGNITION_MAX_RESULTS:-5}
+  AI_RECOGNITION_VECTOR_CANDIDATES: ${AI_RECOGNITION_VECTOR_CANDIDATES:-25}
+  MODEL_3D_ENABLED: ${MODEL_3D_ENABLED:-true}
+  COLMAP_USE_GPU: ${COLMAP_USE_GPU:-false}
+  AI_3D_ENABLED: ${AI_3D_ENABLED:-false}
+  LOCAL_AI_3D_ENABLED: ${LOCAL_AI_3D_ENABLED:-true}
+  HF_HOME: ${HF_HOME:-/models/huggingface}
+  TORCH_HOME: ${TORCH_HOME:-/models/torch}
+  XDG_CACHE_HOME: ${XDG_CACHE_HOME:-/models/cache}
+  # Delegates Quick AI 3D generation to the isolated triposr-worker container instead of a local
+  # subprocess (see app/services/model3d/triposr_worker_client.py) - the heavy PyTorch/
+  # transformers stack stays out of this image entirely. Both paths must point at the SAME
+  # shared volume (museum_triposr_jobs) for the backend to read the worker's GLB output.
+  TRIPOSR_WORKER_URL: ${TRIPOSR_WORKER_URL:-http://triposr-worker:8100}
+  TRIPOSR_WORKER_JOBS_DIR: ${TRIPOSR_WORKER_JOBS_DIR:-/triposr-jobs}
+  TRIPOSR_TIMEOUT_SECONDS: ${TRIPOSR_TIMEOUT_SECONDS:-1200}
+  # CPU-safe values, evidence-based (see migration/README-triposr-3d.md): the code defaults below
+  # (2048/192/1024/true) are tuned for a 4GB-VRAM GPU and OOM-killed a real CPU generation job at
+  # ~7.7GB RSS on this 8GB server. These are the SAME "reduced" fallback numbers the existing GPU
+  # OOM-retry ladder already uses (see triposr_provider._build_attempt_plan's gpu-reduced profile),
+  # reused here as the CPU baseline rather than inventing new values.
+  TRIPOSR_CHUNK_SIZE: ${TRIPOSR_CHUNK_SIZE:-2048}
+  TRIPOSR_MC_RESOLUTION: ${TRIPOSR_MC_RESOLUTION:-192}
+  TRIPOSR_TEXTURE_RESOLUTION: ${TRIPOSR_TEXTURE_RESOLUTION:-1024}
+  TRIPOSR_BAKE_TEXTURE: ${TRIPOSR_BAKE_TEXTURE:-true}
+  TRIPOSR_REMOVE_BACKGROUND: ${TRIPOSR_REMOVE_BACKGROUND:-true}
+
+services:
+  mongodb:
+    image: mongodb/mongodb-community-server:7.0-ubuntu2204
+    container_name: museum-guide-mongodb-prod
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-museum_guide}
+    volumes:
+      - museum_mongodb_data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          if [ -n "$${MONGO_INITDB_ROOT_USERNAME}" ]; then
+            mongosh --quiet -u "$${MONGO_INITDB_ROOT_USERNAME}" -p "$${MONGO_INITDB_ROOT_PASSWORD}" --authenticationDatabase admin --eval "db.adminCommand('ping').ok";
+          else
+            mongosh --quiet --eval "db.adminCommand('ping').ok";
+          fi
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  qdrant:
+    image: qdrant/qdrant:v1.18.0
+    container_name: museum-guide-qdrant-prod
+    volumes:
+      - museum_qdrant_data:/qdrant/storage
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/6333'"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  backend:
+    build:
+      context: /opt/museum-app/source
+      dockerfile: migration/Dockerfile.backend
+    container_name: museum-guide-backend-prod
+    environment:
+      <<: *backend-environment
+    volumes:
+      - museum_backend_uploads:/app/uploads
+      - museum_openclip_models:/models
+      - museum_openclip_embeddings:/embeddings
+      - museum_triposr_jobs:/triposr-jobs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=5).read()"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  triposr-worker:
+    build:
+      context: /opt/museum-app/source
+      dockerfile: migration/Dockerfile.triposr-worker
+    container_name: museum-guide-triposr-worker-prod
+    # No `ports:` - reachable only from other containers on the internal compose network
+    # (see TRIPOSR_WORKER_URL above), never published to the host or the internet.
+    environment:
+      TRIPOSR_TIMEOUT_SECONDS: ${TRIPOSR_TIMEOUT_SECONDS:-1200}
+      TRIPOSR_JOBS_ROOT: /triposr-jobs
+    volumes:
+      # Read-only: the worker only ever needs to read the admin's uploaded reconstruction
+      # photos, never write to uploads.
+      - museum_backend_uploads:/app/uploads:ro
+      - museum_triposr_jobs:/triposr-jobs
+      - museum_triposr_model_cache:/models/triposr-cache
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=5).read()"
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
+
+  openclip:
+    build:
+      context: /opt/museum-app/source
+      dockerfile: migration/Dockerfile.backend
+    container_name: museum-guide-openclip-prod
+    profiles:
+      - ai-tools
+    environment:
+      <<: *backend-environment
+    volumes:
+      - museum_backend_uploads:/app/uploads
+      - museum_openclip_models:/models
+      - museum_openclip_embeddings:/embeddings
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    command:
+      - sh
+      - -lc
+      - |
+        python -m scripts.check_ai_setup || true
+        echo "OpenCLIP utility container is ready. Use this service for AI checks and reindexing."
+        tail -f /dev/null
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: museum-guide-caddy-prod
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  museum_mongodb_data:
+  museum_qdrant_data:
+  museum_backend_uploads:
+  museum_openclip_models:
+  museum_openclip_embeddings:
+  museum_triposr_jobs:
+  museum_triposr_model_cache:
+  caddy_data:
+  caddy_config:

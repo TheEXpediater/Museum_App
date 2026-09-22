@@ -29,7 +29,7 @@ object VisitorAssets {
     const val NewsAnnouncements = "$Base/illustrations/news_announcements.webp"
     const val AppLogo = "$Base/icons/psau_museum_app_logo.webp"
     const val AiScanIcon = "$Base/icons/ai_scan_icon.webp"
-    const val ScanIcon = AiScanIcon
+    const val ScanIcon = "$Base/icons/scan_icon.webp"
     const val MuseumIcon = "$Base/icons/museum_icon.webp"
     const val ArtifactIcon = "$Base/icons/artifact_icon.webp"
     const val LocationIcon = "$Base/icons/location_icon.webp"
@@ -63,6 +63,7 @@ object VisitorAssets {
         NewsAnnouncements,
         AppLogo,
         AiScanIcon,
+        ScanIcon,
         MuseumIcon,
         ArtifactIcon,
         LocationIcon,

@@ -51,6 +51,7 @@ def ensure_indexes(database: Database) -> None:
     database.students.create_index([("student_id_normalized", ASCENDING)], unique=True, name="uniq_students_student_id")
     database.students.create_index([("email_normalized", ASCENDING)], unique=True, name="uniq_students_email")
     database.students.create_index([("is_active", ASCENDING)], name="idx_students_is_active")
+    database.students.create_index([("account_status", ASCENDING)], name="idx_students_account_status")
     database.students.create_index([("created_at", DESCENDING)], name="idx_students_created_at")
 
     database.guest_sessions.create_index([("expires_at", ASCENDING)], expireAfterSeconds=0, name="ttl_guest_sessions_expires_at")

@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -113,6 +115,18 @@ private fun ManualEntryContent(
                 enabled = addressInput.isNotBlank()
             ) {
                 Text("Connect")
+            }
+            HorizontalDivider()
+            Text(
+                "Or, if this device has internet access, connect to the hosted museum server instead of a laptop on this Wi-Fi:",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedButton(
+                onClick = { manager.connectHosted() },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Use Hosted Museum Server")
             }
         }
     }

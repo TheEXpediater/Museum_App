@@ -7,6 +7,9 @@ import com.example.museumapp.BuildConfig
 import com.example.museumapp.data.api.AdminApiService
 import com.example.museumapp.data.api.NetworkErrorMessages
 import com.example.museumapp.data.network.BackendConnectionManager
+import com.example.museumapp.data.model.AdminStudentDetailDto
+import com.example.museumapp.data.model.AdminStudentListItemDto
+import com.example.museumapp.data.model.AdminStudentStatusUpdateRequestDto
 import com.example.museumapp.data.model.AiHealthResponse
 import com.example.museumapp.data.model.AiIndexAllResponse
 import com.example.museumapp.data.model.AiIndexResultResponse
@@ -73,6 +76,9 @@ interface AdminRepositoryContract : RecognitionRepositoryContract {
     suspend fun logout()
     suspend fun currentAdmin(): RepositoryResult<UserDto>
     suspend fun dashboardSummary(): RepositoryResult<DashboardSummaryResponse>
+    suspend fun listStudentAccounts(status: String, search: String?): RepositoryResult<List<AdminStudentListItemDto>>
+    suspend fun getStudentAccount(studentId: String): RepositoryResult<AdminStudentDetailDto>
+    suspend fun updateStudentAccountStatus(studentId: String, accountStatus: String): RepositoryResult<AdminStudentDetailDto>
     suspend fun listArtifacts(
         page: Int,
         pageSize: Int,
@@ -163,6 +169,18 @@ class AdminRepository(
 
     override suspend fun dashboardSummary(): RepositoryResult<DashboardSummaryResponse> = safeApiCall {
         api.dashboardSummary()
+    }
+
+    override suspend fun listStudentAccounts(status: String, search: String?): RepositoryResult<List<AdminStudentListItemDto>> = safeApiCall {
+        api.listStudentAccounts(status, search?.takeIf { it.isNotBlank() })
+    }
+
+    override suspend fun getStudentAccount(studentId: String): RepositoryResult<AdminStudentDetailDto> = safeApiCall {
+        api.getStudentAccount(studentId)
+    }
+
+    override suspend fun updateStudentAccountStatus(studentId: String, accountStatus: String): RepositoryResult<AdminStudentDetailDto> = safeApiCall {
+        api.updateStudentAccountStatus(studentId, AdminStudentStatusUpdateRequestDto(accountStatus))
     }
 
     override suspend fun listArtifacts(

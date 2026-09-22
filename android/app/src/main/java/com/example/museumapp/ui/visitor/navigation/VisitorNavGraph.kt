@@ -12,6 +12,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.example.museumapp.data.repository.AdminRepository
 import com.example.museumapp.data.repository.VisitorRepository
 import com.example.museumapp.data.session.AdminSession
 import com.example.museumapp.data.session.VisitorSession
@@ -25,12 +26,14 @@ import com.example.museumapp.ui.visitor.onboarding.VisitorOnboardingScreen
 import com.example.museumapp.ui.visitor.scan.VisitorCameraScreen
 import com.example.museumapp.ui.visitor.settings.VisitorSettingsScreen
 import com.example.museumapp.ui.visitor.student.StudentLoginScreen
+import com.example.museumapp.ui.visitor.student.StudentRegistrationPendingScreen
 import com.example.museumapp.ui.visitor.student.StudentRegistrationScreen
 import kotlinx.coroutines.launch
 
 @Composable
 fun VisitorNavGraph(
     repository: VisitorRepository,
+    adminRepository: AdminRepository,
     startupDestination: StartupDestination,
     onAdminLogin: () -> Unit
 ) {
@@ -78,6 +81,7 @@ fun VisitorNavGraph(
         }
         composable(VisitorRoutes.Entry) {
             VisitorEntryScreen(
+                adminRepository = adminRepository,
                 onGuest = { navController.navigate(VisitorRoutes.GuestInfo) },
                 onStudentLogin = { navController.navigate(VisitorRoutes.StudentLogin) },
                 onStudentRegister = { navController.navigate(VisitorRoutes.StudentRegister) },
@@ -102,7 +106,20 @@ fun VisitorNavGraph(
             StudentRegistrationScreen(
                 repository = repository,
                 onBack = { navController.popBackStack() },
-                onComplete = { navController.navigateToVisitorHome() }
+                onComplete = {
+                    navController.navigate(VisitorRoutes.StudentRegisterPending) {
+                        popUpTo(VisitorRoutes.StudentRegister) { inclusive = true }
+                    }
+                }
+            )
+        }
+        composable(VisitorRoutes.StudentRegisterPending) {
+            StudentRegistrationPendingScreen(
+                onBackToSignIn = {
+                    navController.navigate(VisitorRoutes.StudentLogin) {
+                        popUpTo(VisitorRoutes.Entry)
+                    }
+                }
             )
         }
         composable(VisitorRoutes.Home) {
@@ -144,6 +161,7 @@ fun VisitorNavGraph(
             ) { padding, _ ->
                 VisitorSettingsScreen(
                     repository = repository,
+                    adminRepository = adminRepository,
                     padding = padding,
                     onLoggedOut = {
                         navController.navigate(VisitorRoutes.Entry) {

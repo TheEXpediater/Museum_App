@@ -40,6 +40,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.museumapp.data.repository.VisitorRepositoryContract
 import com.example.museumapp.ui.visitor.components.VisitorFormValidation
+import com.example.museumapp.ui.visitor.components.VisitorSignInLoadingDialog
 import com.example.museumapp.ui.visitor.components.VisitorSpacing
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,6 +56,10 @@ fun GuestInfoScreen(
 
     LaunchedEffect(uiState.isComplete) {
         if (uiState.isComplete) onComplete()
+    }
+
+    if (uiState.isLoading) {
+        VisitorSignInLoadingDialog(roleLabel = "Visitor")
     }
 
     Scaffold(

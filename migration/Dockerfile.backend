@@ -18,8 +18,7 @@ COPY backend/requirements-ai.txt /tmp/requirements-ai.txt
 
 RUN python -m pip install --upgrade pip \
     && pip install -r /tmp/requirements.txt \
-    && pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu \
-    && pip install torchvision==0.28.0 --no-deps \
+    && pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.pytorch.org/whl/cpu \
     && pip install open_clip_torch==3.3.0 qdrant-client==1.18.0
 
 COPY backend/ /app/
@@ -28,4 +27,8 @@ RUN mkdir -p /app/uploads/images /models /embeddings
 
 EXPOSE 8000
 
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers/--forwarded-allow-ips lets uvicorn trust X-Forwarded-Proto from the reverse
+# proxy (Caddy in production) so request.base_url reports "https" instead of "http" for
+# API-generated links (e.g. artifact image URLs). Harmless with no proxy in front (local dev):
+# uvicorn only honors these headers when they are actually present on the request.
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]

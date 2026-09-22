@@ -17,6 +17,17 @@ fun projectLocalProperty(name: String): String? {
     }
 }
 
+/**
+ * Release signing lives entirely outside version control: the keystore file is kept outside this
+ * repository, and this untracked keystore.properties (see .gitignore) is the only thing that
+ * points to it. When keystore.properties is absent (e.g. a fresh checkout on another machine),
+ * the release build type simply has no signing config and assembleRelease produces an unsigned
+ * APK instead of failing the build.
+ */
+val keystoreProperties: Properties? = rootProject.file("keystore.properties").takeIf { it.isFile }?.let { file ->
+    Properties().apply { file.inputStream().use(::load) }
+}
+
 fun normalizeApiBaseUrl(rawValue: String): String {
     val value = rawValue.trim()
     if (value.isEmpty()) {
@@ -82,6 +93,17 @@ android {
         )
     }
 
+    signingConfigs {
+        if (keystoreProperties != null) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             buildConfigField(
@@ -98,6 +120,9 @@ android {
         release {
             buildConfigField("String", "DEBUG_ADMIN_EMAIL", "\"\"")
             buildConfigField("String", "DEBUG_ADMIN_PASSWORD", "\"\"")
+            if (keystoreProperties != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

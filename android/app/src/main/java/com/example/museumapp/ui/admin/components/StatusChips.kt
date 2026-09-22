@@ -151,6 +151,35 @@ fun MatchLevelChip(level: String, modifier: Modifier = Modifier) {
     StatusChip(label = label, tone = tone, icon = icon, modifier = modifier)
 }
 
+fun studentAccountStatusLabel(status: String): String = when (status.lowercase()) {
+    "pending" -> "Pending"
+    "active" -> "Active"
+    "inactive" -> "Inactive"
+    else -> status.replaceFirstChar { it.uppercase() }
+}
+
+fun studentAccountStatusTone(status: String): StatusTone = when (status.lowercase()) {
+    "pending" -> StatusTone.Warning
+    "active" -> StatusTone.Good
+    "inactive" -> StatusTone.Neutral
+    else -> StatusTone.Neutral
+}
+
+@Composable
+fun StudentAccountStatusChip(status: String, modifier: Modifier = Modifier) {
+    StatusChip(
+        label = studentAccountStatusLabel(status),
+        tone = studentAccountStatusTone(status),
+        icon = when (status.lowercase()) {
+            "pending" -> Icons.Outlined.HourglassEmpty
+            "active" -> Icons.Outlined.CheckCircle
+            "inactive" -> Icons.Outlined.ErrorOutline
+            else -> Icons.Outlined.HelpOutline
+        },
+        modifier = modifier
+    )
+}
+
 @Composable
 fun HealthStatusChip(status: String, modifier: Modifier = Modifier) {
     StatusChip(

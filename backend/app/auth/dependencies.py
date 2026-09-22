@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.auth.jwt_handler import TokenError, TokenExpiredError, decode_access_token
 from app.config import Settings
+from app.repositories import visitor_repository
 from app.utils import utc_now
 from app.utils import to_object_id
 
@@ -77,7 +78,11 @@ def get_current_principal(
 
     if role == "student":
         student = database.students.find_one({"_id": object_id})
-        if student is None or not student.get("is_active", False) or student.get("role") != "student":
+        if (
+            student is None
+            or student.get("role") != "student"
+            or visitor_repository.normalize_account_status(student) != "active"
+        ):
             raise credentials_exception()
         return _attach_common_identity(student, "student")
 

@@ -66,6 +66,7 @@ private fun MuseumAppContent(container: AppContainer) {
             } else {
                 VisitorNavGraph(
                     repository = container.visitorRepository,
+                    adminRepository = container.adminRepository,
                     startupDestination = destination,
                     onAdminLogin = { adminLoginRequested = true }
                 )

@@ -1,0 +1,70 @@
+# Isolated CPU-only TripoSR worker. Kept out of the main backend image entirely: this is where
+# the ~2GB+ PyTorch/transformers/scikit-image stack lives, matching how local development already
+# keeps tools/triposr/.venv separate from backend/.venv - here that separation is a whole
+# container instead of a venv, because a container cannot receive a subprocess.Popen() call from
+# a sibling container. See migration/triposr-worker/worker_server.py for the (thin) HTTP shim
+# that replaces that in-process call; infer.py itself is completely unmodified.
+#
+# No CUDA, no NVIDIA packages: this VPS has no GPU. torch/torchvision are the CPU wheel build,
+# matching the version pair actually verified locally (pip freeze on tools/triposr/.venv), just
+# without the +cu124 local build.
+FROM python:3.13-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HOME=/models/triposr-cache/huggingface \
+    TORCH_HOME=/models/triposr-cache/torch \
+    XDG_CACHE_HOME=/models/triposr-cache/cache \
+    TRIPOSR_JOBS_ROOT=/triposr-jobs \
+    HOME=/models/triposr-cache
+
+# rembg caches its ~1GB background-removal model under $HOME/.rembg by its own convention (not
+# HF_HOME/TORCH_HOME) - pointing HOME at the persistent cache volume above means it downloads
+# once instead of on every job, same principle as the HF/torch caches.
+RUN mkdir -p /models/triposr-cache/.rembg
+
+WORKDIR /app
+
+# git: to vendor the pinned TripoSR source at build time (not committed to this repo - see
+# migration/README-triposr-worker.md). libgl1/libegl1/mesa: software OpenGL context for
+# moderngl's bake_texture step (no GPU on this host); infer.py already falls back to a
+# vertex-colored export if texture baking still fails for any reason, so this is best-effort,
+# not a hard requirement.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        git ca-certificates \
+        libgl1 libegl1 libglx-mesa0 libgl1-mesa-dri \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pinned to the exact commit vendored locally (see tools/triposr/repo's git remote/log).
+ARG TRIPOSR_COMMIT=107cefdc244c39106fa830359024f6a2f1c78871
+RUN git clone https://github.com/VAST-AI-Research/TripoSR.git /app/repo \
+    && cd /app/repo \
+    && git checkout ${TRIPOSR_COMMIT}
+
+# Apply the two local patches verified against a real GPU run (see file headers for why each is
+# needed) - full-file replacements, not a patch tool, so this never depends on `patch`/`git apply`
+# fuzzy-matching against a slightly different upstream revision.
+COPY migration/triposr-worker/isosurface.py /app/repo/tsr/models/isosurface.py
+COPY migration/triposr-worker/bake_texture.py /app/repo/tsr/bake_texture.py
+
+COPY tools/triposr/requirements.txt /tmp/requirements.txt
+
+# Install order matters (matches tools/triposr/requirements.txt's own header comment): torch/
+# torchvision first from the CPU wheel index, then the rest from PyPI. Versions match what is
+# actually verified working locally (pip freeze), not guessed.
+RUN pip install --upgrade pip \
+    && pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cpu \
+    && pip install -r /tmp/requirements.txt \
+    && pip install fastapi==0.115.6 "uvicorn[standard]==0.34.0"
+
+COPY tools/triposr/infer.py /app/infer.py
+COPY tools/triposr/preprocess_bg.py /app/preprocess_bg.py
+COPY migration/triposr-worker/worker_server.py /app/worker_server.py
+
+RUN mkdir -p /triposr-jobs /models/triposr-cache
+
+EXPOSE 8100
+
+CMD ["python", "-m", "uvicorn", "worker_server:app", "--host", "0.0.0.0", "--port", "8100"]

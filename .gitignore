@@ -2,6 +2,12 @@
 .env
 backend/.env
 
+# Release signing (the keystore itself lives outside the repo entirely; this only protects the
+# local properties file that points to it, in case it is ever created inside the repo by mistake)
+keystore.properties
+*.jks
+*.keystore
+
 # Python
 *.pyc
 __pycache__/

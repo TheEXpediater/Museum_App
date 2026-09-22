@@ -6,6 +6,7 @@ object VisitorRoutes {
     const val GuestInfo = "visitor_guest_info"
     const val StudentLogin = "visitor_student_login"
     const val StudentRegister = "visitor_student_register"
+    const val StudentRegisterPending = "visitor_student_register_pending"
     const val Home = "visitor_home"
     const val Artifacts = "visitor_artifacts"
     const val Scan = "visitor_scan"

@@ -29,6 +29,13 @@ data class StudentLoginRequestDto(
     val password: String
 )
 
+data class StudentRegistrationResponseDto(
+    val id: String,
+    @Json(name = "student_id") val studentId: String,
+    val status: String,
+    val message: String
+)
+
 data class VisitorProfileDto(
     val id: String,
     @Json(name = "first_name") val firstName: String? = null,

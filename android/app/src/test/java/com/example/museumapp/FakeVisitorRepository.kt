@@ -14,6 +14,7 @@ import com.example.museumapp.data.model.PublicArtifactListResponseDto
 import com.example.museumapp.data.model.PublicHomeResponseDto
 import com.example.museumapp.data.model.RecognitionResponseDto
 import com.example.museumapp.data.model.StudentRegisterRequestDto
+import com.example.museumapp.data.model.StudentRegistrationResponseDto
 import com.example.museumapp.data.model.VisitorMeResponseDto
 import com.example.museumapp.data.model.VisitorProfileDto
 import com.example.museumapp.data.model.VisitorTokenResponseDto
@@ -69,6 +70,15 @@ class FakeVisitorRepository : VisitorRepositoryContract {
         accountType = "guest",
         profile = VisitorProfileDto(id = "guest-1", firstName = "Maria", lastName = "Santos", displayName = "Maria Santos", role = "guest")
     )
+    var registerStudentResult: RepositoryResult<StudentRegistrationResponseDto> = RepositoryResult.Success(
+        StudentRegistrationResponseDto(
+            id = "student-1",
+            studentId = "PSAU-2026-001",
+            status = "pending",
+            message = "Your student account has been submitted for approval."
+        )
+    )
+    var loginStudentResult: RepositoryResult<VisitorTokenResponseDto>? = null
     var logoutCalled = false
     var onboardingCompletedValue: Boolean? = null
 
@@ -79,8 +89,9 @@ class FakeVisitorRepository : VisitorRepositoryContract {
 
     override suspend fun checkHealth(): RepositoryResult<HealthResponse> = healthResult
     override suspend fun createGuestSession(request: GuestSessionRequestDto): RepositoryResult<VisitorTokenResponseDto> = RepositoryResult.Success(tokenResponse)
-    override suspend fun registerStudent(request: StudentRegisterRequestDto): RepositoryResult<VisitorTokenResponseDto> = RepositoryResult.Success(tokenResponse.copy(accountType = "student"))
-    override suspend fun loginStudent(identifier: String, password: String): RepositoryResult<VisitorTokenResponseDto> = RepositoryResult.Success(tokenResponse.copy(accountType = "student"))
+    override suspend fun registerStudent(request: StudentRegisterRequestDto): RepositoryResult<StudentRegistrationResponseDto> = registerStudentResult
+    override suspend fun loginStudent(identifier: String, password: String): RepositoryResult<VisitorTokenResponseDto> =
+        loginStudentResult ?: RepositoryResult.Success(tokenResponse.copy(accountType = "student"))
     override suspend fun visitorMe(): RepositoryResult<VisitorMeResponseDto> = RepositoryResult.Success(VisitorMeResponseDto(tokenResponse.accountType, tokenResponse.profile))
     override suspend fun logout() {
         logoutCalled = true

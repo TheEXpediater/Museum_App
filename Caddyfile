@@ -1,0 +1,4 @@
+api.museuma7k9x3.tech {
+	reverse_proxy backend:8000
+	encode gzip
+}

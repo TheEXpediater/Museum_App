@@ -6,8 +6,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertHasClickAction
-import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -16,8 +16,13 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.example.museumapp.ui.navigation.AdminRoutes
+import com.example.museumapp.data.api.NetworkModule
+import com.example.museumapp.data.network.BackendConnectionManager
+import com.example.museumapp.data.repository.AdminRepository
+import com.example.museumapp.data.session.SessionManager
+import com.example.museumapp.ui.admin.login.AdminLoginDialogTestTags
 import com.example.museumapp.ui.visitor.navigation.VisitorRoutes
 import com.example.museumapp.ui.visitor.theme.VisitorTheme
 import org.junit.Assert.assertEquals
@@ -32,15 +37,22 @@ class VisitorEntryScreenTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun visitorEntryDisplaysGuestStudentAndAdministratorActions() {
+    fun visitorEntryDisplaysGuestStudentAndAdministratorAccess() {
         setEntryContent()
 
         composeRule.onNodeWithText("Guest").assertIsDisplayed()
         composeRule.onNodeWithText("Student").assertIsDisplayed()
-        composeRule.onNodeWithText("Administrator Login").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Sign in as Guest").assertHasClickAction()
         composeRule.onNodeWithContentDescription("Sign in as Student").assertHasClickAction()
-        composeRule.onNodeWithTag(VisitorEntryTestTags.AdminLogin).assertHasClickAction()
+        composeRule.onNodeWithTag(VisitorEntryTestTags.AdminAccess).assertHasClickAction()
+        composeRule.onNodeWithContentDescription("Administrator access").assertIsDisplayed()
+    }
+
+    @Test
+    fun largeAdministratorLoginButtonIsNoLongerPresent() {
+        setEntryContent()
+
+        composeRule.onNodeWithText("Administrator Login").assertDoesNotExist()
     }
 
     @Test
@@ -84,14 +96,31 @@ class VisitorEntryScreenTest {
     }
 
     @Test
-    fun administratorLoginActionUsesExistingAdminRoute() {
-        var route: String? = null
-        setEntryContent(onAdminLogin = { route = AdminRoutes.Login })
+    fun tappingAdministratorAccessOpensLoginModal() {
+        setEntryContent()
 
-        composeRule.onNodeWithTag(VisitorEntryTestTags.AdminLogin).performClick()
+        composeRule.onNodeWithTag(VisitorEntryTestTags.AdminAccess).performClick()
 
+        composeRule.onNodeWithTag(AdminLoginDialogTestTags.Root).assertIsDisplayed()
+        composeRule.onNodeWithTag(AdminLoginDialogTestTags.Email).assertIsDisplayed()
+        composeRule.onNodeWithTag(AdminLoginDialogTestTags.Password).assertIsDisplayed()
+        composeRule.onNodeWithTag(AdminLoginDialogTestTags.Submit).assertIsDisplayed()
+    }
+
+    @Test
+    fun cancelClosesAdministratorLoginModalAndLeavesEntryScreenInPlace() {
+        var adminLoginSuccessCalls = 0
+        setEntryContent(onAdminLogin = { adminLoginSuccessCalls += 1 })
+
+        composeRule.onNodeWithTag(VisitorEntryTestTags.AdminAccess).performClick()
+        composeRule.onNodeWithTag(AdminLoginDialogTestTags.Root).assertIsDisplayed()
+
+        composeRule.onNodeWithText("Cancel").performClick()
+
+        composeRule.onNodeWithTag(AdminLoginDialogTestTags.Root).assertDoesNotExist()
+        composeRule.onNodeWithTag(VisitorEntryTestTags.GuestCard).assertIsDisplayed()
         composeRule.runOnIdle {
-            assertEquals(AdminRoutes.Login, route)
+            assertEquals(0, adminLoginSuccessCalls)
         }
     }
 
@@ -133,7 +162,7 @@ class VisitorEntryScreenTest {
 
             composeRule.onNodeWithTag(VisitorEntryTestTags.GuestCard).assertIsDisplayed()
             composeRule.onNodeWithTag(VisitorEntryTestTags.StudentCard).assertIsDisplayed()
-            composeRule.onNodeWithTag(VisitorEntryTestTags.AdminLogin).assertIsDisplayed()
+            composeRule.onNodeWithTag(VisitorEntryTestTags.AdminAccess).assertIsDisplayed()
         }
     }
 
@@ -143,8 +172,7 @@ class VisitorEntryScreenTest {
 
         composeRule.onNodeWithText("Guest").assertIsDisplayed()
         composeRule.onNodeWithText("Student").assertIsDisplayed()
-        composeRule.onNodeWithText("Administrator Login").assertIsDisplayed()
-        composeRule.onNodeWithTag(VisitorEntryTestTags.AdminLogin).assertHasClickAction()
+        composeRule.onNodeWithTag(VisitorEntryTestTags.AdminAccess).assertHasClickAction()
     }
 
     @Test
@@ -171,6 +199,16 @@ class VisitorEntryScreenTest {
         onStudentRegister: () -> Unit = {},
         onAdminLogin: () -> Unit = {}
     ) {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val sessionManager = SessionManager(context)
+        val backendConnectionManager = BackendConnectionManager(context)
+        val adminRepository = AdminRepository(
+            NetworkModule.create(sessionManager, backendConnectionManager),
+            sessionManager,
+            context,
+            backendConnectionManager
+        )
+
         composeRule.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(
@@ -179,6 +217,7 @@ class VisitorEntryScreenTest {
                 VisitorTheme {
                     Box(Modifier.requiredSize(width = width, height = height)) {
                         VisitorEntryScreen(
+                            adminRepository = adminRepository,
                             onGuest = onGuest,
                             onStudentLogin = onStudentLogin,
                             onStudentRegister = onStudentRegister,

@@ -93,6 +93,22 @@ class Settings(BaseSettings):
     triposr_bake_texture: bool = Field(default=True, alias="TRIPOSR_BAKE_TEXTURE")
     triposr_cpu_fallback: bool = Field(default=True, alias="TRIPOSR_CPU_FALLBACK")
     triposr_timeout_seconds: int = Field(default=1200, alias="TRIPOSR_TIMEOUT_SECONDS")
+    # When set, TripoSR generation is delegated to an isolated triposr-worker container over the
+    # internal Docker network instead of a local subprocess (see
+    # app/services/model3d/triposr_worker_client.py) - used on the VPS, where the heavy
+    # PyTorch/transformers stack must stay out of the backend image. Empty (default) preserves the
+    # existing local-subprocess behavior unchanged, so local development needs no changes at all.
+    triposr_worker_url: str = Field(default="", alias="TRIPOSR_WORKER_URL")
+    # Only meaningful in worker mode: a directory that resolves to the SAME shared Docker volume
+    # in both the backend and triposr-worker containers, used to hand off the generated GLB
+    # without streaming file bytes over HTTP (see triposr_worker_client.py). Must be an absolute
+    # container path (e.g. /triposr-jobs), not the local tools/triposr/ layout.
+    triposr_worker_jobs_dir: str = Field(default="", alias="TRIPOSR_WORKER_JOBS_DIR")
+    # Background removal (rembg) downloads/loads a ~1GB ONNX segmentation model alongside
+    # TripoSR's own model - proven by a real OOM kill (dmesg, anon-rss ~7.7GB) on this VPS's 8GB
+    # RAM/4GB swap to be the tipping point over the safe ceiling. True (matching infer.py's own
+    # default) everywhere except where a deployment's real measured memory requires disabling it.
+    triposr_remove_background: bool = Field(default=True, alias="TRIPOSR_REMOVE_BACKGROUND")
 
     @field_validator(
         "mongodb_url",
@@ -280,6 +296,15 @@ class Settings(BaseSettings):
         if not path.is_absolute():
             path = REPO_ROOT_DIR / path
         return path.resolve()
+
+    @property
+    def triposr_worker_jobs_path(self) -> Path | None:
+        """The shared job-output volume mount, worker mode only. None (not a fabricated default)
+        when unset, so a misconfiguration fails loudly instead of silently writing/reading the
+        wrong directory - see triposr_worker_client.py."""
+        if not self.triposr_worker_jobs_dir:
+            return None
+        return Path(self.triposr_worker_jobs_dir).expanduser().resolve()
 
     @property
     def triposr_python_path(self) -> Path | None:

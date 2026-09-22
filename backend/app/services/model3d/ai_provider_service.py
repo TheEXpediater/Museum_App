@@ -3,8 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.config import Settings
-from app.services.model3d import triposr_provider
+from app.services.model3d import triposr_provider, triposr_worker_client
 from app.services.model3d.ai_provider import Ai3DProvider
+
+
+def _local_ai_3d_detect(settings: Settings):
+    """Picks the local-subprocess or isolated-worker TripoSR runtime check based on whether
+    TRIPOSR_WORKER_URL is configured. Both return the same TripoSrAvailability-shaped result
+    (available, message)."""
+    if settings.triposr_worker_url:
+        return triposr_worker_client.detect(settings)
+    return triposr_provider.detect(settings)
 
 
 @dataclass(frozen=True)
@@ -27,7 +36,7 @@ def detect_ai_availability(settings: Settings) -> Ai3DAvailability:
          relevant when explicitly configured with AI_3D_ENABLED + AI_3D_API_KEY.
     Whichever is available first is used; nothing here changes when the other is absent.
     """
-    local_availability = triposr_provider.detect(settings)
+    local_availability = _local_ai_3d_detect(settings)
     if local_availability.available:
         return Ai3DAvailability(available=True, provider=settings.local_ai_3d_provider, max_images=1, message=None)
 
@@ -57,7 +66,9 @@ def get_provider(settings: Settings) -> Ai3DProvider:
     """Raises Ai3DConfigurationError if AI 3D is disabled/unconfigured/unsupported - callers that
     already checked detect_ai_availability().available should not normally hit this, but routes
     still call it defensively (e.g. a race where the admin submits just as the config changes)."""
-    if triposr_provider.detect(settings).available:
+    if _local_ai_3d_detect(settings).available:
+        if settings.triposr_worker_url:
+            return triposr_worker_client.TripoSrWorkerProvider(settings)
         return triposr_provider.TripoSrProvider(settings)
     return _get_remote_provider(settings)
 

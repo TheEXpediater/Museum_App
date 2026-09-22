@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.SwitchAccount
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -34,11 +35,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.museumapp.data.repository.AdminRepository
 import com.example.museumapp.data.repository.VisitorRepositoryContract
 import com.example.museumapp.data.session.VisitorSession
+import com.example.museumapp.ui.admin.login.AdminLoginDialog
 import com.example.museumapp.ui.visitor.components.InfoRow
 import com.example.museumapp.ui.visitor.components.InitialsAvatar
 import com.example.museumapp.ui.visitor.components.MuseumSectionTitle
@@ -47,9 +51,14 @@ import com.example.museumapp.ui.visitor.components.VisitorAssets
 import com.example.museumapp.ui.visitor.components.VisitorCorners
 import com.example.museumapp.ui.visitor.components.VisitorSpacing
 
+object VisitorSettingsTestTags {
+    const val AdminAccess = "visitor_settings_admin_access"
+}
+
 @Composable
 fun VisitorSettingsScreen(
     repository: VisitorRepositoryContract,
+    adminRepository: AdminRepository,
     padding: PaddingValues,
     onLoggedOut: () -> Unit,
     onAdminLogin: () -> Unit,
@@ -58,6 +67,7 @@ fun VisitorSettingsScreen(
     val viewModel: VisitorSettingsViewModel = viewModel(factory = VisitorSettingsViewModel.factory(repository))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var confirmAction by remember { mutableStateOf<String?>(null) }
+    var showAdminLogin by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState.isLoggedOut) {
         if (uiState.isLoggedOut) onLoggedOut()
@@ -77,9 +87,31 @@ fun VisitorSettingsScreen(
         verticalArrangement = Arrangement.spacedBy(VisitorSpacing.Xl)
     ) {
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(VisitorSpacing.Sm)) {
-                Text("Visitor Settings", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.primary)
-                Text("Manage your visit profile and account access on this device.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(VisitorSpacing.Sm)
+                ) {
+                    Text("Visitor Settings", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.primary)
+                    Text("Manage your visit profile and account access on this device.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(
+                    onClick = { showAdminLogin = true },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag(VisitorSettingsTestTags.AdminAccess)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.AdminPanelSettings,
+                        contentDescription = "Administrator access",
+                        modifier = Modifier.size(26.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
         item { ProfileCard(uiState.session) }
@@ -104,12 +136,17 @@ fun VisitorSettingsScreen(
                 }
             }
         }
-        item {
-            TextButton(onClick = onAdminLogin, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Outlined.AdminPanelSettings, contentDescription = null)
-                Text("Administrator Login")
+    }
+
+    if (showAdminLogin) {
+        AdminLoginDialog(
+            repository = adminRepository,
+            onDismiss = { showAdminLogin = false },
+            onLoginSuccess = {
+                showAdminLogin = false
+                onAdminLogin()
             }
-        }
+        )
     }
 
     confirmAction?.let { action ->

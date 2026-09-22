@@ -21,6 +21,7 @@ import com.example.museumapp.ui.admin.login.AdminLoginScreen
 import com.example.museumapp.ui.admin.recognition.RecognitionScreen
 import com.example.museumapp.ui.admin.settings.SettingsScreen
 import com.example.museumapp.ui.admin.status.SystemStatusScreen
+import com.example.museumapp.ui.admin.students.AdminStudentAccountsScreen
 import com.example.museumapp.ui.visitor.model3d.AdminModel3DPreviewScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -31,6 +32,7 @@ object AdminRoutes {
     const val ArtifactList = "admin_artifact_list"
     const val ArtifactCategories = "admin_artifact_categories"
     const val AiRecognition = "admin_ai_recognition"
+    const val Students = "admin_students"
     const val Settings = "admin_settings"
     const val SystemStatus = "admin_system_status"
     const val ArtifactCreate = "admin_artifact_create"
@@ -149,6 +151,17 @@ fun AdminNavGraph(repository: AdminRepository, onBackToVisitor: () -> Unit) {
                             launchSingleTop = true
                         }
                     }
+                )
+            }
+        }
+        composable(AdminRoutes.Students) {
+            AdminShell(
+                currentRoute = currentRoute,
+                onNavigate = { route -> navController.navigateTopLevel(route) }
+            ) { padding ->
+                AdminStudentAccountsScreen(
+                    repository = repository,
+                    padding = padding
                 )
             }
         }

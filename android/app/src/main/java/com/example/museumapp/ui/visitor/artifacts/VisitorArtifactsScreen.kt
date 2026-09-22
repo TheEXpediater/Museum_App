@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -53,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -73,6 +75,11 @@ import com.example.museumapp.ui.visitor.components.VisitorSpacing
 import com.example.museumapp.ui.visitor.components.hasMuseumContent
 
 private val CatalogueMaxWidth = 980.dp
+private val ArtifactGridBreakpoint = 600.dp
+
+/** Normal phones get 1 column; tablet/large-width layouts (>= 600dp available width) get 2. */
+internal fun artifactGridColumnCount(availableWidth: Dp): Int =
+    if (availableWidth >= ArtifactGridBreakpoint) 2 else 1
 
 @Composable
 fun VisitorArtifactsScreen(
@@ -83,96 +90,100 @@ fun VisitorArtifactsScreen(
     val viewModel: VisitorArtifactsViewModel = viewModel(factory = VisitorArtifactsViewModel.factory(repository))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 176.dp),
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(padding),
-        contentPadding = PaddingValues(
-            start = VisitorSpacing.Lg,
-            top = VisitorSpacing.Xl,
-            end = VisitorSpacing.Lg,
-            bottom = 112.dp
-        ),
-        horizontalArrangement = Arrangement.spacedBy(VisitorSpacing.Md),
-        verticalArrangement = Arrangement.spacedBy(VisitorSpacing.Md)
+            .padding(padding)
     ) {
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            CatalogueContent {
-                CatalogueHeader(uiState)
-            }
-        }
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            CatalogueContent {
-                TabRow(selectedTabIndex = uiState.selectedTab.ordinal, containerColor = MaterialTheme.colorScheme.background) {
-                    VisitorArtifactsTab.entries.forEach { tab ->
-                        Tab(
-                            selected = uiState.selectedTab == tab,
-                            onClick = { viewModel.selectTab(tab) },
-                            text = { Text(tab.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                        )
-                    }
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(artifactGridColumnCount(maxWidth)),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = VisitorSpacing.Lg,
+                top = VisitorSpacing.Xl,
+                end = VisitorSpacing.Lg,
+                bottom = 112.dp
+            ),
+            horizontalArrangement = Arrangement.spacedBy(VisitorSpacing.Md),
+            verticalArrangement = Arrangement.spacedBy(VisitorSpacing.Md)
+        ) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                CatalogueContent {
+                    CatalogueHeader(uiState)
                 }
             }
-        }
-        when (uiState.selectedTab) {
-            VisitorArtifactsTab.Artifacts -> {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    CatalogueContent {
-                        ArtifactSearchAndFilters(uiState, viewModel)
-                    }
-                }
-                when {
-                    uiState.isLoading -> item(span = { GridItemSpan(maxLineSpan) }) {
-                        CatalogueContent { VisitorLoading(modifier = Modifier.height(220.dp)) }
-                    }
-                    uiState.errorMessage != null && uiState.artifacts.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) {
-                        CatalogueContent { VisitorErrorCard(uiState.errorMessage.orEmpty(), viewModel::refreshAll) }
-                    }
-                    uiState.artifacts.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) {
-                        CatalogueContent { EmptyState("Artifacts will appear here once the museum collection is configured.") }
-                    }
-                    else -> {
-                        items(uiState.artifacts, key = { it.id }) { artifact ->
-                            VisitorArtifactCard(
-                                artifact = artifact,
-                                onClick = { onArtifactDetails(artifact.id) }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                CatalogueContent {
+                    TabRow(selectedTabIndex = uiState.selectedTab.ordinal, containerColor = MaterialTheme.colorScheme.background) {
+                        VisitorArtifactsTab.entries.forEach { tab ->
+                            Tab(
+                                selected = uiState.selectedTab == tab,
+                                onClick = { viewModel.selectTab(tab) },
+                                text = { Text(tab.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                             )
                         }
-                        if (uiState.page < uiState.totalPages) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                CatalogueContent {
-                                    Button(onClick = viewModel::loadMore, modifier = Modifier.fillMaxWidth(), enabled = !uiState.isLoadingMore) {
-                                        Icon(Icons.Outlined.Refresh, contentDescription = null)
-                                        Text(if (uiState.isLoadingMore) "Loading" else "Load More")
+                    }
+                }
+            }
+            when (uiState.selectedTab) {
+                VisitorArtifactsTab.Artifacts -> {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        CatalogueContent {
+                            ArtifactSearchAndFilters(uiState, viewModel)
+                        }
+                    }
+                    when {
+                        uiState.isLoading -> item(span = { GridItemSpan(maxLineSpan) }) {
+                            CatalogueContent { VisitorLoading(modifier = Modifier.height(220.dp)) }
+                        }
+                        uiState.errorMessage != null && uiState.artifacts.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) {
+                            CatalogueContent { VisitorErrorCard(uiState.errorMessage.orEmpty(), viewModel::refreshAll) }
+                        }
+                        uiState.artifacts.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) {
+                            CatalogueContent { EmptyState("Artifacts will appear here once the museum collection is configured.") }
+                        }
+                        else -> {
+                            items(uiState.artifacts, key = { it.id }) { artifact ->
+                                VisitorArtifactCard(
+                                    artifact = artifact,
+                                    onClick = { onArtifactDetails(artifact.id) }
+                                )
+                            }
+                            if (uiState.page < uiState.totalPages) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    CatalogueContent {
+                                        Button(onClick = viewModel::loadMore, modifier = Modifier.fillMaxWidth(), enabled = !uiState.isLoadingMore) {
+                                            Icon(Icons.Outlined.Refresh, contentDescription = null)
+                                            Text(if (uiState.isLoadingMore) "Loading" else "Load More")
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
-            VisitorArtifactsTab.Articles -> {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    CatalogueContent {
-                        ArticleIntroAndSearch(uiState, viewModel)
-                    }
-                }
-                if (uiState.articles.isEmpty()) {
+                VisitorArtifactsTab.Articles -> {
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        CatalogueContent { EmptyState("Published museum facts and articles will appear here.") }
+                        CatalogueContent {
+                            ArticleIntroAndSearch(uiState, viewModel)
+                        }
                     }
-                } else {
-                    items(uiState.articles, key = { it.id }, span = { GridItemSpan(maxLineSpan) }) { article ->
-                        CatalogueContent { NewsCard(article) }
+                    if (uiState.articles.isEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            CatalogueContent { EmptyState("Published museum facts and articles will appear here.") }
+                        }
+                    } else {
+                        items(uiState.articles, key = { it.id }, span = { GridItemSpan(maxLineSpan) }) { article ->
+                            CatalogueContent { NewsCard(article) }
+                        }
                     }
                 }
-            }
-            VisitorArtifactsTab.MuseumInfo -> {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    CatalogueContent {
-                        MuseumInfoCard(uiState.museumInformation)
+                VisitorArtifactsTab.MuseumInfo -> {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        CatalogueContent {
+                            MuseumInfoCard(uiState.museumInformation)
+                        }
                     }
                 }
             }

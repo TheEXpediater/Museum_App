@@ -1,6 +1,8 @@
 package com.example.museumapp
 
 import android.net.Uri
+import com.example.museumapp.data.model.AdminStudentDetailDto
+import com.example.museumapp.data.model.AdminStudentListItemDto
 import com.example.museumapp.data.model.AiHealthResponse
 import com.example.museumapp.data.model.AiIndexAllResponse
 import com.example.museumapp.data.model.AiIndexResultResponse
@@ -70,6 +72,20 @@ class FakeAdminRepository : AdminRepositoryContract {
     )
     var warmupStatusResults: ArrayDeque<RepositoryResult<AiWarmupResponse>> = ArrayDeque()
     var dashboardResult: RepositoryResult<DashboardSummaryResponse> = RepositoryResult.Error("not configured")
+    var listStudentAccountsResult: RepositoryResult<List<AdminStudentListItemDto>> = RepositoryResult.Success(
+        listOf(sampleStudentListItem())
+    )
+    var getStudentAccountResult: RepositoryResult<AdminStudentDetailDto> = RepositoryResult.Success(sampleStudentDetail())
+    var updateStudentAccountStatusResult: RepositoryResult<AdminStudentDetailDto> = RepositoryResult.Success(
+        sampleStudentDetail(accountStatus = "active")
+    )
+    var listStudentAccountsCalls = 0
+    var lastListStudentAccountsStatus: String? = null
+    var lastListStudentAccountsSearch: String? = null
+    var getStudentAccountCalls = 0
+    var lastGetStudentAccountId: String? = null
+    var updateStudentAccountStatusCalls = 0
+    var lastUpdateStudentAccountStatusArgs: Pair<String, String>? = null
     var currentAdminResult: RepositoryResult<UserDto> = RepositoryResult.Success(
         UserDto(id = "admin-id", email = "admin@example.com", fullName = "Museum Admin", role = "admin")
     )
@@ -188,6 +204,25 @@ class FakeAdminRepository : AdminRepositoryContract {
     override suspend fun dashboardSummary(): RepositoryResult<DashboardSummaryResponse> {
         dashboardCalls += 1
         return dashboardResult
+    }
+
+    override suspend fun listStudentAccounts(status: String, search: String?): RepositoryResult<List<AdminStudentListItemDto>> {
+        listStudentAccountsCalls += 1
+        lastListStudentAccountsStatus = status
+        lastListStudentAccountsSearch = search
+        return listStudentAccountsResult
+    }
+
+    override suspend fun getStudentAccount(studentId: String): RepositoryResult<AdminStudentDetailDto> {
+        getStudentAccountCalls += 1
+        lastGetStudentAccountId = studentId
+        return getStudentAccountResult
+    }
+
+    override suspend fun updateStudentAccountStatus(studentId: String, accountStatus: String): RepositoryResult<AdminStudentDetailDto> {
+        updateStudentAccountStatusCalls += 1
+        lastUpdateStudentAccountStatusArgs = studentId to accountStatus
+        return updateStudentAccountStatusResult
     }
     var lastListArtifactsStatus: String? = null
 
@@ -411,6 +446,44 @@ class FakeAdminRepository : AdminRepositoryContract {
             updatedAt = "2026-08-03T12:00:00"
             )
         }
+
+        fun sampleStudentListItem(
+            id: String = "student-1",
+            studentId: String = "PSAU-2026-001",
+            displayName: String = "Juan D. Reyes",
+            email: String = "juan.reyes@example.com",
+            accountStatus: String = "pending"
+        ): AdminStudentListItemDto = AdminStudentListItemDto(
+            id = id,
+            studentId = studentId,
+            displayName = displayName,
+            email = email,
+            accountStatus = accountStatus,
+            createdAt = "2026-09-18T10:24:00+00:00"
+        )
+
+        fun sampleStudentDetail(
+            id: String = "student-1",
+            studentId: String = "PSAU-2026-001",
+            displayName: String = "Juan D. Reyes",
+            email: String = "juan.reyes@example.com",
+            accountStatus: String = "pending"
+        ): AdminStudentDetailDto = AdminStudentDetailDto(
+            id = id,
+            studentId = studentId,
+            firstName = "Juan",
+            middleInitial = "D",
+            lastName = "Reyes",
+            displayName = displayName,
+            email = email,
+            course = "Bachelor of Science in Agriculture",
+            yearLevel = "Third Year",
+            accountStatus = accountStatus,
+            createdAt = "2026-09-18T10:24:00+00:00",
+            updatedAt = "2026-09-18T10:24:00+00:00",
+            approvedAt = null,
+            lastLoginAt = null
+        )
 
         fun sampleMetadataSection(
             id: String = "section-acquisition",

@@ -10,10 +10,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome as FilledAutoAwesome
 import androidx.compose.material.icons.filled.Dashboard as FilledDashboard
 import androidx.compose.material.icons.filled.Inventory2 as FilledInventory2
+import androidx.compose.material.icons.filled.People as FilledPeople
 import androidx.compose.material.icons.filled.Settings as FilledSettings
 import androidx.compose.material.icons.outlined.AutoAwesome as OutlinedAutoAwesome
 import androidx.compose.material.icons.outlined.Dashboard as OutlinedDashboard
 import androidx.compose.material.icons.outlined.Inventory2 as OutlinedInventory2
+import androidx.compose.material.icons.outlined.People as OutlinedPeople
 import androidx.compose.material.icons.outlined.Settings as OutlinedSettings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +42,7 @@ val AdminTopLevelDestinations = listOf(
     AdminDestination("admin_dashboard", "Dashboard", Icons.Filled.FilledDashboard, Icons.Outlined.OutlinedDashboard),
     AdminDestination("admin_artifact_list", "Artifacts", Icons.Filled.FilledInventory2, Icons.Outlined.OutlinedInventory2),
     AdminDestination("admin_ai_recognition", "Recognize", Icons.Filled.FilledAutoAwesome, Icons.Outlined.OutlinedAutoAwesome),
+    AdminDestination("admin_students", "Accounts", Icons.Filled.FilledPeople, Icons.Outlined.OutlinedPeople),
     AdminDestination("admin_settings", "Settings", Icons.Filled.FilledSettings, Icons.Outlined.OutlinedSettings)
 )
 

@@ -1,32 +1,61 @@
-Museum App — 3D Quality Engineering Guide
+Museum App — VPS Migration & Production Deployment Engineering Guide
 
 Mission
 
-Improve the quality of the Museum App's 3D artifact models without destabilizing the working system.
+Migrate the existing working Museum App from a developer-PC/LAN backend to a stable Hostinger VPS deployment without destabilizing the application, losing museum data, exposing internal services, or removing the existing local/offline deployment path.
 
-The app already has a functioning end-to-end 3D pipeline. This phase is not about rebuilding architecture. It is about making generated models more recognizable, visually faithful, consistently textured, and efficient for Android.
+This phase is a migration and production-hardening phase, not a product rewrite.
 
-Current priorities, in order:
+The target result is:
+
+Android App
+    |
+    | HTTPS
+    v
+https://api.museuma7k9x3.tech
+    |
+    v
+Caddy reverse proxy
+    |
+    v
+FastAPI backend
+    |
+    +-- MongoDB
+    +-- Qdrant
+    +-- OpenCLIP CPU
+    +-- persistent uploads/images/models
+
+The developer PC must not be required for normal hosted client/student testing after migration.
+
+The existing local/LAN museum deployment must remain available unless a later requirement explicitly removes it.
+
+Current Priority Order
 
 Preserve the working Museum App.
 
-Establish a measurable 3D-quality baseline.
+Protect existing museum data before any migration or restore.
 
-Improve source-image capture and selection before changing models or architecture.
+Prepare and secure the VPS.
 
-Improve TripoSR output quality with controlled, evidence-based parameter experiments.
+Deploy the existing backend architecture with the smallest production-specific changes.
 
-Keep COLMAP as the advanced photogrammetry path and improve its input guidance rather than brute-forcing image count.
+Restore MongoDB, Qdrant, uploads, and existing published 3D assets safely.
 
-Optimize accepted GLBs for Android without destroying visible quality.
+Verify all restored data before exposing the API publicly.
 
-Improve Admin guidance so a non-technical museum user can provide better source images.
+Configure DNS and valid HTTPS.
 
-Verify every claimed improvement on a real artifact in the actual Admin and Visitor viewer.
+Update Android networking to support the hosted endpoint without breaking local/LAN mode.
 
-Do not switch to another 3D model merely because another repository looks more impressive.
+Build and place a new test APK in the repository root.
 
-Do not add complexity before proving the current bottleneck.
+Verify the complete Android-to-VPS flow on an emulator or physical device.
+
+Document exact rollback and operational procedures.
+
+Do not add unrelated features during migration.
+
+Do not refactor working application architecture merely because the server environment changed.
 
 Engineering Method
 
@@ -35,71 +64,144 @@ Work from evidence.
 The loop is:
 
 observe
--> define one hypothesis
--> change one variable
--> measure
--> compare against baseline
--> keep or revert
+-> inventory
+-> backup
+-> define one migration step
+-> execute
+-> verify
+-> compare with baseline
+-> keep or roll back
 
-Before editing:
+Before editing or migrating:
 
-Reproduce the current output.
+Read this file completely.
 
-Save baseline metrics and screenshots.
+Inspect the current Git working tree.
 
-Identify the likely quality bottleneck.
+Inspect actual Docker, backend, Android, backup, and migration configuration.
 
-Change one factor at a time.
+Record current local service/data counts.
 
-Run the smallest meaningful experiment.
+Confirm existing backups are usable.
 
-Compare against the same artifact and source image.
+Confirm the VPS state.
 
-Keep only changes that clearly improve the result.
+Do not assume filenames, environment-variable names, ports, service names, or backup formats.
 
-Prefer small diffs, measurable experiments, existing abstractions, real artifact tests, reproducible settings, simple capture guidance, explicit tradeoffs, and visual verification.
+Prefer:
 
-Avoid repository-wide audits, speculative refactors, changing several quality variables at once, replacing TripoSR before benchmarking it properly, assuming more photos always means better quality, assuming white background is always better, fake confidence scores, huge models that make Android rendering worse, and quality claims based only on file size or triangle count.
+small diffs
 
-If a result looks better but is slower or much larger, record the tradeoff.
+separate production configuration
 
-If a result is technically valid but visually worse, it is worse.
+explicit validation
 
-Current Working System
+persistent storage
 
-The following already work and must remain working:
+logical database backups
 
-FastAPI
+reversible steps
 
-MongoDB
+least-privilege network exposure
 
-Qdrant
+one source of truth for hosted API configuration
 
-OpenCLIP startup/readiness
+verified Android runtime behavior
+
+Avoid:
+
+destructive volume replacement without backups
+
+exposing MongoDB or Qdrant publicly
+
+hardcoding passwords or JWT secrets
+
+weakening TLS
+
+disabling certificate validation
+
+making the private repository public for deployment
+
+deleting local/LAN support
+
+re-indexing Qdrant as a shortcut when valid vectors already exist
+
+regenerating existing 3D assets unnecessarily
+
+large unrelated refactors
+
+declaring success because only Docker or Gradle says BUILD SUCCESSFUL
+
+Confirmed VPS Baseline
+
+The current Hostinger VPS has been manually verified.
+
+Provider: Hostinger VPS
+Public IPv4: 72.61.120.104
+OS: Ubuntu 24.04.4 LTS
+Architecture: x86_64
+RAM: approximately 7.8 GiB
+Disk: approximately 95 GiB free at initial setup
+Docker: 29.8.1
+Docker Compose: v5.5.1
+Initial swap: 0 B
+SSH user: root
+SSH key on development PC:
+C:\Users\Admin\.ssh\id_ed25519_hostinger_vps
+
+Production domain:
+
+museuma7k9x3.tech
+
+Production API hostname:
+
+api.museuma7k9x3.tech
+
+Target public API URL:
+
+https://api.museuma7k9x3.tech/
+
+The api DNS A record is intended to point to:
+
+72.61.120.104
+
+DNS propagation must be verified before troubleshooting ACME/TLS issuance.
+
+Existing Working System
+
+The following are existing working product capabilities and must remain working through migration:
+
+Kotlin Android app
+
+Jetpack Compose UI
+
+FastAPI backend
+
+MongoDB persistence
+
+Qdrant vector search
+
+OpenCLIP startup/readiness and artifact recognition
 
 Admin authentication
 
 Visitor flow
 
-artifact CRUD
+Student flow and account approval lifecycle
 
-artifact images
+Artifact CRUD
 
-Quick AI 3D Preview
+Artifact images
 
-TripoSR local generation
+Museum catalogue
 
-COLMAP advanced photogrammetry
+Admin Accounts management
 
-GLB validation
-
-SHA-256
-
-model versioning
+published 3D model metadata and files
 
 Admin 3D Preview
 
-Accept / Reject
+Accept / Reject workflow
 
 Visitor View 3D
 
@@ -107,898 +209,1118 @@ Android persistent model cache
 
 SceneView rendering
 
-light neutral viewer background
+Do not rewrite these systems merely for VPS deployment.
 
-current working orbit / zoom behavior
+Existing 3D Architecture Must Be Preserved
 
-Do not rewrite these systems for this phase.
+The current 3D workflow is not the focus of migration.
 
-A failed experiment must never replace the current published model.
+Quick AI path:
 
-Current 3D Product Architecture
-
-Quick AI Preview — default
-
-one primary artifact image
+source image
 -> TripoSR
 -> candidate GLB
 -> validation
 -> Admin Preview
 -> Accept / Reject
+-> publish
 -> Visitor
 
-Use when the goal is a fast, recognizable 3D representation.
+Advanced path:
 
-AI may infer unseen surfaces.
-
-It is not an archival or metrically exact reconstruction.
-
-Advanced Photogrammetry
-
-many overlapping artifact photos
+multiple overlapping images
 -> COLMAP
 -> reconstruction quality gate
 -> candidate GLB
 -> validation
 -> Admin Preview
 -> Accept / Reject
+-> publish
 -> Visitor
 
-Use when the source photo set is strong enough for geometric reconstruction.
+For initial VPS production deployment:
 
-COLMAP is not the default Quick AI workflow.
+existing published GLB files must remain viewable
 
-Phase Goal: Better 3D Models
+GLB metadata and file paths must remain consistent
 
-"Better" must be explicit.
+do not require online COLMAP/TripoSR generation to declare the core deployment ready
 
-A better model should improve one or more of:
+if new 3D generation is not production-ready on the VPS, document that limitation separately
 
-recognizability
+do not delete, regenerate, or replace published models as part of migration
 
-silhouette accuracy
+Authorization for Routine Work
 
-front/side/top shape consistency
+Proceed autonomously for normal non-destructive engineering operations required for this migration.
 
-texture/color similarity
+Routine authorized operations include:
 
-visible detail
+reading/searching project files
 
-absence of holes or broken geometry
+git status, git diff, git diff --stat
 
-absence of obvious AI distortions
+running tests and builds
 
-stable camera framing
+SSH read-only inspection
 
-practical GLB size
+installing normal deployment dependencies on the new VPS
 
-smooth Android rendering
+creating application directories
 
-generation reliability
+creating production configuration files
 
-Do not optimize triangle count for its own sake.
+building Docker images
 
-Do not optimize texture resolution for its own sake.
+starting/restarting the Museum App Docker stack
 
-The goal is the best useful visitor-facing artifact model for the available hardware.
+inspecting logs
 
-Baseline First
+health checks
 
-Before changing TripoSR or capture behavior, establish a baseline using one real artifact.
+DNS lookups
 
-Prefer an artifact that already generated successfully, such as the accepted woven basket / salikap artifact.
+safe firewall configuration after SSH is explicitly allowed
 
-Record:
+creating a swapfile
 
-artifact
-primary input image
-input dimensions
-background type
-view angle
-lighting description
-TripoSR device
-chunk size
-marching-cubes resolution
-texture resolution
-texture enabled
-generation runtime
-GLB size
-vertex count
-face count
-material count
-texture count
-bounds
-Admin screenshot
-Visitor screenshot
+copying migration data to a new deployment directory
 
-Also record a simple engineering quality score:
+creating a new test APK after a successful build
 
-recognizability: 1-5
-shape fidelity: 1-5
-texture fidelity: 1-5
-unseen-side plausibility: 1-5
-viewer usability: 1-5
+Ask before genuinely destructive actions, including:
 
-These are comparison scores, not scientific confidence values.
+deleting source files or data
 
-Keep the baseline artifact and screenshots for comparison.
+deleting existing Docker volumes
 
-Capture Quality Comes Before Model Complexity
+deleting backups
 
-Do not conclude that TripoSR is inadequate until the input image has been optimized.
+git reset --hard
 
-For Quick AI Preview, the input should usually be:
+git clean
 
-one artifact only
+force-pushing Git history
 
-entire object visible
+overwriting a destination database that already contains newer production data
 
-sharp
+clearing Android application data if preserving state matters
 
-no motion blur
+uninstalling an application as a workaround
 
-soft, even lighting
+A local Claude Code permission dialog may still require tool-level approval; do not repeatedly ask conversationally for commands already covered by this authorization.
 
-minimal harsh shadow
+Phase 0 — Git and Local Baseline
 
-minimal reflection/glare
+Before changing anything:
 
-high foreground/background contrast
-
-little background clutter
-
-object not touching frame edges
-
-enough empty margin for background removal
-
-useful three-quarter perspective when possible
-
-A good three-quarter view often provides more 3D information than a straight front photograph.
-
-Example:
-
-camera
-   \
-    \
-     [artifact]
-
-roughly 30-45 degrees off the front
-
-Do not assume pure white is always correct.
-
-Choose a matte background that contrasts with the artifact.
-
-Examples:
-
-light beige artifact -> medium/dark neutral background
-dark brown artifact -> light gray/off-white background
-white artifact -> gray/blue-gray background
-
-Avoid glossy backgrounds, reflective tables, hard flash, patterned cloth, clutter, cropped edges, and strong backlighting.
-
-Quick AI Capture Experiment
-
-Before touching model architecture, test source-view quality.
-
-For the same artifact, capture or choose:
-
-A. straight front
-B. 30-degree three-quarter
-C. 45-degree three-quarter
-D. slightly elevated three-quarter
-E. slightly lower three-quarter
-
-Generate each with the same TripoSR settings.
-
-Only the source image changes.
-
-Compare the outputs side by side.
-
-Do not change texture resolution, chunk size, or marching-cubes resolution during this experiment.
-
-Choose the best view empirically.
-
-Persist capture guidance in the Admin UI only after this test.
-
-Recommended Capture Guidance in Admin
-
-Keep guidance short:
-
-For a better AI 3D preview:
-
-• Show the whole artifact.
-• Use a sharp photo.
-• Use even lighting.
-• Use a plain contrasting background.
-• Prefer a three-quarter angle that shows depth.
-• Avoid glare, blur, and cropped edges.
-
-Do not overwhelm Quick AI users with photogrammetry terminology.
-
-Background Removal / Object Isolation
-
-TripoSR quality may depend strongly on foreground extraction.
-
-Inspect the actual preprocessing used by the installed TripoSR implementation and current tools/triposr/infer.py.
-
-Do not invent preprocessing flags.
-
-Determine:
-
-whether background removal is enabled
-
-what performs it
-
-whether alpha/mask quality is good
-
-whether artifact edges are being cut
-
-whether shadows become foreground
-
-whether transparent output is handled correctly
-
-Test background removal separately on the baseline artifact.
-
-Save the processed foreground used by inference in an ignored debug/test output directory.
-
-If edge masking damages the artifact, fix preprocessing rather than compensating with more mesh resolution.
-
-TripoSR Quality Experiments
-
-Do not change all parameters at once.
-
-Inspect the installed TripoSR version and actual supported parameters.
-
-Never invent CLI flags.
-
-Experiment 1 — Source View
-
-Keep all model settings fixed.
-
-Change only the source image/view.
-
-Select the best source image.
-
-Experiment 2 — Mesh Resolution
-
-Using the best source image, test a small number of practical supported marching-cubes/mesh resolutions.
-
-For each, record:
-
-runtime
-
-RAM/VRAM
-
-vertices/faces
-
-GLB size
-
-silhouette/detail quality
-
-Android render smoothness
-
-Do not select the highest value automatically.
-
-Choose the lowest setting that preserves visibly useful geometry.
-
-Experiment 3 — Texture Resolution
-
-Using the selected mesh setting, test a small number of practical supported texture resolutions.
-
-Measure:
-
-texture clarity
-
-artifact color fidelity
-
-seams
-
-GLB size
-
-Android loading/render behavior
-
-Choose the smallest texture that still looks good on the target device.
-
-Experiment 4 — Chunk Size
-
-Chunk size is primarily a memory/performance setting.
-
-Do not treat it as a visual-quality setting unless the implementation proves otherwise.
-
-Choose a value that is stable on the generation PC.
-
-Experiment 5 — Device
-
-GPU and CPU output should be compared only if there is evidence they differ.
-
-Prefer the stable execution profile.
-
-Do not force GPU merely because it is faster.
-
-One Variable At A Time
-
-Every experiment records:
-
-baseline
-changed variable
-old value
-new value
-result
-decision
-
-Example:
-
-Experiment: texture resolution
-
-baseline: 512
-candidate: 1024
-
-result:
-- texture visibly clearer
-- GLB 3.4 MB -> 5.8 MB
-- Android still smooth
-
-decision:
-KEEP 1024
-
-If the difference is not visibly meaningful:
-
-REVERT.
-
-3D Quality Scorecard
-
-For each candidate:
-
-Artifact: Salikap #4
-
-Input quality:
-4/5
-
-Shape:
-4/5
-
-Texture:
-4/5
-
-Silhouette:
-4/5
-
-Unseen-side plausibility:
-3/5
-
-GLB size:
-3.4 MB
-
-Generation:
-2m 14s
-
-Android:
-smooth
-
-Decision:
-KEEP / REJECT
-
-These are engineering comparison scores, not scientific measurements.
-
-TripoSR Constraints
-
-TripoSR remains a single-image generator.
-
-Do not pretend it fuses multiple arbitrary views.
-
-Additional images may be reference images for Admin comparison, but they are not generation evidence unless the model actually consumes them.
-
-If a future provider supports true multi-view conditioning, add it behind the existing provider abstraction.
-
-Do not replace the current provider in this phase.
-
-AI Disclosure
-
-Continue showing:
-
-AI-generated 3D preview.
-
-Areas not visible in the generation input may have been estimated by AI and may not exactly match the physical artifact.
-
-Continue using:
-
-Estimated photo-supported coverage
-
-Estimated AI-inferred coverage
-
-Do not convert this into a fake confidence metric.
-
-COLMAP Quality Phase
-
-COLMAP remains valuable for higher-fidelity geometry when capture is correct.
-
-Do not judge COLMAP from datasets where only a few photographs registered.
-
-For a controlled COLMAP test, keep the artifact stationary and move the camera around it.
-
-Do not rotate the object against a stationary background unless the pipeline deliberately masks the background.
-
-Capture concept:
-
-high ring:
-  camera positions around artifact
-
-middle ring:
-  camera positions around artifact
-
-low ring:
-  camera positions around artifact
-
-plus top/detail views
-
-Use strong overlap between adjacent views.
-
-Do not prescribe hundreds of images.
-
-A smaller set of high-quality overlapping images is better than many blurred or redundant images.
-
-Record:
-
-source count
-
-usable count
-
-registered count
-
-registered ratio
-
-sparse points
-
-reprojection error
-
-dense/sparse output type
-
-final mesh
-
-texture quality
-
-COLMAP Capture Guidance
-
-Admin guidance for Photogrammetry must differ from Quick AI guidance:
-
-For photogrammetry:
-
-• Keep the artifact still.
-• Walk the camera around it.
-• Keep neighboring photos highly overlapping.
-• Capture low, middle, and high angles.
-• Keep lighting consistent.
-• Avoid blur and glare.
-• Do not make large jumps between viewpoints.
-
-Do not claim any fixed photo count guarantees success.
-
-GLB Optimization
-
-A visually better source model can still be a poor mobile asset.
-
-After selecting a good candidate, measure:
-
-GLB size
-
-vertices
-
-faces
-
-texture dimensions
-
-material count
-
-Android load time
-
-Android render smoothness
-
-Optimize only after the best-looking source model is selected.
-
-Do not optimize a poor model.
-
-Any simplification must preserve:
-
-silhouette
-
-recognizable details
-
-texture readability
-
-normals
-
-UVs
-
-materials
-
-Keep the original candidate before optimization.
-
-Mobile Target
-
-The final asset is for Android SceneView, not desktop rendering.
-
-Prefer:
-
-recognizable
-+
-clean
-+
-small enough
-+
-fast enough
-
-over:
-
-maximum polygons
-+
-maximum texture size
-
-A model that looks only slightly better but loads much slower may be a worse product.
-
-Measure on the actual Android test device/emulator.
-
-Shared GLB Pipeline
-
-Do not change the working publication path:
-
-TripoSR or COLMAP
--> staged GLB
--> validate
--> SHA-256
--> Admin Preview
--> Accept / Reject
--> publish
--> Visitor API
--> Android persistent cache
--> SceneView
-
-No provider-specific Android renderer.
-
-No direct publication before Admin review.
-
-Viewer
-
-The viewer is already functional.
-
-Do not change viewer interaction during model-quality experiments unless a reproduced viewer problem prevents evaluation.
-
-Preserve:
-
-light neutral background
-
-neutral lighting
-
-camera framing
-
-model centering
-
-orbit
-
-zoom
-
-shared Admin/Visitor renderer
-
-Viewer UX experiments are a separate phase from generation-quality experiments.
-
-This prevents confusing a better camera with a better model.
-
-Experiment Files
-
-Do not commit experiment screenshots, generated GLBs, model weights, caches, or virtual environments by default.
-
-Keep reproducible scripts and settings.
-
-Generated comparison assets belong in ignored development/test directories.
-
-Before any commit:
-
-git status
+git status --short
 git diff --stat
+git diff
 
-Verify no large generated artifacts are accidentally staged.
+Record which existing changes are unrelated to migration.
 
-Experiment Records
+Do not overwrite or revert unrelated work.
 
-Create a small local report for each experiment.
+Inspect at minimum:
 
-Example ignored path:
+CLAUDE.md
+compose.yaml
+Dockerfile / backend Dockerfile(s)
+backend/.env.example
+backend/app/config.py
+backend/app/main.py
+backend/app/database/*
+backend/app/routes/*
+backend/app/repositories/*
+backend/app/auth/*
+backend/app/ai/*
+backend/app/vector/*
+backend/app/services/*
+backend/uploads/*
+migration/*
+backup.ps1
+restore.ps1
+setup.bat
+start_backend.py
+.gitignore
+android/app/build.gradle.kts
+android/app/src/main/AndroidManifest.xml
+Android networking / Retrofit configuration
+Backend connection/discovery classes
+SessionManager and auth/session routing
 
-tools/triposr/experiments/<artifact>/<run-id>/metrics.json
+Do not assume the names in this guide are exact when the repository shows otherwise.
 
-Record:
+Phase 1 — Local Data Inventory
 
-timestamp
-artifact
-source image
-source dimensions
-source view label
-device
-TripoSR settings
-runtime
-GLB metrics
-quality scores
-decision
+Before migration, record a local baseline.
 
-Do not introduce a new database subsystem for experiments.
+At minimum record:
 
-Keep it simple.
+MongoDB database name
 
-Optional Recommended-Photo Heuristic
+MongoDB collection names
 
-Only after controlled experiments, consider a lightweight recommendation heuristic.
+artifact count
 
-It may consider:
+student count
 
-image sharpness
+admin/user count if applicable
 
-useful object size in frame
+guest/session collections if migration should preserve them
 
-resolution
+museum-information record count
 
-foreground/background separation
+announcement/news count where relevant
 
-orientation
+Qdrant collection name
 
-obvious clipping
+Qdrant vector count
 
-Do not introduce another large AI model merely to choose the source image.
+vector dimension
 
-Do not claim the heuristic guarantees the best 3D result.
+representative vector point IDs if practical
 
-Admin can always choose another image.
+uploads directory path
 
-Real Acceptance Test
+image file count
 
-This phase is complete only after a real before/after comparison.
+total uploads size
 
-Use the same artifact.
+model/GLB file count
 
-Required:
+total model size
 
-regenerate or establish the current baseline
+OpenCLIP model name/pretrained profile
 
-save baseline metrics
+current backend health result
 
-optimize source capture/view
+current AI health result
 
-select best source view
+The migration is not verified until destination counts and representative records/files are compared with this baseline.
 
-optimize one TripoSR parameter at a time
+Phase 2 — Create Fresh Migration Backup
 
-choose best practical settings
+Do not rely only on an old backup if current local state changed.
 
-generate final candidate
+Inspect existing backup scripts first.
 
-validate GLB
+Create a fresh migration snapshot using the repository's supported mechanism where possible.
 
-preview in Admin
+Preferred MongoDB method:
 
-compare baseline vs optimized model visually
+mongodump
+-> transferable dump directory/archive
+-> mongorestore on destination
 
-Accept only if visibly better
+Do not copy a live MongoDB data directory while MongoDB is running unless the repository already implements a validated snapshot procedure.
 
-open as Visitor
+For Qdrant:
 
-verify cache reuse
+inspect current Qdrant version
 
-verify Android performance remains acceptable
+inspect existing migration/backup format
 
-Do not call the phase complete because tests pass.
+prefer a Qdrant snapshot if supported by the existing deployment/version
 
-The optimized model must visibly improve on the baseline.
+otherwise use the existing validated Docker-volume backup only after confirming compatibility
 
-Regression Protection
+record vector count before backup
 
-After quality changes verify:
+For uploads:
 
-backend starts
+preserve full relative directory structure
 
-MongoDB intact
+include artifact images
+
+include published model files
+
+include any thumbnails/media relied on by stored database paths
+
+calculate file counts and preferably checksums for representative or all critical files
+
+Do not migrate virtual environments, temporary build products, caches, Gradle caches, or experimental files unless required.
+
+Phase 3 — VPS Preflight
+
+Connect using the verified SSH key.
+
+From Windows CMD, the verified form is:
+
+ssh -i "%USERPROFILE%\.ssh\id_ed25519_hostinger_vps" root@72.61.120.104
+
+On the VPS verify:
+
+cat /etc/os-release
+uname -m
+free -h
+df -h
+docker --version
+docker compose version
+docker ps -a
+
+The VPS previously reported a pending system restart.
+
+Before production services exist:
+
+inspect package updates
+
+apply appropriate Ubuntu security/normal package updates
+
+reboot once if required
+
+reconnect
+
+verify Docker after reboot
+
+Do not perform repeated unnecessary reboots.
+
+Phase 4 — Swap
+
+The initial VPS had no swap.
+
+For an approximately 8 GiB RAM server running MongoDB, Qdrant, FastAPI, and CPU PyTorch/OpenCLIP, create approximately 4 GiB of persistent swap unless current server evidence suggests otherwise.
+
+Use a secure root-owned swap file with mode 600.
+
+Persist it in /etc/fstab.
+
+Verify:
+
+free -h
+swapon --show
+
+Swap is emergency memory headroom, not a reason to ignore memory usage.
+
+Phase 5 — Production Directory
+
+Use a predictable server location, for example:
+
+/opt/museum-app
+
+Keep source/configuration separate from persistent application data where practical.
+
+Example conceptual layout:
+
+/opt/museum-app/
+    source/
+    deploy/
+    backups/
+
+Do not force this exact layout if the repository's existing architecture has a cleaner convention.
+
+Phase 6 — Source Deployment
+
+Prefer secure Git deployment if repository authentication is already available.
+
+Do not make a private repository public just to clone it.
+
+If Git authentication is not available, use scp, rsync, or another safe transfer method.
+
+Do not transfer unnecessary local directories such as:
+
+.venv
+
+Gradle caches
+
+.idea
+
+local temporary output
+
+model experiment directories
+
+generated APKs except when intentionally archived
+
+The server should build from source/configuration, not from the Windows development environment.
+
+Phase 7 — Production Compose
+
+Preserve the existing local compose file.
+
+Prefer a production-specific file such as:
+
+compose.prod.yaml
+
+The production deployment should contain only the services required for normal hosted operation.
+
+Expected core services:
+
+caddy
+backend
+mongodb
+qdrant
+
+OpenCLIP may run in the backend process if that matches the current working architecture.
+
+Do not keep a one-off AI tools/profile container running continuously unless the repository proves it is required.
+
+Use restart policies appropriate for long-running services.
+
+Phase 8 — Docker Networking
+
+Use an internal Docker network for service-to-service traffic.
+
+Inside Docker, containers must use service names, not localhost, for other services.
+
+Conceptually:
+
+mongodb://mongodb:27017
+http://qdrant:6333
+
+Use the repository's actual environment-variable names.
+
+FastAPI should listen inside the container on its expected application port, normally 8000.
+
+Caddy should reverse proxy to the backend over the Docker network.
+
+Phase 9 — Public Port Policy
+
+Internet-facing services should be limited to:
+
+22/tcp  SSH
+80/tcp  HTTP / ACME / redirect
+443/tcp HTTPS
+
+Do not publicly expose:
+
+27017 MongoDB
+27018 alternate local Mongo host port
+6333 Qdrant HTTP
+6334 Qdrant gRPC
+8000 FastAPI
+
+The production Compose file should not publish MongoDB/Qdrant ports to 0.0.0.0.
+
+If FastAPI requires a host-side binding for diagnostics, bind only to loopback and justify it; otherwise keep it Docker-internal behind Caddy.
+
+Phase 10 — Firewall
+
+Inspect current Hostinger firewall and UFW state before changing anything.
+
+Before enabling any restrictive firewall:
+
+confirm the active SSH connection
+
+explicitly allow port 22
+
+allow ports 80 and 443
+
+only then enable/apply restrictions
+
+Never lock out SSH.
+
+Do not create public rules for MongoDB, Qdrant, or FastAPI.
+
+After configuration, verify listening sockets using tools such as:
+
+ss -tulpn
+
+Phase 11 — Production Environment and Secrets
+
+Create the production .env only on the VPS or through another untracked secure mechanism.
+
+Do not commit production secrets.
+
+Generate a fresh JWT signing secret, for example:
+
+openssl rand -hex 32
+
+Do not print secret values in final reports.
+
+Do not reuse test secrets.
+
+Do not hardcode admin credentials into Android.
+
+Configure:
+
+production MongoDB URL
+
+production database name
+
+Qdrant URL
+
+Qdrant collection
+
+OpenCLIP model/pretrained configuration
+
+OpenCLIP CPU device
+
+upload directory
+
+JWT secret
+
+admin/bootstrap configuration only if the existing backend uses it
+
+production CORS behavior based on actual API clients
+
+Do not invent environment variables. Inspect Settings/config first.
+
+Phase 12 — Caddy and HTTPS
+
+Use Caddy unless the repository already contains a working supported reverse proxy that should be preserved.
+
+Conceptual Caddyfile:
+
+api.museuma7k9x3.tech {
+    reverse_proxy backend:8000
+}
+
+When Caddy itself runs in Docker, proxy to the Docker service name, not 127.0.0.1, unless network topology proves otherwise.
+
+Persist Caddy data/config volumes so certificates survive container recreation.
+
+Before expecting certificate issuance, verify DNS:
+
+api.museuma7k9x3.tech -> 72.61.120.104
+
+Use dig, nslookup, or authoritative/public resolvers.
+
+Temporary DNS NXDOMAIN during propagation is not an application failure.
+
+Do not:
+
+use a self-signed certificate for the final client API
+
+disable Android certificate verification
+
+use curl -k as final proof of TLS correctness
+
+Final required endpoint:
+
+https://api.museuma7k9x3.tech/
+
+Phase 13 — Start Empty Production Services First
+
+Before restoring live museum state, start the production stack in a controlled manner.
+
+Verify:
+
+MongoDB container stays healthy
+
+Qdrant container stays healthy
+
+backend starts with expected configuration
+
+Caddy configuration parses
+
+persistent directories/volumes are writable
+
+If backend requires data to start, document the dependency and adjust order minimally.
+
+Do not restore into an unknown existing production database.
+
+Phase 14 — MongoDB Restore
+
+Restore from the fresh migration backup.
+
+Before restore:
+
+verify destination database is new/empty or explicitly approved for replacement
+
+record destination state
+
+preserve the migration backup
+
+Use the safest compatible mongorestore workflow.
+
+After restore verify:
+
+artifact count
+
+student count
+
+admin/user count
+
+museum information
+
+announcements/news if applicable
+
+representative artifact fields
+
+student account status fields
+
+no password hashes are exposed through APIs
+
+Do not assume restore succeeded because the command returned exit code 0; compare data.
+
+Phase 15 — Qdrant Restore
+
+Restore using the backup mechanism that matches the existing Qdrant version and data format.
+
+Prefer a supported Qdrant snapshot when available.
+
+Verify after restore:
+
+expected collection exists
+
+vector dimension matches OpenCLIP output
+
+vector count matches baseline or is explicitly explained
+
+representative points have expected payloads
+
+AI health recognizes the collection
+
+Do not rebuild/re-index all artifact vectors unless restore cannot be performed safely or a compatibility problem is proven.
+
+If re-indexing becomes necessary, stop and report the reason before doing it if it could change production data materially.
+
+Phase 16 — Uploads and Existing 3D Files
+
+Transfer the complete required uploads hierarchy while preserving relative paths.
+
+Verify:
+
+representative artifact image URLs resolve
+
+database paths map to actual files
+
+published GLB files exist
+
+GLB files can be served/downloaded by the backend
+
+no path assumes a Windows drive letter
+
+Linux file permissions allow the backend to read files and write new uploads
+
+Compare destination file count and total size with the source baseline.
+
+Use checksums for important/representative files.
+
+Phase 17 — OpenCLIP on VPS
+
+Use the current working OpenCLIP model configuration.
+
+Expected current profile should be verified from repository configuration, likely:
+
+model: ViT-B-32
+pretrained: laion2b_s34b_b79k
+device: cpu
+
+Do not invent or change the model during migration.
+
+Allow the model to download on the VPS if that is simpler and safer than transferring a cache, provided model provenance/configuration matches the working system.
+
+Verify:
+
+model initializes
+
+backend AI health is ready
+
+Qdrant collection is reachable
+
+embedding dimension matches the existing collection
+
+one real recognition request succeeds
+
+Monitor memory during first model load.
+
+Do not interpret a slow first initialization as failure without checking logs/resources.
+
+Phase 18 — Resource Safety
+
+The VPS is approximately 8 GiB RAM with 4 GiB planned swap.
+
+Monitor:
+
+free -h
+docker stats
+
+Avoid running unnecessary memory-heavy tasks concurrently with first OpenCLIP initialization.
+
+Do not deploy new 3D generation workloads as part of initial readiness unless required.
+
+If OOM behavior appears:
+
+identify the process consuming memory
+
+inspect container limits/current workload
+
+fix the actual resource issue
+
+do not disable health checks or randomly reduce functionality
+
+Phase 19 — Health Checks Before Public Android Testing
+
+Verify from the VPS/container network first.
+
+Test the existing backend health endpoint.
+
+Expected checks include:
+
+API responds
+
+MongoDB connected
+
+uploads writable/readable
+
+Qdrant connected
 
 OpenCLIP ready
 
-Qdrant intact
+Then verify through Caddy/HTTPS:
 
-Quick AI works
+https://api.museuma7k9x3.tech/<actual-health-route>
 
-COLMAP works
+Use the repository's real route; do not invent one.
 
-existing published GLBs remain valid
+Phase 20 — Hosted Android Networking
 
-Admin Preview works
+Inspect the actual Android networking implementation before editing.
 
-Accept/Reject works
+The application previously supported local/LAN backend discovery.
 
-Visitor model works
+Do not remove local mode.
 
-cache works
+Required behavior:
 
-Do not rebuild Qdrant.
+Hosted/client mode:
+https://api.museuma7k9x3.tech/
 
-Do not re-index artifacts as a shortcut.
+Local/offline museum mode:
+existing LAN discovery / configured local server
 
-Do not delete existing models.
+Use one source of truth for the hosted base URL.
 
-Tests
+Do not scatter the production URL across Compose screens or repositories.
 
-Keep automated tests focused.
+If an existing interceptor rewrites scheme/host/port, ensure it does not rewrite the HTTPS production endpoint into HTTP or force port 8000.
 
-Backend tests cover changed logic only, for example:
+Prefer a clear endpoint representation such as a complete base URL when it reduces ambiguity.
 
-preprocessing
+Preserve existing repository/API abstractions.
 
-parameter selection/configuration
+Do not bypass Retrofit/auth/session handling.
 
-safe output paths
+Phase 21 — Android Security
 
-GLB validation
+Production-hosted requests must use valid HTTPS.
 
-publication protection
+Do not:
 
-Android tests cover UI only if capture guidance or quality metadata changes.
+globally permit cleartext traffic for production traffic
 
-Do not make normal unit tests run full TripoSR inference.
+disable hostname verification
 
-Use one explicit real-inference integration test.
+install an unsafe trust manager
+
+ignore TLS errors
+
+A debug/local network security override may remain for local LAN development if already required, but it must not weaken the production hosted path.
+
+Do not compile administrator passwords into the APK.
+
+Phase 22 — Android Functional Verification Against VPS
+
+Test while proving the app is using the VPS and not the developer PC.
+
+Where practical, stop the local backend during the hosted test.
+
+Verify at minimum:
+
+application launches
+
+visitor flow
+
+guest session
+
+student registration -> pending
+
+pending student login denied correctly
+
+admin login
+
+admin Accounts screen
+
+admin activation
+
+activated student login
+
+persistent student session
+
+artifact catalogue
+
+artifact images
+
+artifact details
+
+OpenCLIP recognition
+
+existing published 3D model download/view
+
+logout/session behavior
+
+Do not declare success only from unit tests.
+
+Phase 23 — Backend Tests
+
+Run the relevant backend automated test suite after migration-related backend/config changes.
+
+Use the repository's existing Python environment/command.
+
+Expected current regression suite is approximately 200+ tests, but use the actual repository result.
+
+Do not make unit tests execute full OpenCLIP inference unnecessarily.
+
+Use explicit VPS smoke tests for real AI/network verification.
+
+Phase 24 — Android Tests and Build
 
 Run:
 
-backend pytest
 .\gradlew.bat :android:app:testDebugUnitTest
 .\gradlew.bat :android:app:assembleDebug
 
-Final Decision Rules
+Both must pass before packaging the test APK.
 
-Keep a change only when at least one is true:
+The APK must then be tested on an Android Studio emulator or physical Android device.
 
-model is visibly more recognizable
+Phase 25 — Root Test APK Requirement
 
-texture is visibly more faithful
+After the hosted endpoint is configured and the Android build succeeds, create a NEW test APK in the repository root.
 
-geometry is visibly cleaner
+Do not assume the Gradle output path; locate the actual generated debug APK after assembleDebug.
 
-same quality is achieved with less runtime
+Copy it to the repository root with this exact filename unless a collision requires explicit reporting:
 
-same quality is achieved with smaller GLB
+Museum_App_VPS_Test.apk
 
-generation becomes more reliable
+Requirements:
 
-Admin can more reliably provide good inputs
+it must be a fresh APK from the successful current build
 
-Reject a change when:
+it must use the new hosted/VPS-capable networking configuration
 
-complexity increases without visible benefit
+it must not contain hardcoded administrator credentials
 
-only triangle count increases
+it must not contain production server secrets
 
-only file size increases
+it must not be copied before build success
 
-one angle improves while others degrade
+report the source APK path and root destination path
 
-Android becomes noticeably slower
+report file size and preferably SHA-256
 
-it depends on fragile hardware behavior
+If Museum_App_VPS_Test.apk already exists in the root, replace it only after a new build succeeds, preserving the old file until the new APK is ready.
 
-it requires replacing working architecture without evidence
+Do not commit the APK automatically unless repository policy explicitly allows binary releases.
 
-Reporting
+Phase 26 — Install and Test Root APK
+
+If an emulator/device is available:
+
+adb devices
+adb install -r <root>/Museum_App_VPS_Test.apk
+
+Launch the real launcher activity.
+
+Verify no fatal startup exception.
+
+Then verify representative hosted flows.
+
+The build is not considered validated merely because installation succeeds.
+
+Phase 27 — Restart Survival
+
+Production services should recover automatically.
+
+Verify:
+
+docker compose -f <production-compose> restart
+
+Then confirm:
+
+MongoDB data remains
+
+Qdrant collection remains
+
+uploads remain
+
+backend returns healthy
+
+Caddy serves valid HTTPS
+
+OpenCLIP returns to ready state
+
+A full VPS reboot test is recommended after the initial deployment is stable.
+
+Before reboot:
+
+ensure configuration is persisted
+
+ensure restart policies are correct
+
+ensure SSH remains allowed
+
+After reboot verify the full stack again.
+
+Phase 28 — External Exposure Validation
+
+From outside the VPS verify:
+
+Expected reachable:
+
+22
+80
+443
+
+Expected not publicly reachable:
+
+27017
+27018
+6333
+6334
+8000
+
+Do not publish database dashboards publicly merely for convenience.
+
+Phase 29 — Rollback Strategy
+
+Every major migration stage must have a rollback path.
+
+Before replacing anything, know how to restore:
+
+previous source revision
+
+previous .env
+
+MongoDB backup
+
+Qdrant backup/snapshot
+
+uploads backup
+
+Caddy configuration
+
+Android previous working endpoint/build
+
+Do not delete migration backups immediately after successful deployment.
+
+Keep at least one known-good migration snapshot until client testing confirms stability.
+
+Phase 30 — Production Backup Plan
+
+After migration, create a simple repeatable backup procedure for the VPS.
+
+At minimum cover:
+
+MongoDB logical backup
+
+Qdrant snapshot/backup
+
+uploads/models
+
+important production configuration excluding secret disclosure
+
+Backups must be restorable, not merely copied.
+
+Document destination, retention, and restore command/steps.
+
+Do not rely solely on the VPS provider snapshot as the only application-level backup.
+
+Migration Acceptance Test
+
+Migration is complete only when all critical checks pass.
+
+Infrastructure
+
+VPS SSH                  PASS / FAIL
+Docker                   PASS / FAIL
+Compose                  PASS / FAIL
+Swap                     PASS / FAIL
+Firewall                 PASS / FAIL
+DNS                      PASS / FAIL
+HTTPS certificate        PASS / FAIL
+
+Backend
+
+FastAPI                  PASS / FAIL
+MongoDB                  PASS / FAIL
+Qdrant                   PASS / FAIL
+OpenCLIP                 PASS / FAIL
+Uploads                  PASS / FAIL
+Published 3D files       PASS / FAIL
+
+Data
+
+Mongo artifact count     PASS / FAIL
+Student/account data     PASS / FAIL
+Qdrant vector count      PASS / FAIL
+Artifact images          PASS / FAIL
+Representative GLB       PASS / FAIL
+
+Android
+
+Launch                    PASS / FAIL
+Visitor flow              PASS / FAIL
+Student registration      PASS / FAIL
+Admin approval            PASS / FAIL
+Student login             PASS / FAIL
+Catalogue                 PASS / FAIL
+Images                    PASS / FAIL
+AI scan                   PASS / FAIL
+3D view                   PASS / FAIL
+Session persistence       PASS / FAIL
+
+Automated Verification
+
+Backend pytest            PASS / FAIL
+Android unit tests        PASS / FAIL
+assembleDebug             PASS / FAIL
+Root APK created          PASS / FAIL
+Root APK installed        PASS / FAIL
+
+Do not report migration complete while a critical item is unverified.
+
+Final Reporting Format
 
 Report evidence, not effort.
 
-Baseline
+VPS
 
-artifact
+OS
 
-source image
+architecture
 
-source view
+RAM
 
-model settings
+swap
 
-runtime
+disk
 
-GLB metrics
+Docker version
 
-quality score
+Compose version
 
-Experiments
+Network
 
-For each:
+VPS IP
 
-hypothesis
+domain
 
-one variable changed
+API URL
 
-baseline value
+DNS result
 
-candidate value
+TLS result
 
-measured result
+public ports
 
-KEEP / REVERT
+Production Stack
 
-Best Capture
+compose file
 
-background
+running services
 
-lighting
+restart policies
 
-source angle
+persistent volumes
 
-distance/framing
+Data Migration
 
-reason selected
+source backup timestamp
 
-Best TripoSR Profile
+MongoDB restore result
+
+artifact count source/destination
+
+student/account count source/destination
+
+Qdrant collection
+
+vector count source/destination
+
+uploads source/destination count/size
+
+GLB count/source/destination
+
+AI
+
+OpenCLIP model
+
+pretrained profile
 
 device
 
-chunk size
+readiness
 
-mesh resolution
+real recognition smoke test
 
-texture resolution
+Android
 
-texture enabled
+hosted API configuration mechanism
 
-runtime
+confirmation local/LAN mode remains
 
-memory observations
+unit-test result
 
-Final GLB
+build result
 
-size
+emulator/device result
 
-vertices
+root APK path
 
-faces
+APK size
 
-materials
+APK SHA-256
 
-textures
+Security
 
-bounds
+Explicitly confirm:
 
-SHA
+MongoDB is not publicly exposed
 
-Before / After
+Qdrant is not publicly exposed
 
-recognizability
+FastAPI port 8000 is not directly public
 
-shape
+API uses valid HTTPS
 
-texture
+production secrets are not committed
 
-unseen-side plausibility
+admin credentials are not embedded in the APK
 
-Android performance
+WordPress/unrelated DNS records were not modified
 
-Regression
+Remaining Limitations
 
-backend
+List only real remaining limitations, including new 3D generation on VPS if it is intentionally deferred.
 
-OpenCLIP
+Final Decision Rules
 
-Qdrant
+KEEP a migration change when it clearly improves one or more of:
 
-COLMAP
+production safety
 
-Admin Preview
+reproducibility
 
-Visitor
+remote availability
 
-cache
+data durability
 
-Tests
+network security
 
-backend pytest
+Android hosted connectivity
 
-Android unit tests
+operational simplicity
 
-assembleDebug
+REVERT or redesign a migration change when:
 
-real TripoSR integration
+it exposes an internal datastore publicly
 
-Use PASS / FAIL.
+it removes working local/LAN capability without requirement
 
-Do not claim "better" unless the before/after comparison supports it.
+it requires hardcoded credentials
+
+it loses or silently changes museum data
+
+it introduces unnecessary architecture
+
+it weakens HTTPS
+
+it breaks existing Android flows
+
+it makes rollback unclear
+
+The priority is a stable, secure, recoverable deployment of the existing Museum App, not a rewrite.

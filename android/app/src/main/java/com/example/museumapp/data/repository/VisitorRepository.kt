@@ -21,6 +21,7 @@ import com.example.museumapp.data.model.PublicHomeResponseDto
 import com.example.museumapp.data.model.RecognitionResponseDto
 import com.example.museumapp.data.model.StudentLoginRequestDto
 import com.example.museumapp.data.model.StudentRegisterRequestDto
+import com.example.museumapp.data.model.StudentRegistrationResponseDto
 import com.example.museumapp.data.model.VisitorMeResponseDto
 import com.example.museumapp.data.model.VisitorTokenResponseDto
 import com.example.museumapp.data.session.SessionManager
@@ -44,7 +45,7 @@ interface VisitorRepositoryContract : RecognitionRepositoryContract {
     suspend fun setOnboardingCompleted(completed: Boolean)
     suspend fun checkHealth(): RepositoryResult<HealthResponse>
     suspend fun createGuestSession(request: GuestSessionRequestDto): RepositoryResult<VisitorTokenResponseDto>
-    suspend fun registerStudent(request: StudentRegisterRequestDto): RepositoryResult<VisitorTokenResponseDto>
+    suspend fun registerStudent(request: StudentRegisterRequestDto): RepositoryResult<StudentRegistrationResponseDto>
     suspend fun loginStudent(identifier: String, password: String): RepositoryResult<VisitorTokenResponseDto>
     suspend fun visitorMe(): RepositoryResult<VisitorMeResponseDto>
     suspend fun logout()
@@ -97,12 +98,10 @@ class VisitorRepository(
         response
     }
 
-    override suspend fun registerStudent(request: StudentRegisterRequestDto): RepositoryResult<VisitorTokenResponseDto> = safeApiCall(
+    override suspend fun registerStudent(request: StudentRegisterRequestDto): RepositoryResult<StudentRegistrationResponseDto> = safeApiCall(
         clearSessionOnUnauthorized = false
     ) {
-        val response = api.registerStudent(request)
-        sessionManager.saveVisitorSession(response)
-        response
+        api.registerStudent(request)
     }
 
     override suspend fun loginStudent(identifier: String, password: String): RepositoryResult<VisitorTokenResponseDto> = safeApiCall(
@@ -225,7 +224,7 @@ class VisitorRepository(
             503 -> "Artifact scanning is temporarily unavailable."
             else -> "The server could not complete the request."
         }
-        if (code() == 401 || code() == 403) return fallback
+        if (code() == 401) return fallback
 
         val body = response()?.errorBody()?.string().orEmpty()
         return runCatching {

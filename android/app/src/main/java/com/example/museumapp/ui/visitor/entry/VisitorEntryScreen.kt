@@ -1,16 +1,7 @@
 package com.example.museumapp.ui.visitor.entry
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,17 +18,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Login
+import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -48,32 +40,24 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.PointerIcon
-import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.example.museumapp.data.repository.AdminRepository
+import com.example.museumapp.ui.admin.login.AdminLoginDialog
 import com.example.museumapp.ui.visitor.components.VisitorAssetImage
 import com.example.museumapp.ui.visitor.components.VisitorAssets
 import com.example.museumapp.ui.visitor.components.VisitorSpacing
 
-private const val RoleSectionTopSpacerWeight = 0.34f
-private const val RoleSectionBottomSpacerWeight = 0.66f
+private const val RoleSectionSpacerWeight = 1f
 
 data class VisitorEntrySelectionSpec(
     val target: String,
@@ -101,7 +85,7 @@ object VisitorEntryTestTags {
     const val Root = "visitor_entry_root"
     const val GuestCard = "visitor_entry_guest_card"
     const val StudentCard = "visitor_entry_student_card"
-    const val AdminLogin = "visitor_entry_admin_login"
+    const val AdminAccess = "visitor_entry_admin_access"
     const val GuestCharacter = "visitor_entry_guest_character"
     const val StudentCharacter = "visitor_entry_student_character"
     const val StudentLogin = "visitor_entry_student_login"
@@ -111,12 +95,14 @@ object VisitorEntryTestTags {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VisitorEntryScreen(
+    adminRepository: AdminRepository,
     onGuest: () -> Unit,
     onStudentLogin: () -> Unit,
     onStudentRegister: () -> Unit,
     onAdminLogin: () -> Unit
 ) {
     var showStudentAccess by rememberSaveable { mutableStateOf(false) }
+    var showAdminLogin by rememberSaveable { mutableStateOf(false) }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -146,8 +132,7 @@ fun VisitorEntryScreen(
                 cardWidth = cardWidth,
                 selectionGap = selectionGap,
                 onGuest = onGuest,
-                onStudent = { showStudentAccess = true },
-                onAdminLogin = onAdminLogin
+                onStudent = { showStudentAccess = true }
             )
         } else {
             VisitorEntryAnchoredContent(
@@ -157,8 +142,24 @@ fun VisitorEntryScreen(
                 cardWidth = cardWidth,
                 selectionGap = selectionGap,
                 onGuest = onGuest,
-                onStudent = { showStudentAccess = true },
-                onAdminLogin = onAdminLogin
+                onStudent = { showStudentAccess = true }
+            )
+        }
+
+        IconButton(
+            onClick = { showAdminLogin = true },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(VisitorSpacing.Md)
+                .size(48.dp)
+                .testTag(VisitorEntryTestTags.AdminAccess)
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.AdminPanelSettings,
+                contentDescription = "Administrator access",
+                modifier = Modifier.size(26.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -176,6 +177,17 @@ fun VisitorEntryScreen(
             }
         )
     }
+
+    if (showAdminLogin) {
+        AdminLoginDialog(
+            repository = adminRepository,
+            onDismiss = { showAdminLogin = false },
+            onLoginSuccess = {
+                showAdminLogin = false
+                onAdminLogin()
+            }
+        )
+    }
 }
 
 @Composable
@@ -186,8 +198,7 @@ private fun VisitorEntryAnchoredContent(
     cardWidth: Dp,
     selectionGap: Dp,
     onGuest: () -> Unit,
-    onStudent: () -> Unit,
-    onAdminLogin: () -> Unit
+    onStudent: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -198,7 +209,7 @@ private fun VisitorEntryAnchoredContent(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         SignInHeader()
-        Spacer(modifier = Modifier.weight(RoleSectionTopSpacerWeight))
+        Spacer(modifier = Modifier.weight(RoleSectionSpacerWeight))
         VisitorRoleSelectionSection(
             modifier = Modifier.fillMaxWidth(),
             cardWidth = cardWidth,
@@ -206,13 +217,7 @@ private fun VisitorEntryAnchoredContent(
             onGuest = onGuest,
             onStudent = onStudent
         )
-        Spacer(modifier = Modifier.weight(RoleSectionBottomSpacerWeight))
-        AdministratorLoginAction(
-            modifier = Modifier
-                .fillMaxWidth()
-                .widthIn(max = 420.dp),
-            onClick = onAdminLogin
-        )
+        Spacer(modifier = Modifier.weight(RoleSectionSpacerWeight))
     }
 }
 
@@ -224,8 +229,7 @@ private fun VisitorEntryScrollableContent(
     cardWidth: Dp,
     selectionGap: Dp,
     onGuest: () -> Unit,
-    onStudent: () -> Unit,
-    onAdminLogin: () -> Unit
+    onStudent: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -246,12 +250,6 @@ private fun VisitorEntryScrollableContent(
             onStudent = onStudent
         )
         Spacer(modifier = Modifier.height(VisitorSpacing.Xl))
-        AdministratorLoginAction(
-            modifier = Modifier
-                .fillMaxWidth()
-                .widthIn(max = 420.dp),
-            onClick = onAdminLogin
-        )
     }
 }
 
@@ -348,88 +346,6 @@ private fun SignInHeader() {
                 text = "Sign in as",
                 color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
-            )
-        }
-    }
-}
-
-@Composable
-private fun AdministratorLoginAction(
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isHovered by interactionSource.collectIsHoveredAsState()
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = when {
-            isPressed -> 0.99f
-            isHovered -> 1.015f
-            else -> 1f
-        },
-        label = "adminLoginScale"
-    )
-    val shadowElevation by animateDpAsState(
-        targetValue = when {
-            isPressed -> 1.dp
-            isHovered -> 8.dp
-            else -> 4.dp
-        },
-        label = "adminLoginShadow"
-    )
-    val containerColor by animateColorAsState(
-        targetValue = when {
-            isPressed -> MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
-            isHovered -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.92f)
-            else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
-        },
-        label = "adminLoginContainer"
-    )
-
-    Surface(
-        modifier = modifier
-            .heightIn(min = 56.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .hoverable(interactionSource)
-            .pointerHoverIcon(PointerIcon.Hand)
-            .clip(RoundedCornerShape(32.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = LocalIndication.current,
-                role = Role.Button,
-                onClickLabel = "Administrator Login",
-                onClick = onClick
-            )
-            .semantics(mergeDescendants = true) {
-                contentDescription = "Administrator Login"
-                role = Role.Button
-            }
-            .testTag(VisitorEntryTestTags.AdminLogin),
-        shape = RoundedCornerShape(32.dp),
-        color = containerColor,
-        contentColor = MaterialTheme.colorScheme.primary,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shadowElevation = shadowElevation
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = VisitorSpacing.Lg, vertical = VisitorSpacing.Md),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            VisitorAssetImage(
-                model = VisitorAssets.VisitorAdminIcon,
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.size(32.dp)
-            )
-            Spacer(modifier = Modifier.width(VisitorSpacing.Md))
-            Text(
-                text = "Administrator Login",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
             )
         }
     }

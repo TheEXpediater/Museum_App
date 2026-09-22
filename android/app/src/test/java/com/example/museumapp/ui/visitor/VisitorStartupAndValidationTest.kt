@@ -169,7 +169,7 @@ class VisitorStartupAndValidationTest {
 
     @Test
     fun assetUrisUseAndroidAssetsFolder() {
-        assertEquals(31, VisitorAssets.RequiredAssets.size)
+        assertEquals(32, VisitorAssets.RequiredAssets.size)
         assertTrue(VisitorAssets.RequiredAssets.contains(VisitorAssets.VisitorEntryBackground))
         assertTrue(VisitorAssets.RequiredAssets.contains(VisitorAssets.VisitorEntrySceneTop))
         assertTrue(VisitorAssets.RequiredAssets.contains(VisitorAssets.VisitorEntrySceneBottom))
@@ -190,10 +190,11 @@ class VisitorStartupAndValidationTest {
     }
 
     @Test
-    fun scanAssetReferencesUseApprovedAiScanIcon() {
+    fun scanAssetReferencesUseDedicatedScanAndAiScanIcons() {
         assertEquals("file:///android_asset/visitor_ui/icons/ai_scan_icon.webp", VisitorAssets.AiScanIcon)
-        assertEquals(VisitorAssets.AiScanIcon, VisitorAssets.ScanIcon)
+        assertEquals("file:///android_asset/visitor_ui/icons/scan_icon.webp", VisitorAssets.ScanIcon)
+        assertTrue(VisitorAssets.AiScanIcon != VisitorAssets.ScanIcon)
         assertTrue(VisitorAssets.RequiredAssets.contains(VisitorAssets.AiScanIcon))
-        assertFalse(VisitorAssets.RequiredAssets.any { it.endsWith("/scan_icon.webp") })
+        assertTrue(VisitorAssets.RequiredAssets.contains(VisitorAssets.ScanIcon))
     }
 }

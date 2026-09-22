@@ -5,11 +5,11 @@ import org.junit.Test
 
 class AdminShellTest {
     @Test
-    fun permanentNavigationContainsExactlyFourItems() {
+    fun permanentNavigationContainsExactlyFiveItems() {
         assertEquals(
-            listOf("Dashboard", "Artifacts", "Recognize", "Settings"),
+            listOf("Dashboard", "Artifacts", "Recognize", "Accounts", "Settings"),
             AdminTopLevelDestinations.map { it.label }
         )
-        assertEquals(4, AdminTopLevelDestinations.size)
+        assertEquals(5, AdminTopLevelDestinations.size)
     }
 }
